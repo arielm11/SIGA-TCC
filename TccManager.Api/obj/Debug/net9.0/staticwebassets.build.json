@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "eA3180LmK6CNumF8/zYYk3hjHvmyOWa8/k+bkYEW6oI=",
+  "Source": "TccManager.Api",
+  "BasePath": "_content/TccManager.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}
