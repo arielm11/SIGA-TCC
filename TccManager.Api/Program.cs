@@ -1,31 +1,39 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.EntityFrameworkCore;
-using Supabase;
 using TccManager.Api.Data;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Configuração do Entity Framework (Banco de Dados)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 
-var supabaseUrl = builder.Configuration["Supabase:Url"] ?? throw new InvalidOperationException("Supabase URL não foi configurada");
-var supabaseKey = builder.Configuration["Supabase:Key"] ?? throw new InvalidOperationException("Supabase Key não foi configurada");
+var jwtKey = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]!);
 
-var options = new SupabaseOptions
+builder.Services.AddAuthentication(options =>
 {
-    AutoConnectRealtime = false,
-    AutoRefreshToken = true
-};
-
-var supabase = new Supabase.Client(supabaseUrl, supabaseKey, options);
-await supabase.InitializeAsync();
-
-builder.Services.AddSingleton(supabase);
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(jwtKey),
+        ValidateIssuer = false,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = false,
+        ValidAudience = builder.Configuration["Jwt:Audience"]
+    };
+});
 
 var app = builder.Build();
 
@@ -39,8 +47,11 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Em desenvolvimento local sem certificado, comente a linha abaixo para evitar o aviso de porta HTTPS
-// app.UseHttpsRedirection();
+app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();

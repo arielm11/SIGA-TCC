@@ -16,8 +16,5 @@ public class AppDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.Entity<Usuario>().ToTable("usuarios");
-
-        // Ignora a classe ClientOptions do Supabase para evitar erro de mapeamento no EF Core
-        modelBuilder.Ignore<Supabase.Postgrest.ClientOptions>();
     }
 }
