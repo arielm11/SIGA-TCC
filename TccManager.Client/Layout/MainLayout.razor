@@ -1,12 +1,22 @@
 ﻿@inherits LayoutComponentBase
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+@using Microsoft.AspNetCore.Components.Authorization
+@using TccManager.Client.Providers
+@inject NavigationManager Navigation
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
+@inject AuthenticationStateProvider AuthStateProvider
 
+<div class="page">
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <AuthorizeView>
+                <Authorized>
+                    <span class="me-3">Olá, <strong>@context.User.Identity?.Name</strong>!</span>
+                    <button class="btn btn-link text-danger" @onclick="Logout">Sair</button>
+                </Authorized>
+                <NotAuthorized>
+                    <a href="login" class="btn btn-link">Login</a>
+                </NotAuthorized>
+            </AuthorizeView>
         </div>
 
         <article class="content px-4">
@@ -14,3 +24,12 @@
         </article>
     </main>
 </div>
+
+@code {
+    private async Task Logout()
+    {
+        await LocalStorage.RemoveItemAsync("authToken");
+        ((CustomAuthStateProvider)AuthStateProvider).NotifyUserLogout();
+        Navigation.NavigateTo("/login");
+    }
+}

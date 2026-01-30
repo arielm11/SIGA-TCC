@@ -1,0 +1,86 @@
+﻿@page "/login"
+@using TccManager.Shared.DTOs
+@using TccManager.Client.Providers
+@using Blazored.LocalStorage
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ILocalStorageService LocalStorage
+@inject CustomAuthStateProvider AuthStateProvider
+
+<div class="d-flex justify-content-center align-items-center" style="height: 80vh;">
+    <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
+        <div class="text-center mb-4">
+            <h3 class="fw-bold">Login TCC Manager</h3>
+            <p class="text-muted">Entre com suas credenciais</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(mensagemErro))
+        {
+            <div class="alert alert-danger text-center" role="alert">
+                @mensagemErro
+            </div>
+        }
+
+        <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <InputText class="form-control" @bind-Value="loginModel.Email" placeholder="seu@email.com" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Senha</label>
+                <InputText type="password" class="form-control" @bind-Value="loginModel.Senha" placeholder="******" />
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 py-2">
+                @if (carregando)
+                {
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span>Entrando...</span>
+                }
+                else
+                {
+                    <span>Entrar</span>
+                }
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private LoginDto loginModel = new();
+    private string mensagemErro = string.Empty;
+    private bool carregando = false;
+
+    private async Task HandleLogin()
+    {
+        carregando = true;
+        mensagemErro = string.Empty;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/auth/login", loginModel);
+            if (response.IsSuccessStatusCode)
+            {
+                var resultado = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+                await LocalStorage.SetItemAsync("authToken", resultado!.Token);
+                AuthStateProvider.NotifyUserAuthentication(resultado.Token);
+
+                Navigation.NavigateTo("/");
+            }
+            else
+            {
+                mensagemErro = "Credenciais inválidas. Tente novamente.";
+            }
+        }
+        catch (Exception ex)
+        {
+            mensagemErro = $"Ocorreu um erro: {ex.Message}";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+}
