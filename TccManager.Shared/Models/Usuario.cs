@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using TccManager.Shared.Enums;
 
 namespace TccManager.Shared.Models;
 
@@ -16,7 +17,7 @@ public class Usuario
 
     public string SenhaHash { get; set; } = string.Empty;
 
-    public bool Admin { get; set; }
+    public TipoUsuario Tipo { get; set; } = TipoUsuario.Aluno;
 
     public bool Ativo { get; set; }
 }

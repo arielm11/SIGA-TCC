@@ -1,0 +1,75 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using TccManager.Client.Providers
+@using Blazored.LocalStorage
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ILocalStorageService LocalStorage
+@inject NavigationManager Navigation
+
+<div class="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 280px; height: 100vh;">
+
+    <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+        <span class="fs-4 fw-bold">🎓 SIGA TCC</span>
+    </a>
+
+    <hr>
+
+    <ul class="nav nav-pills flex-column mb-auto">
+        <li class="nav-item">
+            <NavLink class="nav-link text-white" href="" Match="NavLinkMatch.All">
+                <i class="bi bi-house-door me-2"></i> Home
+            </NavLink>
+        </li>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <li>
+                    <NavLink class="nav-link text-white" href="usuarios">
+                        <i class="bi bi-people me-2"></i> Usuários
+                    </NavLink>
+                </li>
+            </Authorized>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Aluno">
+            <Authorized>
+                <li>
+                    <NavLink class="nav-link text-white" href="meu-tcc">
+                        <i class="bi bi-book me-2"></i> Meu TCC
+                    </NavLink>
+                </li>
+            </Authorized>
+        </AuthorizeView>
+    </ul>
+
+    <hr>
+
+    <AuthorizeView>
+        <Authorized>
+            <div class="dropdown">
+                <a href="javascript:void(0)" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="rounded-circle bg-secondary d-flex justify-content-center align-items-center me-2" style="width: 32px; height: 32px;">
+                        <strong>@context.User.Identity?.Name?.Substring(0, 1).ToUpper()</strong>
+                    </div>
+                    <strong>@context.User.Identity?.Name</strong>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser1">
+                    <li>
+                        <button class="dropdown-item text-danger" @onclick="Logout">
+                            <i class="bi bi-box-arrow-right me-2"></i> Sair
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private async Task Logout()
+    {
+        await LocalStorage.RemoveItemAsync("authToken");
+        ((CustomAuthStateProvider)AuthStateProvider).NotifyUserLogout();
+        Navigation.NavigateTo("/login");
+    }
+}

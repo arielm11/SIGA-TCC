@@ -24,7 +24,7 @@ public class UsuarioController : ControllerBase
                 Id = u.Id,
                 Nome = u.Nome,
                 Email = u.Email,
-                Admin = u.Admin,
+                Tipo = u.Tipo,
                 Ativo = u.Ativo
             })
             .ToListAsync();
@@ -45,7 +45,7 @@ public class UsuarioController : ControllerBase
             Id = usuario.Id,
             Nome = usuario.Nome,
             Email = usuario.Email,
-            Admin = usuario.Admin,
+            Tipo = usuario.Tipo,
             Ativo = usuario.Ativo
         };
 
@@ -65,7 +65,7 @@ public class UsuarioController : ControllerBase
             Nome = dto.Nome,
             Email = dto.Email,
             SenhaHash = passwordHash,
-            Admin = dto.Admin,
+            Tipo = dto.Tipo,
             Ativo = true
         };
 
@@ -85,7 +85,7 @@ public class UsuarioController : ControllerBase
         
         usuario.Nome = dto.Nome;
         usuario.Email = dto.Email;
-        usuario.Admin = dto.Admin;
+        usuario.Tipo = dto.Tipo;
         usuario.Ativo = dto.Ativo;
         
         if (!string.IsNullOrEmpty(dto.Senha))
