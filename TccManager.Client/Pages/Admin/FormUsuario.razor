@@ -1,0 +1,171 @@
+﻿@page "/usuarios/novo"
+@page "/usuarios/editar/{id:int}"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Enums
+@attribute [Authorize(Roles = "Admin")]
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<div class="container" style="max-width: 800px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>@(Id.HasValue ? "Editar Usuário" : "Novo Usuário")</h3>
+
+        <a href="usuarios" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body p-4">
+
+            @if (!string.IsNullOrEmpty(mensagemErro))
+            {
+                <div class="alert alert-danger mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i> @mensagemErro
+                </div>
+            }
+
+            <EditForm Model="usuario" OnValidSubmit="SalvarUsuario">
+                <DataAnnotationsValidator />
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Nome Completo</label>
+                        <InputText class="form-control" @bind-Value="usuario.Nome" />
+                        <ValidationMessage For="@(() => usuario.Nome)" />
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">E-mail</label>
+                        <InputText class="form-control" @bind-Value="usuario.Email" />
+                        <ValidationMessage For="@(() => usuario.Email)" />
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Senha</label>
+                        <InputText type="password" class="form-control" @bind-Value="usuario.Senha" placeholder="@(Id.HasValue ? "Deixe em branco para manter a atual" : "******")" />
+
+                        @if (Id.HasValue)
+                        {
+                            <small class="text-muted">Preencha apenas se quiser alterar a senha.</small>
+                        }
+                        else
+                        {
+                            <small class="text-muted">Senha inicial obrigatória.</small>
+                        }
+                        <ValidationMessage For="@(() => usuario.Senha)" />
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Nível de Acesso</label>
+                        <InputSelect class="form-select" @bind-Value="usuario.Tipo">
+                            @foreach (var tipo in Enum.GetValues(typeof(TipoUsuario)))
+                            {
+                                <option value="@tipo">@tipo</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="mb-4 form-check">
+                    <InputCheckbox class="form-check-input" @bind-Value="usuario.Ativo" id="chkAtivo" />
+                    <label class="form-check-label" for="chkAtivo">
+                        Usuário Ativo
+                    </label>
+                </div>
+
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                    <button type="submit" class="btn btn-primary px-4" disabled="@carregando">
+                        @if (carregando)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                            <span>Salvando...</span>
+                        }
+                        else
+                        {
+                            <span>
+                                <i class="bi bi-check-lg me-2"></i>
+                                @(Id.HasValue ? "Atualizar" : "Cadastrar")
+                            </span>
+                        }
+                    </button>
+                </div>
+
+            </EditForm>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private UsuarioDto usuario = new() { Ativo = true, Tipo = TipoUsuario.Aluno };
+    private string mensagemErro = string.Empty;
+    private bool carregando = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            try
+            {
+                usuario = await Http.GetFromJsonAsync<UsuarioDto>($"api/usuario/{Id}");
+                usuario!.Senha = string.Empty;
+            }
+            catch (Exception)
+            {
+                mensagemErro = "Erro ao carregar usuário. Talvez ele não exista.";
+            }
+        }
+    }
+
+    private async Task SalvarUsuario()
+    {
+        carregando = true;
+        mensagemErro = string.Empty;
+
+        if (!Id.HasValue && string.IsNullOrWhiteSpace(usuario.Senha))
+        {
+            mensagemErro = "A senha é obrigatória para novos usuários.";
+            carregando = false;
+            return;
+        }
+
+        try
+        {
+            HttpResponseMessage response;
+
+            if (Id.HasValue)
+            {
+                response = await Http.PutAsJsonAsync($"api/usuario/{Id}", usuario);
+            }
+            else
+            {
+                response = await Http.PostAsJsonAsync("api/usuario", usuario);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                Navigation.NavigateTo("/usuarios");
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                mensagemErro = $"Erro ao salvar: {erro}";
+            }
+        }
+        catch (Exception ex)
+        {
+            mensagemErro = "Erro de conexão com o servidor.";
+            Console.WriteLine(ex.Message);
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+}

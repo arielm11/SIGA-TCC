@@ -1,3 +1,5 @@
+using TccManager.Shared.Enums;
+
 namespace TccManager.Shared.DTOs;
 
 public class UsuarioDto
@@ -6,6 +8,6 @@ public class UsuarioDto
     public string Nome { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Senha { get; set; } = string.Empty;
-    public bool Admin { get; set; }
+    public TipoUsuario Tipo { get; set; }
     public bool Ativo { get; set; }
 }

@@ -1,0 +1,151 @@
+﻿@page "/usuarios"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Enums
+@attribute [Authorize(Roles = "Admin")]
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Gerenciar Usuários</h3>
+        <button class="btn btn-primary" @onclick="IrParaNovoUsuario">
+            <i class="bi bi-plus-lg me-2"></i> Novo Usuário
+        </button>
+    </div>
+
+    @if (usuarios == null)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+            <p class="mt-2 text-muted">Buscando usuários...</p>
+        </div>
+    }
+    else if (!usuarios.Any())
+    {
+        <div class="alert alert-info">
+            Nenhum usuário encontrado além de você.
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <table class="table table-hover table-striped mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Nome</th>
+                            <th>Email</th>
+                            <th>Tipo</th>
+                            <th>Status</th>
+                            <th class="text-end">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in usuarios)
+                        {
+                            <tr>
+                                <td>@user.Nome</td>
+                                <td>@user.Email</td>
+                                <td>
+                                    <span class="badge @GetBadgeClass(user.Tipo)">
+                                        @user.Tipo.ToString()
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (user.Ativo)
+                                    {
+                                        <span class="text-success fw-bold"><i class="bi bi-check-circle"></i> Ativo</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-danger fw-bold"><i class="bi bi-x-circle"></i> Inativo</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => Editar(user.Id)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Excluir(user.Id)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<UsuarioDto>? usuarios;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarUsuarios();
+    }
+
+    private async Task CarregarUsuarios()
+    {
+        try
+        {
+            usuarios = await Http.GetFromJsonAsync<List<UsuarioDto>>("api/usuario");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro ao carregar: {ex.Message}");
+        }
+    }
+
+    private string GetBadgeClass(TipoUsuario tipo)
+    {
+        return tipo switch
+        {
+            TipoUsuario.Admin => "bg-danger",
+            TipoUsuario.Coordenador => "bg-warning text-dark",
+            TipoUsuario.Professor => "bg-info text-dark",
+            _ => "bg-secondary" // Aluno
+        };
+    }
+
+    private void IrParaNovoUsuario()
+    {
+        Navigation.NavigateTo("/usuarios/novo");
+    }
+
+    private void Editar(int id)
+    {
+        Navigation.NavigateTo($"/usuarios/editar/{id}");
+    }
+
+    private async Task Excluir(int id)
+    {
+        bool confirmado = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja excluir este usuário? Essa ação não pode ser desfeita.");
+
+        if (confirmado)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/usuario/{id}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    await CarregarUsuarios();
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Erro ao excluir usuário.");
+                }
+            }
+            catch (Exception)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão com o servidor.");
+            }
+        }
+    }
+}
