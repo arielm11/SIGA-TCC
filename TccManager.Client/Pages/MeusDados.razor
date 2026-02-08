@@ -2,40 +2,170 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
-@attribute [Authorize] 
+@using TccManager.Shared.DTOs
+@attribute [Authorize]
+@inject HttpClient Http
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
 
-<div class="container mt-4">
-    <h3>Meus Dados</h3>
-    <p class="text-muted">Área pessoal do usuário.</p>
+<div class="container mt-4" style="max-width: 800px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3>Meus Dados</h3>
+        <span class="badge bg-secondary">@usuario?.Tipo.ToString()</span>
+    </div>
 
-    <AuthorizeView>
-        <Authorized>
-            <div class="alert alert-success">
-                <i class="bi bi-check-circle-fill me-2"></i>
-                Acesso Permitido! Você está logado como: <strong>@context.User.Identity?.Name</strong>
-            </div>
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Carregando suas informações...</p>
+        </div>
+    }
+    else if (usuario != null)
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <EditForm Model="usuario" OnValidSubmit="SalvarAlteracoes">
+                    <DataAnnotationsValidator />
 
-            <div class="card shadow-sm mt-3 border-warning">
-                <div class="card-header bg-warning text-dark">
-                    <strong>🕵️ Debug de Identidade</strong> (Removeremos isso depois)
-                </div>
-                <div class="card-body bg-light">
-                    <ul>
-                        @foreach (var claim in context.User.Claims)
-                        {
-                            <li>
-                                <strong>Type:</strong> <span class="text-primary">@claim.Type</span> <br/>
-                                <strong>Value:</strong> <b>@claim.Value</b>
-                            </li>
-                        }
-                    </ul>
-                </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nome Completo</label>
+                            <InputText class="form-control" @bind-Value="usuario.Nome" />
+                            <ValidationMessage For="@(() => usuario.Nome)" />
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">E-mail</label>
+                            <InputText class="form-control" @bind-Value="usuario.Email" />
+                            <ValidationMessage For="@(() => usuario.Email)" />
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Tipo de Conta</label>
+                            <input type="text" class="form-control bg-light" value="@usuario.Tipo" disabled />
+                            <small class="text-muted">Você não pode alterar seu próprio nível de acesso.</small>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Alterar Senha</label>
+                            <InputText type="password" class="form-control" @bind-Value="usuario.Senha" placeholder="Deixe em branco para manter a atual" />
+                            <ValidationMessage For="@(() => usuario.Senha)" />
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary px-4" disabled="@salvando">
+                            @if (salvando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <span>Salvando...</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-save me-2"></i> Salvar Alterações</span>
+                            }
+                        </button>
+                    </div>
+
+                </EditForm>
             </div>
-        </Authorized>
-        <NotAuthorized>
-            <div class="alert alert-danger">
-                Você não deveria estar vendo isso se não estiver logado.
-            </div>
-        </NotAuthorized>
-    </AuthorizeView>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning">
+            Não foi possível carregar os dados do perfil. Tente fazer login novamente.
+        </div>
+    }
 </div>
+
+@code {
+    private UsuarioDto? usuario;
+    private bool carregando = true;
+    private bool salvando = false;
+    private int usuarioId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity == null || !user.Identity.IsAuthenticated)
+            {
+                Navigation.NavigateTo("/login");
+                return;
+            }
+
+            var idClaim = user.FindFirst(ClaimTypes.NameIdentifier);
+
+            if (idClaim != null && int.TryParse(idClaim.Value, out int id))
+            {
+                usuarioId = id;
+                await CarregarDados();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Erro: ID do usuário não encontrado no token.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erro crítico: {ex.Message}");
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task CarregarDados()
+    {
+        try
+        {
+            usuario = await Http.GetFromJsonAsync<UsuarioDto>($"api/usuario/{usuarioId}");
+
+            if (usuario != null) usuario.Senha = string.Empty;
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Falha ao comunicar com o servidor.");
+        }
+    }
+
+    private async Task SalvarAlteracoes()
+    {
+        salvando = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/usuario/{usuarioId}", usuario);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Dados atualizados com sucesso!");
+
+                 Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao salvar: {erro}");
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao tentar salvar.");
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+}
