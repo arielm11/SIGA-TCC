@@ -1,0 +1,41 @@
+﻿@page "/meus-dados"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@attribute [Authorize] 
+
+<div class="container mt-4">
+    <h3>Meus Dados</h3>
+    <p class="text-muted">Área pessoal do usuário.</p>
+
+    <AuthorizeView>
+        <Authorized>
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle-fill me-2"></i>
+                Acesso Permitido! Você está logado como: <strong>@context.User.Identity?.Name</strong>
+            </div>
+
+            <div class="card shadow-sm mt-3 border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <strong>🕵️ Debug de Identidade</strong> (Removeremos isso depois)
+                </div>
+                <div class="card-body bg-light">
+                    <ul>
+                        @foreach (var claim in context.User.Claims)
+                        {
+                            <li>
+                                <strong>Type:</strong> <span class="text-primary">@claim.Type</span> <br/>
+                                <strong>Value:</strong> <b>@claim.Value</b>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </Authorized>
+        <NotAuthorized>
+            <div class="alert alert-danger">
+                Você não deveria estar vendo isso se não estiver logado.
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>

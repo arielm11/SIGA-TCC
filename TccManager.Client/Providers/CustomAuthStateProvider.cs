@@ -23,9 +23,10 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
         if (string.IsNullOrWhiteSpace(token))
             return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
 
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("bearer", token);
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var identity = new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt", "unique_name", "role"); 
+        var claims = ParseClaimsFromJwt(token);
+        var identity = new ClaimsIdentity(claims, "jwt"); 
         var usuario = new ClaimsPrincipal(identity);
 
         return new AuthenticationState(usuario);
@@ -33,27 +34,78 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
 
     public void NotifyUserAuthentication(string token) 
     {
-        var authenticatedUser = new ClaimsPrincipal(new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt", "unique_name", "role"));
-        var authState = Task.FromResult(new AuthenticationState(authenticatedUser));
+        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        NotifyAuthenticationStateChanged (authState);
+        var claims = ParseClaimsFromJwt(token);
+        var identity = new ClaimsIdentity(claims, "jwt");
+        var usuario = new ClaimsPrincipal(identity);
+
+        NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(usuario)));
     }
 
     public void NotifyUserLogout()
     {
-        var anonymousUser = new ClaimsPrincipal(new ClaimsIdentity());
-        var authState = Task.FromResult(new AuthenticationState(anonymousUser));
+        _http.DefaultRequestHeaders.Authorization = null;
 
-        NotifyAuthenticationStateChanged(authState);
+        var anonymousUser = new ClaimsPrincipal(new ClaimsIdentity());
+
+        NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(anonymousUser)));
     }
 
     private IEnumerable<Claim> ParseClaimsFromJwt(string jwt)
     {
+        var claims = new List<Claim>();
         var payload = jwt.Split('.')[1];
         var jsonBytes = ParseBase64WithoutPadding(payload);
         var keyValuePairs = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes);
 
-        return keyValuePairs!.Select(kvp => new Claim(kvp.Key, kvp.Value.ToString()!));
+        if (keyValuePairs != null) 
+        {
+            foreach (var kvp in keyValuePairs) 
+            {
+                var value = kvp.Value.ToString() ?? "";
+                var claimType = kvp.Key;
+
+                if (claimType == "role" || claimType.Contains("/claims/role"))
+                {
+                    claimType = ClaimTypes.Role;
+                }
+                else if (claimType == "unique_name" || claimType.Contains("/claims/unique_name"))
+                {
+                    claimType = ClaimTypes.Name;
+                }
+                else if (claimType == "nameid" || claimType.Contains("/claims/nameid")) 
+                { 
+                    claimType = ClaimTypes.NameIdentifier;
+                }
+
+                if (value.Trim().StartsWith("["))
+                {
+                    try
+                    {
+                        var parsedValues = JsonSerializer.Deserialize<string[]>(value);
+                        if (parsedValues != null)
+                        {
+                            foreach (var parsedValue in parsedValues)
+                            {
+                                claims.Add(new Claim(claimType, parsedValue));
+                            }
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        claims.Add(new Claim(claimType, value));
+                        Console.WriteLine($"Erro ao desserializar o valor do claim '{claimType}': {value}");
+                    }
+                }
+                else 
+                { 
+                    claims.Add(new Claim(claimType, value));
+                }
+            }        
+        }
+
+        return claims;
     }
 
     private byte[] ParseBase64WithoutPadding(string base64)
