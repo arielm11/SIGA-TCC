@@ -1,0 +1,140 @@
+﻿@page "/meu-tcc"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Models
+@using TccManager.Shared.Enums
+@attribute [Authorize(Roles = "Aluno")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h3>🎓 Meu TCC</h3>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>Verificando situação...</p>
+        </div>
+    }
+    else if (tccExistente != null)
+    {
+        <div class="card shadow-sm border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Situação da Proposta</h5>
+            </div>
+            <div class="card-body">
+                <h4>@tccExistente.Titulo</h4>
+                <span class="badge bg-warning text-dark mb-3">@tccExistente.Status</span>
+
+                <p><strong>Resumo:</strong></p>
+                <p class="text-muted">@tccExistente.Resumo</p>
+
+                <hr />
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Sua proposta foi enviada em @tccExistente.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy HH:mm") e está aguardando avaliação do coordenador.
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4">Nova Proposta de TCC</h5>
+
+                <EditForm Model="proposta" OnValidSubmit="SubmeterProposta">
+                    <DataAnnotationsValidator />
+
+                    <div class="mb-3">
+                        <label class="form-label">Título do Trabalho</label>
+                        <InputText class="form-control" @bind-Value="proposta.Titulo" placeholder="Ex: Desenvolvimento de um Sistema Web..." />
+                        <ValidationMessage For="@(() => proposta.Titulo)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Resumo / Objetivo</label>
+                        <InputTextArea class="form-control" @bind-Value="proposta.Resumo" rows="5" placeholder="Descreva brevemente o objetivo do seu trabalho..." />
+                        <ValidationMessage For="@(() => proposta.Resumo)" />
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-success px-4" disabled="@enviando">
+                            @if (enviando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <span>Enviando...</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-send me-2"></i> Submeter Proposta</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private PropostaTccDto proposta = new();
+    private Tcc? tccExistente;
+    private bool carregando = true;
+    private bool enviando = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await VerificarTccExistente();
+    }
+
+    private async Task VerificarTccExistente()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/tcc/meu-tcc");
+
+            if (response.StatusCode == System.Net.HttpStatusCode.OK)
+            {
+                tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
+            }
+        }
+        catch (Exception)
+        {
+            Console.WriteLine("Erro ao verificar TCC existente.");
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task SubmeterProposta()
+    {
+        enviando = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/tcc/proposta", proposta);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Proposta enviada com sucesso!");
+                tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao submeter: {erro}");
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão.");
+        }
+        finally
+        {
+            enviando = false;
+        }
+    }
+}

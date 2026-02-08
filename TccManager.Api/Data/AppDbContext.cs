@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     }
 
     public DbSet<Usuario> Usuarios { get; set; }
+    public DbSet<Tcc> Tccs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
