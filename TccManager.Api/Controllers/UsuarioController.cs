@@ -1,11 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
-using TccManager.Shared.Models;
 using TccManager.Shared.DTOs;
+using TccManager.Shared.Models;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class UsuarioController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -16,6 +18,7 @@ public class UsuarioController : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetUsuarios()
     {
         var usuarios = await _context.Usuarios
@@ -30,6 +33,34 @@ public class UsuarioController : ControllerBase
             .ToListAsync();
 
         return Ok(usuarios);
+    }
+
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMeuPerfil()
+    {
+        // Descobrimos quem está a fazer o pedido olhando para o Token
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                   ?? User.FindFirst("nameid")?.Value;
+
+        if (string.IsNullOrEmpty(userIdClaim))
+            return Unauthorized();
+
+        var usuario = await _context.Usuarios.FindAsync(int.Parse(userIdClaim));
+
+        if (usuario == null)
+            return NotFound("Usuário não encontrado.");
+
+        // Retornamos os dados limpos sem a senha
+        var usuarioDto = new UsuarioDto
+        {
+            Id = usuario.Id,
+            Nome = usuario.Nome,
+            Email = usuario.Email,
+            Tipo = usuario.Tipo,
+            Ativo = usuario.Ativo
+        };
+
+        return Ok(usuarioDto);
     }
 
     [HttpGet("{id}")]
@@ -53,6 +84,7 @@ public class UsuarioController : ControllerBase
     }
 
     [HttpPost]
+    [AllowAnonymous]
     public async Task<IActionResult> CreateUsuario([FromBody] UsuarioDto dto)
     {
         if(await _context.Usuarios.AnyAsync(u => u.Email == dto.Email))
@@ -97,6 +129,7 @@ public class UsuarioController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> DeleteUsuario(int id)
     {
         var usuario = await _context.Usuarios.FindAsync(id);
