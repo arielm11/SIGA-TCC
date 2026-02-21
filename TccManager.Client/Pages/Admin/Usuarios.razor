@@ -1,8 +1,11 @@
 ﻿@page "/usuarios"
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
 @attribute [Authorize(Roles = "Admin")]
+@inject AuthenticationStateProvider AuthStateProvider
+@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
@@ -87,6 +90,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        await AuthStateProvider.GetAuthenticationStateAsync();
         await CarregarUsuarios();
     }
 
@@ -94,6 +98,14 @@
     {
         try
         {
+            // Vai buscar o token e limpa eventuais aspas duplas
+            var token = await LocalStorage.GetItemAsStringAsync("authToken");
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                token = token.Replace("\"", "");
+                Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
+
             usuarios = await Http.GetFromJsonAsync<List<UsuarioDto>>("api/usuario");
         }
         catch (Exception ex)
