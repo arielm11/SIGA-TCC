@@ -131,7 +131,6 @@
     {
         try
         {
-            // Vai buscar o token e limpa eventuais aspas duplas
             var token = await LocalStorage.GetItemAsStringAsync("authToken");
             if (!string.IsNullOrWhiteSpace(token))
             {

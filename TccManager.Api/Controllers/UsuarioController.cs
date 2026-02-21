@@ -38,7 +38,6 @@ public class UsuarioController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMeuPerfil()
     {
-        // Descobrimos quem está a fazer o pedido olhando para o Token
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                    ?? User.FindFirst("nameid")?.Value;
 
@@ -50,7 +49,6 @@ public class UsuarioController : ControllerBase
         if (usuario == null)
             return NotFound("Usuário não encontrado.");
 
-        // Retornamos os dados limpos sem a senha
         var usuarioDto = new UsuarioDto
         {
             Id = usuario.Id,
