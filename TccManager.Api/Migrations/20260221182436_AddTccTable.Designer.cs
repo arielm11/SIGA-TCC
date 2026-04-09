@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TccManager.Api.Data;
 
@@ -11,9 +12,11 @@ using TccManager.Api.Data;
 namespace TccManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260221182436_AddTccTable")]
+    partial class AddTccTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -21,44 +24,6 @@ namespace TccManager.Api.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.Entity("TccManager.Shared.Models.Entrega", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("ArquivoCaminho")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("DataEnvio")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Feedback")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("Nota")
-                        .HasColumnType("decimal(5,2)");
-
-                    b.Property<int>("TccId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Tipo")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Titulo")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TccId");
-
-                    b.ToTable("Entregas");
-                });
 
             modelBuilder.Entity("TccManager.Shared.Models.Tcc", b =>
                 {
@@ -131,17 +96,6 @@ namespace TccManager.Api.Migrations
                     b.ToTable("usuarios", (string)null);
                 });
 
-            modelBuilder.Entity("TccManager.Shared.Models.Entrega", b =>
-                {
-                    b.HasOne("TccManager.Shared.Models.Tcc", "Tcc")
-                        .WithMany("Entregas")
-                        .HasForeignKey("TccId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Tcc");
-                });
-
             modelBuilder.Entity("TccManager.Shared.Models.Tcc", b =>
                 {
                     b.HasOne("TccManager.Shared.Models.Usuario", "Aluno")
@@ -157,11 +111,6 @@ namespace TccManager.Api.Migrations
                     b.Navigation("Aluno");
 
                     b.Navigation("Orientador");
-                });
-
-            modelBuilder.Entity("TccManager.Shared.Models.Tcc", b =>
-                {
-                    b.Navigation("Entregas");
                 });
 #pragma warning restore 612, 618
         }

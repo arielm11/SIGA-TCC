@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
+using TccManager.Shared.Enums;
+
+namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -139,5 +142,24 @@ public class UsuarioController : ControllerBase
         await _context.SaveChangesAsync();
         
         return Ok("Usuário deletado com sucesso");
+    }
+
+    [HttpGet("professores")]
+    [Authorize]
+    public async Task<IActionResult> GetProfessores()
+    {
+        var professores = await _context.Usuarios
+            .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
+            .Select(u => new UsuarioDto
+            {
+                Id = u.Id,
+                Nome = u.Nome,
+                Email = u.Email,
+                Tipo = u.Tipo,
+                Ativo = u.Ativo
+            })
+            .ToListAsync();
+
+        return Ok(professores);
     }
 }
