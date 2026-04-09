@@ -162,4 +162,29 @@ public class TccController : ControllerBase
 
         return Ok(entrega);
     }
+
+    [HttpGet("entregas/{idEntrega}/feedbacks")]
+    [Authorize(Roles = "Aluno")]
+    public async Task<IActionResult> GetFeedbackEntrega(int idEntrega) 
+    { 
+        var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
+            return Unauthorized();
+
+        var entrega = await _context.Entregas
+            .Include(e => e.Tcc)
+            .FirstOrDefaultAsync(e => e.Id == idEntrega && e.Tcc!.AlunoId == alunoId);
+
+        if (entrega == null)
+            return NotFound("Entrega não encontrada.");
+
+        var feedbackResult = new
+        { 
+            Nota = entrega.Nota,
+            Feedback = entrega.Feedback,
+            DataEnvio = entrega.DataEnvio
+        };
+
+        return Ok(feedbackResult);
+    }
 }
