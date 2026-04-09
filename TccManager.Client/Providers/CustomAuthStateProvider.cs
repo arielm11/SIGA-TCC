@@ -23,6 +23,8 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
         if (string.IsNullOrWhiteSpace(token))
             return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
 
+        token = token.Replace("\"", "");
+
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var claims = ParseClaimsFromJwt(token);
