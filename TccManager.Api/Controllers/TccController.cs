@@ -187,4 +187,23 @@ public class TccController : ControllerBase
 
         return Ok(feedbackResult);
     }
+
+    [HttpGet("acompanhamentos")]
+    [Authorize(Roles ="Aluno")]
+    public async Task<IActionResult> GetAcompanhentos() 
+    {
+        var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        if (tcc == null)
+            return NotFound("TCC não encontrado.");
+        var acompanhamentos = await _context.Acompanhamentos
+            .Where(a => a.TccId == tcc.Id)
+            .OrderByDescending(a => a.DataReuniao)
+            .ToListAsync();
+
+        return Ok(acompanhamentos);
+    }
 }

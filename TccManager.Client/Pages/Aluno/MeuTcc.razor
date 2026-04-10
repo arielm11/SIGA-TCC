@@ -54,113 +54,170 @@
                 {
                     <div class="alert alert-success mb-4">
                         <i class="bi bi-check-circle me-2"></i>
-                        Sua proposta foi aprovada! Você já pode enviar suas entregas abaixo.
+                        Sua proposta foi aprovada e seu TCC está em andamento!
                     </div>
 
-                    @if (entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final))
-                    {
-                        <div class="alert alert-info border-info mb-4 shadow-sm">
-                            <h5><i class="bi bi-trophy-fill text-warning me-2"></i> Trabalho Concluído!</h5>
-                            <p class="mb-0">Você já enviou a Versão Final do seu TCC. Agora é só aguardar as avaliações finais e as informações sobre a sua Banca.</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <h5 class="fw-bold mt-4"><i class="bi bi-cloud-upload me-2"></i> Nova Entrega</h5>
-                        <div class="card bg-light border-0 mb-4">
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Título da Entrega</label>
-                                        <InputText class="form-control" @bind-Value="novaEntregaTitulo" placeholder="Ex: Capítulos 1 e 2" />
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Tipo de Entrega</label>
-                                        <InputSelect class="form-select" @bind-Value="novaEntregaTipo">
-                                            <option value="@TipoEntrega.Parcial">Parcial</option>
-                                            <option value="@TipoEntrega.Final">Versão Final</option>
-                                        </InputSelect>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label">Arquivo (.pdf, .doc, .zip)</label>
-                                        <InputFile class="form-control" OnChange="CarregarArquivo" />
-                                    </div>
-                                    <div class="col-12 text-end">
-                                        <button class="btn btn-primary" @onclick="FazerUploadEntrega" disabled="@(arquivoSelecionado == null || enviando)">
-                                            @if (enviando)
-                                            {
-                                                <span class="spinner-border spinner-border-sm"></span>
-                                            }
-                                            else
-                                            {
+                    <ul class="nav nav-tabs mb-4">
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "entregas" ? "active fw-bold" : "")"
+                                    @onclick="@(() => abaAtiva = "entregas")">
+                                <i class="bi bi-cloud-upload me-2"></i> Entregas & Arquivos
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "acompanhamentos" ? "active fw-bold" : "")"
+                                    @onclick="@(() => abaAtiva = "acompanhamentos")">
+                                <i class="bi bi-calendar-event me-2"></i> Reuniões (Atas)
+                            </button>
+                        </li>
+                    </ul>
 
-                                                <span><i class="bi bi-upload me-2"></i> Enviar Arquivo</span>
-                                            }
-                                        </button>
+                    @if (abaAtiva == "entregas")
+                    {
+                        @if (entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final))
+                        {
+                            <div class="alert alert-info border-info mb-4 shadow-sm">
+                                <h5><i class="bi bi-trophy-fill text-warning me-2"></i> Trabalho Concluído!</h5>
+                                <p class="mb-0">Você já enviou a Versão Final do seu TCC. Agora é só aguardar as avaliações finais e a Banca.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <h5 class="fw-bold mt-4"><i class="bi bi-cloud-upload me-2"></i> Nova Entrega</h5>
+                            <div class="card bg-light border-0 mb-4">
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Título da Entrega</label>
+                                            <InputText class="form-control" @bind-Value="novaEntregaTitulo" placeholder="Ex: Capítulos 1 e 2" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Tipo de Entrega</label>
+                                            <InputSelect class="form-select" @bind-Value="novaEntregaTipo">
+                                                <option value="@TipoEntrega.Parcial">Parcial</option>
+                                                <option value="@TipoEntrega.Final">Versão Final</option>
+                                            </InputSelect>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Arquivo (.pdf, .doc, .zip)</label>
+                                            <InputFile class="form-control" OnChange="CarregarArquivo" />
+                                        </div>
+                                        <div class="col-12 text-end">
+                                            <button class="btn btn-primary" @onclick="FazerUploadEntrega" disabled="@(arquivoSelecionado == null || enviando)">
+                                                @if (enviando)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                }
+                                                else
+                                                {
+
+                                                    <span><i class="bi bi-upload me-2"></i> Enviar Arquivo</span>
+                                                }
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    }
+                        }
 
-                    <h5 class="fw-bold"><i class="bi bi-list-check me-2"></i> Histórico de Entregas</h5>
-                    @if (entregasFeitas == null)
-                    {
-                        <p class="text-muted">Carregando histórico...</p>
-                    }
-                    else if (!entregasFeitas.Any())
-                    {
-                        <p class="text-muted">Nenhuma entrega realizada ainda.</p>
-                    }
-                    else
-                    {
-                        <ul class="list-group mb-4">
-                            @foreach (var entrega in entregasFeitas)
-                            {
-                                <li class="list-group-item flex-column align-items-start">
-                                    <div class="d-flex w-100 justify-content-between align-items-center">
-                                        <div>
-                                            <strong>@entrega.Titulo</strong>
-                                            <span class="badge bg-secondary ms-2">@entrega.Tipo</span><br />
-                                            <small class="text-muted">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
-                                        </div>
-                                        
-                                        @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
-                                        {
-                                            <button class="btn btn-sm btn-outline-info" @onclick="() => AlternarFeedback(entrega.Id)">
-                                                <i class="bi bi-chat-left-text me-1"></i>
-                                                @(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")
-                                            </button>
-                                        }
-                                        else
-                                        {
-                                            <span class="badge bg-light text-muted border"><i class="bi bi-clock me-1"></i> Aguardando Avaliação</span>
-                                        }
-                                    </div>
-
-                                    @if (entregaSelecionadaParaFeedback == entrega.Id)
-                                    {
-                                        <div class="mt-3 p-3 bg-light rounded border-start border-4 border-info shadow-sm animate__animated animate__fadeIn">
-                                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                                <h6 class="text-info fw-bold mb-0">
-                                                    <i class="bi bi-person-workspace me-2"></i>Parecer do Orientador
-                                                </h6>
-                                                @if (entrega.Nota.HasValue)
-                                                {
-                                                    <div class="bg-success text-white px-2 py-1 rounded small fw-bold">
-                                                        Nota: @entrega.Nota
-                                                    </div>
-                                                }
+                        <h5 class="fw-bold"><i class="bi bi-list-check me-2"></i> Histórico de Entregas</h5>
+                        @if (entregasFeitas == null)
+                        {
+                            <p class="text-muted">Carregando histórico...</p>
+                        }
+                        else if (!entregasFeitas.Any())
+                        {
+                            <p class="text-muted">Nenhuma entrega realizada ainda.</p>
+                        }
+                        else
+                        {
+                            <ul class="list-group mb-4">
+                                @foreach (var entrega in entregasFeitas)
+                                {
+                                    <li class="list-group-item flex-column align-items-start">
+                                        <div class="d-flex w-100 justify-content-between align-items-center">
+                                            <div>
+                                                <strong>@entrega.Titulo</strong>
+                                                <span class="badge bg-secondary ms-2">@entrega.Tipo</span><br />
+                                                <small class="text-muted">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
                                             </div>
-                                            
-                                            <p class="mb-0 mt-2" style="white-space: pre-line; color: #495057;">
-                                                @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado, apenas nota." : entrega.Feedback)
-                                            </p>
+                                            @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
+                                            {
+                                                <button class="btn btn-sm btn-outline-info" @onclick="() => AlternarFeedback(entrega.Id)">
+                                                    <i class="bi bi-chat-left-text me-1"></i>
+                                                    @(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-light text-muted border"><i class="bi bi-clock me-1"></i> Aguardando Avaliação</span>
+                                            }
                                         </div>
-                                    }
-                                </li>
-                            }
-                        </ul>
+
+                                        @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                        {
+                                            <div class="mt-3 p-3 bg-light rounded border-start border-4 border-info shadow-sm animate__animated animate__fadeIn">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <h6 class="text-info fw-bold mb-0">
+                                                        <i class="bi bi-person-workspace me-2"></i>Parecer do Orientador
+                                                    </h6>
+                                                    @if (entrega.Nota.HasValue)
+                                                    {
+                                                        <div class="bg-success text-white px-2 py-1 rounded small fw-bold">
+                                                            Nota: @entrega.Nota
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <p class="mb-0 mt-2" style="white-space: pre-line; color: #495057;">
+                                                    @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
+                                                </p>
+                                            </div>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
+
+                    @if (abaAtiva == "acompanhamentos")
+                    {
+                        <h5 class="fw-bold"><i class="bi bi-journal-text me-2"></i> Atas de Reunião</h5>
+                        <p class="text-muted mb-4">Abaixo estão os registros das suas reuniões de orientação feitas pelo seu professor.</p>
+
+                        @if (meusAcompanhamentos == null)
+                        {
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+                                <span class="ms-2">Carregando atas...</span>
+                            </div>
+                        }
+                        else if (!meusAcompanhamentos.Any())
+                        {
+                            <div class="alert alert-secondary">
+                                Nenhuma reunião foi registrada pelo seu orientador até o momento.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="accordion" id="accordionAcompanhamentos">
+                                @foreach (var ata in meusAcompanhamentos)
+                                {
+                                    <div class="accordion-item mb-2 border rounded shadow-sm">
+                                        <h2 class="accordion-header" id="heading_@ata.Id">
+                                            <button class="accordion-button collapsed bg-light text-dark fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_@ata.Id">
+                                                <i class="bi bi-calendar2-check text-primary me-2"></i>
+                                                Reunião do dia @ata.DataReuniao.ToLocalTime().ToString("dd/MM/yyyy")
+                                            </button>
+                                        </h2>
+                                        <div id="collapse_@ata.Id" class="accordion-collapse collapse" data-bs-parent="#accordionAcompanhamentos">
+                                            <div class="accordion-body" style="white-space: pre-line;">
+                                                @ata.Ata
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
                     }
                 }
             </div>
@@ -219,6 +276,8 @@
     private IBrowserFile? arquivoSelecionado;
     private List<Entrega>? entregasFeitas;
     private int? entregaSelecionadaParaFeedback;
+    private string abaAtiva = "entregas";
+    private List<Acompanhamento>? meusAcompanhamentos;
 
     protected override async Task OnInitializedAsync()
     {
@@ -259,6 +318,8 @@
     private async Task CarregarEntregas()
     {
         entregasFeitas = await Http.GetFromJsonAsync<List<Entrega>>("api/tcc/entregas");
+
+        meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
     }
 
     private void CarregarArquivo(InputFileChangeEventArgs e)
@@ -280,7 +341,7 @@
             using var content = new MultipartFormDataContent();
             content.Add(new StringContent(novaEntregaTitulo), "tituloEntrega");
             content.Add(new StringContent(novaEntregaTipo.ToString()), "tipo");
-            
+
             // max size: 10MB
             var streamContent = new StreamContent(arquivoSelecionado.OpenReadStream(1024 * 1024 * 10));
             streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(arquivoSelecionado.ContentType);

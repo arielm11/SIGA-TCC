@@ -11,8 +11,8 @@ public class AppDbContext : DbContext
 
     public DbSet<Usuario> Usuarios { get; set; }
     public DbSet<Tcc> Tccs { get; set; }
-
     public DbSet<Entrega> Entregas { get; set; }
+    public DbSet<Acompanhamento> Acompanhamentos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

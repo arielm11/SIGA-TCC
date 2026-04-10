@@ -29,4 +29,5 @@ public class Tcc
     public Usuario? Orientador { get; set; }
 
     public ICollection<Entrega> Entregas { get; set; } = new List<Entrega>();
+    public ICollection<Acompanhamento> Acompanhamentos { get; set; } = new List<Acompanhamento>();
 }
