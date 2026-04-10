@@ -199,11 +199,41 @@ public class TccController : ControllerBase
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
         if (tcc == null)
             return NotFound("TCC não encontrado.");
+
         var acompanhamentos = await _context.Acompanhamentos
             .Where(a => a.TccId == tcc.Id)
             .OrderByDescending(a => a.DataReuniao)
             .ToListAsync();
 
         return Ok(acompanhamentos);
+    }
+
+    [HttpGet("minha-banca")]
+    [Authorize(Roles = "Aluno")]
+    public async Task<IActionResult> GetMinhaBanca() 
+        var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        if (tcc == null)
+            return NotFound("TCC não encontrado.");
+
+        var banca = await _context.Banca
+            .Include(b => b.Avaliadores)
+                .ThenInclude(a => a.Professor)
+            .FirstOrDefaultAsync(b => b.TccId == tcc.Id);
+
+        if (banca == null)
+            return NoContent();
+
+        var resultado = new
+        {
+            DataHora = banca.DataHora,
+            Local = banca.Local,
+            Professores = banca.Avaliadores.Select(a => a.Professor?.Nome).ToList()
+        };
+
+        return Ok(resultado);
     }
 }

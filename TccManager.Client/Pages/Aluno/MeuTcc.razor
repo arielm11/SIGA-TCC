@@ -70,6 +70,11 @@
                                 <i class="bi bi-calendar-event me-2"></i> Reuniões (Atas)
                             </button>
                         </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "banca" ? "active fw-bold text-primary" : "")" @onclick="@(() => abaAtiva = "banca")">
+                                <i class="bi bi-people-fill me-2"></i> Minha Banca
+                            </button>
+                        </li>
                     </ul>
 
                     @if (abaAtiva == "entregas")
@@ -219,6 +224,59 @@
                             </div>
                         }
                     }
+                    @if (abaAtiva == "banca")
+                    {
+                        @if (!carregouBanca)
+                        {
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+                                <span class="ms-2">Buscando informações...</span>
+                            </div>
+                        }
+                        else if (minhaBanca == null)
+                        {
+                            <div class="alert alert-warning shadow-sm border-warning">
+                                <h5><i class="bi bi-exclamation-triangle-fill me-2"></i> Banca ainda não agendada</h5>
+                                <p class="mb-0 mt-2 text-dark">O Coordenador do curso ainda não definiu a data e os membros da sua banca. Continue focado no seu trabalho e fique atento às atualizações!</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="card border-0 shadow-sm bg-light">
+                                <div class="card-body p-4">
+                                    <h4 class="text-primary mb-4"><i class="bi bi-calendar-check me-2"></i> Detalhes da Defesa</h4>
+                                    
+                                    <div class="row mb-4">
+                                        <div class="col-md-6 mb-3 mb-md-0">
+                                            <h6 class="text-muted fw-bold mb-1"><i class="bi bi-clock me-2"></i> Data e Hora</h6>
+                                            <p class="fs-5 mb-0 text-dark">@minhaBanca.DataHora.ToLocalTime().ToString("dd/MM/yyyy 'às' HH:mm")</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="text-muted fw-bold mb-1"><i class="bi bi-geo-alt me-2"></i> Local / Link</h6>
+                                            <p class="fs-5 mb-0 text-dark">@minhaBanca.Local</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <h6 class="text-muted fw-bold mb-3"><i class="bi bi-person-video3 me-2"></i> Professores Avaliadores</h6>
+                                    @if (minhaBanca.Professores.Any())
+                                    {
+                                        <ul class="list-group">
+                                            @foreach (var prof in minhaBanca.Professores)
+                                            {
+                                                <li class="list-group-item bg-white border">
+                                                    <i class="bi bi-person-badge text-secondary me-2"></i> @prof
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-muted fst-italic">Membros da banca ainda não foram definidos.</p>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
                 }
             </div>
         </div>
@@ -278,6 +336,8 @@
     private int? entregaSelecionadaParaFeedback;
     private string abaAtiva = "entregas";
     private List<Acompanhamento>? meusAcompanhamentos;
+    private BancaInfoDto? minhaBanca;
+    private bool carregouBanca = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -320,6 +380,8 @@
         entregasFeitas = await Http.GetFromJsonAsync<List<Entrega>>("api/tcc/entregas");
 
         meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
+
+        await CarregarBanca();
     }
 
     private void CarregarArquivo(InputFileChangeEventArgs e)
@@ -440,4 +502,36 @@
             entregaSelecionadaParaFeedback = entregaId; // Abre o feedback selecionado
         }
     }
+
+    private async Task CarregarBanca()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/tcc/minha-banca");
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                minhaBanca = null;
+            }
+            else if (response.IsSuccessStatusCode)
+            {
+                minhaBanca = await response.Content.ReadFromJsonAsync<BancaInfoDto>();
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar informações da banca.");
+        }
+        finally
+        {
+            carregouBanca = true;
+        }
+    }
+
+    private class BancaInfoDto
+    {
+        public DateTime DataHora { get; set; }
+        public string Local { get; set; } = "";
+        public List<string> Professores { get; set; } = new();
+    }
+
 }
