@@ -211,6 +211,7 @@ public class TccController : ControllerBase
     [HttpGet("minha-banca")]
     [Authorize(Roles = "Aluno")]
     public async Task<IActionResult> GetMinhaBanca() 
+    { 
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
             return Unauthorized();
