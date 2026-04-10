@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TccManager.Api.Data;
 
@@ -11,9 +12,11 @@ using TccManager.Api.Data;
 namespace TccManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260410003645_FixTabelaAcompanhamento")]
+    partial class FixTabelaAcompanhamento
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -45,54 +48,6 @@ namespace TccManager.Api.Migrations
                     b.HasIndex("TccId");
 
                     b.ToTable("Acompanhamentos");
-                });
-
-            modelBuilder.Entity("TccManager.Shared.Models.Banca", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("DataHora")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Local")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("TccId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TccId");
-
-                    b.ToTable("Banca");
-                });
-
-            modelBuilder.Entity("TccManager.Shared.Models.BancaAvaliador", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BancaId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ProfessorId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BancaId");
-
-                    b.HasIndex("ProfessorId");
-
-                    b.ToTable("BancaAvaliadores");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Entrega", b =>
@@ -215,36 +170,6 @@ namespace TccManager.Api.Migrations
                     b.Navigation("Tcc");
                 });
 
-            modelBuilder.Entity("TccManager.Shared.Models.Banca", b =>
-                {
-                    b.HasOne("TccManager.Shared.Models.Tcc", "Tcc")
-                        .WithMany()
-                        .HasForeignKey("TccId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Tcc");
-                });
-
-            modelBuilder.Entity("TccManager.Shared.Models.BancaAvaliador", b =>
-                {
-                    b.HasOne("TccManager.Shared.Models.Banca", "Banca")
-                        .WithMany("Avaliadores")
-                        .HasForeignKey("BancaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TccManager.Shared.Models.Usuario", "Professor")
-                        .WithMany()
-                        .HasForeignKey("ProfessorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Banca");
-
-                    b.Navigation("Professor");
-                });
-
             modelBuilder.Entity("TccManager.Shared.Models.Entrega", b =>
                 {
                     b.HasOne("TccManager.Shared.Models.Tcc", "Tcc")
@@ -271,11 +196,6 @@ namespace TccManager.Api.Migrations
                     b.Navigation("Aluno");
 
                     b.Navigation("Orientador");
-                });
-
-            modelBuilder.Entity("TccManager.Shared.Models.Banca", b =>
-                {
-                    b.Navigation("Avaliadores");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Tcc", b =>

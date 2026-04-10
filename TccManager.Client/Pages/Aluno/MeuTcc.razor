@@ -1,0 +1,537 @@
+﻿@page "/meu-tcc"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Models
+@using TccManager.Shared.Enums
+@using Microsoft.AspNetCore.Components.Forms
+@attribute [Authorize(Roles = "Aluno")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4" style="max-width: 800px;">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3><i class="bi bi-book me-2"></i> Meu TCC</h3>
+        
+        @if (tccExistente != null && tccExistente.Status == StatusTcc.Pendente)
+        {
+            <button class="btn btn-outline-danger" @onclick="ExcluirProposta">
+                <i class="bi bi-trash"></i> Excluir Proposta
+            </button>
+        }
+    </div>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Verificando situação...</p>
+        </div>
+    }
+    else if (tccExistente != null)
+    {
+        <div class="card shadow-sm border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Situação da Proposta</h5>
+                <span class="badge bg-light text-dark">@tccExistente.Status.ToString()</span>
+            </div>
+            <div class="card-body p-4">
+                <h4 class="card-title text-primary">@tccExistente.Titulo</h4>
+                <p class="text-muted small">Enviado em: @tccExistente.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+                
+                <h6 class="mt-4 fw-bold">Resumo / Objetivo:</h6>
+                <p class="card-text" style="white-space: pre-line;">@tccExistente.Resumo</p>
+
+                <hr class="my-4" />
+                
+                @if (tccExistente.Status == StatusTcc.Pendente)
+                {
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-hourglass-split me-2"></i>
+                        Sua proposta está sendo analisada. Se precisar alterar algo, exclua a proposta acima e envie uma nova.
+                    </div>
+                }
+                else if (tccExistente.Status == StatusTcc.Aprovado)
+                {
+                    <div class="alert alert-success mb-4">
+                        <i class="bi bi-check-circle me-2"></i>
+                        Sua proposta foi aprovada e seu TCC está em andamento!
+                    </div>
+
+                    <ul class="nav nav-tabs mb-4">
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "entregas" ? "active fw-bold" : "")"
+                                    @onclick="@(() => abaAtiva = "entregas")">
+                                <i class="bi bi-cloud-upload me-2"></i> Entregas & Arquivos
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "acompanhamentos" ? "active fw-bold" : "")"
+                                    @onclick="@(() => abaAtiva = "acompanhamentos")">
+                                <i class="bi bi-calendar-event me-2"></i> Reuniões (Atas)
+                            </button>
+                        </li>
+                        <li class="nav-item">
+                            <button class="nav-link @(abaAtiva == "banca" ? "active fw-bold text-primary" : "")" @onclick="@(() => abaAtiva = "banca")">
+                                <i class="bi bi-people-fill me-2"></i> Minha Banca
+                            </button>
+                        </li>
+                    </ul>
+
+                    @if (abaAtiva == "entregas")
+                    {
+                        @if (entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final))
+                        {
+                            <div class="alert alert-info border-info mb-4 shadow-sm">
+                                <h5><i class="bi bi-trophy-fill text-warning me-2"></i> Trabalho Concluído!</h5>
+                                <p class="mb-0">Você já enviou a Versão Final do seu TCC. Agora é só aguardar as avaliações finais e a Banca.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <h5 class="fw-bold mt-4"><i class="bi bi-cloud-upload me-2"></i> Nova Entrega</h5>
+                            <div class="card bg-light border-0 mb-4">
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label">Título da Entrega</label>
+                                            <InputText class="form-control" @bind-Value="novaEntregaTitulo" placeholder="Ex: Capítulos 1 e 2" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label">Tipo de Entrega</label>
+                                            <InputSelect class="form-select" @bind-Value="novaEntregaTipo">
+                                                <option value="@TipoEntrega.Parcial">Parcial</option>
+                                                <option value="@TipoEntrega.Final">Versão Final</option>
+                                            </InputSelect>
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Arquivo (.pdf, .doc, .zip)</label>
+                                            <InputFile class="form-control" OnChange="CarregarArquivo" />
+                                        </div>
+                                        <div class="col-12 text-end">
+                                            <button class="btn btn-primary" @onclick="FazerUploadEntrega" disabled="@(arquivoSelecionado == null || enviando)">
+                                                @if (enviando)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                }
+                                                else
+                                                {
+
+                                                    <span><i class="bi bi-upload me-2"></i> Enviar Arquivo</span>
+                                                }
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        <h5 class="fw-bold"><i class="bi bi-list-check me-2"></i> Histórico de Entregas</h5>
+                        @if (entregasFeitas == null)
+                        {
+                            <p class="text-muted">Carregando histórico...</p>
+                        }
+                        else if (!entregasFeitas.Any())
+                        {
+                            <p class="text-muted">Nenhuma entrega realizada ainda.</p>
+                        }
+                        else
+                        {
+                            <ul class="list-group mb-4">
+                                @foreach (var entrega in entregasFeitas)
+                                {
+                                    <li class="list-group-item flex-column align-items-start">
+                                        <div class="d-flex w-100 justify-content-between align-items-center">
+                                            <div>
+                                                <strong>@entrega.Titulo</strong>
+                                                <span class="badge bg-secondary ms-2">@entrega.Tipo</span><br />
+                                                <small class="text-muted">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                                            </div>
+                                            @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
+                                            {
+                                                <button class="btn btn-sm btn-outline-info" @onclick="() => AlternarFeedback(entrega.Id)">
+                                                    <i class="bi bi-chat-left-text me-1"></i>
+                                                    @(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-light text-muted border"><i class="bi bi-clock me-1"></i> Aguardando Avaliação</span>
+                                            }
+                                        </div>
+
+                                        @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                        {
+                                            <div class="mt-3 p-3 bg-light rounded border-start border-4 border-info shadow-sm animate__animated animate__fadeIn">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <h6 class="text-info fw-bold mb-0">
+                                                        <i class="bi bi-person-workspace me-2"></i>Parecer do Orientador
+                                                    </h6>
+                                                    @if (entrega.Nota.HasValue)
+                                                    {
+                                                        <div class="bg-success text-white px-2 py-1 rounded small fw-bold">
+                                                            Nota: @entrega.Nota
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <p class="mb-0 mt-2" style="white-space: pre-line; color: #495057;">
+                                                    @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
+                                                </p>
+                                            </div>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    }
+
+                    @if (abaAtiva == "acompanhamentos")
+                    {
+                        <h5 class="fw-bold"><i class="bi bi-journal-text me-2"></i> Atas de Reunião</h5>
+                        <p class="text-muted mb-4">Abaixo estão os registros das suas reuniões de orientação feitas pelo seu professor.</p>
+
+                        @if (meusAcompanhamentos == null)
+                        {
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+                                <span class="ms-2">Carregando atas...</span>
+                            </div>
+                        }
+                        else if (!meusAcompanhamentos.Any())
+                        {
+                            <div class="alert alert-secondary">
+                                Nenhuma reunião foi registrada pelo seu orientador até o momento.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="accordion" id="accordionAcompanhamentos">
+                                @foreach (var ata in meusAcompanhamentos)
+                                {
+                                    <div class="accordion-item mb-2 border rounded shadow-sm">
+                                        <h2 class="accordion-header" id="heading_@ata.Id">
+                                            <button class="accordion-button collapsed bg-light text-dark fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_@ata.Id">
+                                                <i class="bi bi-calendar2-check text-primary me-2"></i>
+                                                Reunião do dia @ata.DataReuniao.ToLocalTime().ToString("dd/MM/yyyy")
+                                            </button>
+                                        </h2>
+                                        <div id="collapse_@ata.Id" class="accordion-collapse collapse" data-bs-parent="#accordionAcompanhamentos">
+                                            <div class="accordion-body" style="white-space: pre-line;">
+                                                @ata.Ata
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    @if (abaAtiva == "banca")
+                    {
+                        @if (!carregouBanca)
+                        {
+                            <div class="text-center py-3">
+                                <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+                                <span class="ms-2">Buscando informações...</span>
+                            </div>
+                        }
+                        else if (minhaBanca == null)
+                        {
+                            <div class="alert alert-warning shadow-sm border-warning">
+                                <h5><i class="bi bi-exclamation-triangle-fill me-2"></i> Banca ainda não agendada</h5>
+                                <p class="mb-0 mt-2 text-dark">O Coordenador do curso ainda não definiu a data e os membros da sua banca. Continue focado no seu trabalho e fique atento às atualizações!</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="card border-0 shadow-sm bg-light">
+                                <div class="card-body p-4">
+                                    <h4 class="text-primary mb-4"><i class="bi bi-calendar-check me-2"></i> Detalhes da Defesa</h4>
+                                    
+                                    <div class="row mb-4">
+                                        <div class="col-md-6 mb-3 mb-md-0">
+                                            <h6 class="text-muted fw-bold mb-1"><i class="bi bi-clock me-2"></i> Data e Hora</h6>
+                                            <p class="fs-5 mb-0 text-dark">@minhaBanca.DataHora.ToLocalTime().ToString("dd/MM/yyyy 'às' HH:mm")</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6 class="text-muted fw-bold mb-1"><i class="bi bi-geo-alt me-2"></i> Local / Link</h6>
+                                            <p class="fs-5 mb-0 text-dark">@minhaBanca.Local</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <h6 class="text-muted fw-bold mb-3"><i class="bi bi-person-video3 me-2"></i> Professores Avaliadores</h6>
+                                    @if (minhaBanca.Professores.Any())
+                                    {
+                                        <ul class="list-group">
+                                            @foreach (var prof in minhaBanca.Professores)
+                                            {
+                                                <li class="list-group-item bg-white border">
+                                                    <i class="bi bi-person-badge text-secondary me-2"></i> @prof
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-muted fst-italic">Membros da banca ainda não foram definidos.</p>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="alert alert-info mb-4">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Para iniciar, submeta os dados da sua proposta de TCC.
+                </div>
+
+                <EditForm Model="proposta" OnValidSubmit="EnviarProposta">
+                    <DataAnnotationsValidator />
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Título do Trabalho</label>
+                        <InputText class="form-control" @bind-Value="proposta.Titulo" placeholder="Digite o título..." />
+                        <ValidationMessage For="@(() => proposta.Titulo)" class="text-danger" />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Resumo / Objetivo</label>
+                        <InputTextArea class="form-control" @bind-Value="proposta.Resumo" rows="6" placeholder="Descreva seu projeto..." />
+                        <ValidationMessage For="@(() => proposta.Resumo)" class="text-danger" />
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-success px-4" disabled="@enviando">
+                            @if (enviando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                <span>Enviando...</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-send me-2"></i> Submeter Proposta</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool carregando = true;
+    private bool enviando = false;
+    private Tcc? tccExistente;
+    private PropostaTccDto proposta = new();
+    private string novaEntregaTitulo = "";
+    private TipoEntrega novaEntregaTipo = TipoEntrega.Parcial;
+    private IBrowserFile? arquivoSelecionado;
+    private List<Entrega>? entregasFeitas;
+    private int? entregaSelecionadaParaFeedback;
+    private string abaAtiva = "entregas";
+    private List<Acompanhamento>? meusAcompanhamentos;
+    private BancaInfoDto? minhaBanca;
+    private bool carregouBanca = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarDadosDoTcc();
+    }
+
+    private async Task CarregarDadosDoTcc()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/tcc/meu-tcc");
+            if (response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                {
+                    tccExistente = null;
+                }
+                else
+                {
+                    tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
+                    if (tccExistente != null && tccExistente.Status == StatusTcc.Aprovado)
+                    {
+                        await CarregarEntregas();
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão com o servidor.");
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task CarregarEntregas()
+    {
+        entregasFeitas = await Http.GetFromJsonAsync<List<Entrega>>("api/tcc/entregas");
+
+        meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
+
+        await CarregarBanca();
+    }
+
+    private void CarregarArquivo(InputFileChangeEventArgs e)
+    {
+        arquivoSelecionado = e.File;
+    }
+
+    private async Task FazerUploadEntrega()
+    {
+        if (arquivoSelecionado == null || string.IsNullOrWhiteSpace(novaEntregaTitulo))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Preencha o título e selecione um arquivo.");
+            return;
+        }
+
+        enviando = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            content.Add(new StringContent(novaEntregaTitulo), "tituloEntrega");
+            content.Add(new StringContent(novaEntregaTipo.ToString()), "tipo");
+
+            // max size: 10MB
+            var streamContent = new StreamContent(arquivoSelecionado.OpenReadStream(1024 * 1024 * 10));
+            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(arquivoSelecionado.ContentType);
+            content.Add(streamContent, "arquivo", arquivoSelecionado.Name);
+
+            var response = await Http.PostAsync("api/tcc/entregas", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Entrega enviada com sucesso!");
+                novaEntregaTitulo = "";
+                arquivoSelecionado = null;
+                await CarregarEntregas(); // Atualiza a lista na tela
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao enviar: {erro}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Ocorreu um erro ao enviar o arquivo. Verifique o tamanho.");
+        }
+        finally
+        {
+            enviando = false;
+        }
+    }
+
+    private async Task EnviarProposta()
+    {
+        enviando = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync("api/tcc/proposta", proposta);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Proposta enviada com sucesso!");
+                proposta = new PropostaTccDto();
+                await CarregarDadosDoTcc();
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao enviar: {erro}");
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao enviar a proposta.");
+        }
+        finally
+        {
+            enviando = false;
+        }
+    }
+
+    private async Task ExcluirProposta()
+    {
+        bool confirmado = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja cancelar e excluir esta proposta? Você terá que enviar uma nova depois.");
+
+        if (confirmado && tccExistente != null)
+        {
+            try
+            {
+                var response = await Http.DeleteAsync($"api/tcc/proposta/{tccExistente.Id}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Proposta excluída com sucesso.");
+                    tccExistente = null;
+                }
+                else
+                {
+                    var erro = await response.Content.ReadAsStringAsync();
+                    await JSRuntime.InvokeVoidAsync("alert", $"Erro ao excluir: {erro}");
+                }
+            }
+            catch (Exception)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão com o servidor.");
+            }
+        }
+    }
+
+    private void AlternarFeedback(int entregaId)
+    {
+        if (entregaSelecionadaParaFeedback == entregaId)
+        {
+            entregaSelecionadaParaFeedback = null; // Fecha o feedback
+        }
+        else
+        {
+            entregaSelecionadaParaFeedback = entregaId; // Abre o feedback selecionado
+        }
+    }
+
+    private async Task CarregarBanca()
+    {
+        try
+        {
+            var response = await Http.GetAsync("api/tcc/minha-banca");
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                minhaBanca = null;
+            }
+            else if (response.IsSuccessStatusCode)
+            {
+                minhaBanca = await response.Content.ReadFromJsonAsync<BancaInfoDto>();
+            }
+        }
+        catch (Exception)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar informações da banca.");
+        }
+        finally
+        {
+            carregouBanca = true;
+        }
+    }
+
+    private class BancaInfoDto
+    {
+        public DateTime DataHora { get; set; }
+        public string Local { get; set; } = "";
+        public List<string> Professores { get; set; } = new();
+    }
+
+}

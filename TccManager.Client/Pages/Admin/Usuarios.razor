@@ -98,7 +98,6 @@
     {
         try
         {
-            // Vai buscar o token e limpa eventuais aspas duplas
             var token = await LocalStorage.GetItemAsStringAsync("authToken");
             if (!string.IsNullOrWhiteSpace(token))
             {
@@ -121,7 +120,7 @@
             TipoUsuario.Admin => "bg-danger",
             TipoUsuario.Coordenador => "bg-warning text-dark",
             TipoUsuario.Professor => "bg-info text-dark",
-            _ => "bg-secondary" // Aluno
+            _ => "bg-secondary"
         };
     }
 

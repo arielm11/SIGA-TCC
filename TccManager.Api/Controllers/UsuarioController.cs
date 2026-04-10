@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
+using TccManager.Shared.Enums;
+
+namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -38,7 +41,6 @@ public class UsuarioController : ControllerBase
     [HttpGet("me")]
     public async Task<IActionResult> GetMeuPerfil()
     {
-        // Descobrimos quem está a fazer o pedido olhando para o Token
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
                    ?? User.FindFirst("nameid")?.Value;
 
@@ -50,7 +52,6 @@ public class UsuarioController : ControllerBase
         if (usuario == null)
             return NotFound("Usuário não encontrado.");
 
-        // Retornamos os dados limpos sem a senha
         var usuarioDto = new UsuarioDto
         {
             Id = usuario.Id,
@@ -141,5 +142,24 @@ public class UsuarioController : ControllerBase
         await _context.SaveChangesAsync();
         
         return Ok("Usuário deletado com sucesso");
+    }
+
+    [HttpGet("professores")]
+    [Authorize]
+    public async Task<IActionResult> GetProfessores()
+    {
+        var professores = await _context.Usuarios
+            .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
+            .Select(u => new UsuarioDto
+            {
+                Id = u.Id,
+                Nome = u.Nome,
+                Email = u.Email,
+                Tipo = u.Tipo,
+                Ativo = u.Ativo
+            })
+            .ToListAsync();
+
+        return Ok(professores);
     }
 }
