@@ -40,6 +40,16 @@
                 </li>
             </Authorized>
         </AuthorizeView>
+
+        <AuthorizeView Roles="Professor">
+            <Authorized>
+                <li>
+                    <NavLink class="nav-link text-white" href="/professor/dashboard">
+                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                    </NavLink>
+                </li>
+            </Authorized>
+        </AuthorizeView>
     </ul>
 
     <hr>

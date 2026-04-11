@@ -16,6 +16,8 @@ public class Tcc
     public string Resumo { get; set; } = string.Empty;
 
     public string? ArquivoCaminho { get; set; }
+    
+    public string? MotivoRejeicao { get; set; }
 
     public DateTime DataCriacao { get; set; } = DateTime.UtcNow;
     public StatusTcc Status { get; set; } = StatusTcc.Pendente;

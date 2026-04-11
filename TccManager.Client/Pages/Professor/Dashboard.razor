@@ -1,0 +1,154 @@
+﻿@page "/professor/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Enums
+@attribute [Authorize(Roles = "Professor")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-speedometer2 me-2"></i> Dashboard do Orientador</h2>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>Carregando seu painel...</p>
+        </div>
+    }
+    else if (dashboard != null)
+    {
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-warning h-100">
+                    <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-inbox-fill me-2"></i> Propostas Pendentes</span>
+                        <span class="badge bg-dark rounded-pill">@dashboard.PropostasPendentes.Count</span>
+                    </div>
+                    <div class="card-body bg-light">
+                        @if (!dashboard.PropostasPendentes.Any())
+                        {
+                            <p class="text-muted text-center mt-3">Não há propostas aguardando aprovação.</p>
+                        }
+                        else
+                        {
+                            <div class="accordion" id="accordionPendentes">
+                                @foreach (var tcc in dashboard.PropostasPendentes)
+                                {
+                                    <div class="accordion-item mb-2 border">
+                                        <h2 class="accordion-header" id="heading_@tcc.Id">
+                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_@tcc.Id">
+                                                <strong>@tcc.NomeAluno</strong> <span class="ms-2 text-muted truncate-text">- @tcc.Titulo</span>
+                                            </button>
+                                        </h2>
+                                        <div id="collapse_@tcc.Id" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">
+                                            <div class="accordion-body">
+                                                <h6 class="fw-bold">Resumo:</h6>
+                                                <p class="small text-muted" style="white-space: pre-line;">@tcc.Resumo</p>
+                                                
+                                                <div class="d-flex justify-content-end gap-2 mt-3">
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => AbrirModalRejeicao(tcc.Id)">
+                                                        <i class="bi bi-x-circle me-1"></i> Rejeitar
+                                                    </button>
+                                                    <button class="btn btn-sm btn-success" @onclick="() => AprovarProposta(tcc.Id)">
+                                                        <i class="bi bi-check-circle me-1"></i> Aprovar e Orientar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-4">
+                <div class="card shadow-sm border-primary h-100">
+                    <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-people-fill me-2"></i> Meus Orientandos</span>
+                        <span class="badge bg-light text-primary rounded-pill">@dashboard.OrientandosAtivos.Count</span>
+                    </div>
+                    <div class="card-body">
+                        @if (!dashboard.OrientandosAtivos.Any())
+                        {
+                            <p class="text-muted text-center mt-3">Você ainda não possui orientandos ativos.</p>
+                        }
+                        else
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var tcc in dashboard.OrientandosAtivos)
+                                {
+                                    <li class="list-group-item px-0 py-3 border-bottom">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-0 fw-bold text-primary">@tcc.NomeAluno</h6>
+                                                <small class="text-muted">@tcc.Titulo</small>
+                                            </div>
+                                            <button class="btn btn-outline-primary btn-sm">
+                                                Acessar TCC <i class="bi bi-arrow-right ms-1"></i>
+                                            </button>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool carregando = true;
+    private DashboardOrientadorDto? dashboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarDashboard();
+    }
+
+    private async Task CarregarDashboard()
+    {
+        carregando = true;
+        try
+        {
+            dashboard = await Http.GetFromJsonAsync<DashboardOrientadorDto>("api/orientador/dashboard");
+        }
+        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar o dashboard."); }
+        finally { carregando = false; }
+    }
+
+    // RF011: Aprovar Proposta
+    private async Task AprovarProposta(int tccId)
+    {
+        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja aprovar esta proposta e tornar-se o orientador deste aluno?");
+        if (!confirm) return;
+
+        var response = await Http.PostAsync($"api/orientador/propostas/{tccId}/aprovar", null);
+        if (response.IsSuccessStatusCode)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Proposta Aprovada! O aluno agora é seu orientando.");
+            await CarregarDashboard(); // Atualiza as listas
+        }
+    }
+
+    // RF011: Rejeitar Proposta
+    private async Task AbrirModalRejeicao(int tccId)
+    {
+        string? motivo = await JSRuntime.InvokeAsync<string>("prompt", "Digite o motivo da rejeição:");
+        
+        if (string.IsNullOrWhiteSpace(motivo)) return; // Cancela se deixou em branco
+
+        var payload = new RejeicaoDto { Motivo = motivo };
+        var response = await Http.PostAsJsonAsync($"api/orientador/propostas/{tccId}/rejeitar", payload);
+        
+        if (response.IsSuccessStatusCode)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Proposta rejeitada com sucesso.");
+            await CarregarDashboard(); // Atualiza as listas
+        }
+    }
+}
