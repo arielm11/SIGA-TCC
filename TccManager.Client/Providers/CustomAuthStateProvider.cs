@@ -18,16 +18,32 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
+        var anonymousState = new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+
         var token = await _localStorage.GetItemAsStringAsync("authToken");
 
         if (string.IsNullOrWhiteSpace(token))
-            return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+            return anonymousState;
 
         token = token.Replace("\"", "");
 
+        var claims = ParseClaimsFromJwt(token);
+
+        var expClaim = claims.FirstOrDefault(c => c.Type == "exp");
+        if (expClaim != null && long.TryParse(expClaim.Value, out long expTime))
+        {
+            var dataExpiracao = DateTimeOffset.FromUnixTimeSeconds(expTime).UtcDateTime;
+
+            if (dataExpiracao <= DateTime.UtcNow)
+            {
+                await _localStorage.RemoveItemAsync("authToken");
+                _http.DefaultRequestHeaders.Authorization = null;
+                return anonymousState;
+            }
+        }
+
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        var claims = ParseClaimsFromJwt(token);
         var identity = new ClaimsIdentity(claims, "jwt"); 
         var usuario = new ClaimsPrincipal(identity);
 
