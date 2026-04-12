@@ -4,6 +4,7 @@
 @using TccManager.Shared.Enums
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
+@inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 
 <div class="container mt-4">
@@ -86,7 +87,7 @@
                                                 <h6 class="mb-0 fw-bold text-primary">@tcc.NomeAluno</h6>
                                                 <small class="text-muted">@tcc.Titulo</small>
                                             </div>
-                                            <button class="btn btn-outline-primary btn-sm">
+                                            <button class="btn btn-outline-primary btn-sm" @onclick="@(() => Navigation.NavigateTo($"/professor/tcc/{tcc.Id}"))">
                                                 Acessar TCC <i class="bi bi-arrow-right ms-1"></i>
                                             </button>
                                         </div>

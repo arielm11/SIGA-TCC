@@ -1,0 +1,183 @@
+﻿@page "/professor/tcc/{TccId:int}"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.Models
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Enums
+@attribute [Authorize(Roles = "Professor")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+<div class="container mt-4">
+    <button class="btn btn-outline-secondary mb-3" @onclick='() => Navigation.NavigateTo("/professor/dashboard")'>
+        <i class="bi bi-arrow-left"></i> Voltar ao Dashboard
+    </button>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>Carregando dados do orientando...</p>
+        </div>
+    }
+    else if (tcc != null)
+    {
+        <div class="card shadow-sm mb-4 border-primary">
+            <div class="card-body">
+                <h3 class="text-primary fw-bold">@tcc.Titulo</h3>
+                <h5 class="text-muted"><i class="bi bi-person-fill me-2"></i>Aluno: @tcc.Aluno?.Nome</h5>
+                <hr />
+                <p><strong>Resumo:</strong> @tcc.Resumo</p>
+                <span class="badge bg-info text-dark">Status: @tcc.Status</span>
+            </div>
+        </div>
+
+        <h4 class="mb-3"><i class="bi bi-folder2-open me-2"></i> Entregas do Aluno</h4>
+
+        @if (!tcc.Entregas.Any())
+        {
+            <div class="alert alert-secondary">Este aluno ainda não enviou nenhum arquivo.</div>
+        }
+        else
+        {
+            <div class="row">
+                @foreach (var entrega in tcc.Entregas)
+                {
+                    <div class="col-12 mb-3">
+                        <div class="card shadow-sm">
+                            <div class="card-body d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-1">@entrega.Titulo <span class="badge bg-secondary ms-2">@entrega.Tipo</span></h5>
+                                    <p class="text-muted small mb-0">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+                                    
+                                    @if (!string.IsNullOrEmpty(entrega.Feedback))
+                                    {
+                                        <div class="mt-2 text-success fw-bold">
+                                            <i class="bi bi-check-all me-1"></i> Avaliado (Nota: @(entrega.Nota?.ToString() ?? "N/A"))
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="mt-2 text-warning fw-bold">
+                                            <i class="bi bi-clock-history me-1"></i> Aguardando Avaliação
+                                        </div>
+                                    }
+                                </div>
+                                <div class="text-end">
+                                    <a href="@($"{Http.BaseAddress?.ToString().TrimEnd('/')}{entrega.ArquivoCaminho}")" target="_blank" class="btn btn-outline-primary me-2">
+                                        <i class="bi bi-download"></i> Baixar Arquivo
+                                    </a>
+                                    
+                                    <button class="btn btn-success" @onclick="() => AbrirModalFeedback(entrega)">
+                                        <i class="bi bi-chat-square-text"></i> @(string.IsNullOrEmpty(entrega.Feedback) ? "Avaliar" : "Editar Avaliação")
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (entregaEmAvaliacao == entrega.Id)
+                            {
+                                <div class="card-footer bg-light border-top p-3 animate__animated animate__fadeIn">
+                                    <EditForm Model="feedbackAtual" OnValidSubmit="() => SalvarFeedback(entrega.Id)">
+                                        <DataAnnotationsValidator />
+                                        
+                                        <div class="row">
+                                            <div class="col-md-3 mb-3">
+                                                <label class="form-label fw-bold">Nota (Opcional)</label>
+                                                <InputNumber class="form-control" @bind-Value="feedbackAtual.Nota" placeholder="Ex: 9.5" />
+                                            </div>
+                                            <div class="col-md-9 mb-3">
+                                                <label class="form-label fw-bold">Comentários / Parecer</label>
+                                                <InputTextArea class="form-control" @bind-Value="feedbackAtual.Feedback" rows="3" placeholder="Escreva aqui o que o aluno precisa corrigir..." />
+                                                <ValidationMessage For="@(() => feedbackAtual.Feedback)" class="text-danger" />
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button type="button" class="btn btn-secondary" @onclick="FecharModalFeedback">Cancelar</button>
+                                            <button type="submit" class="btn btn-success" disabled="@salvando">
+                                                @if (salvando)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm"></span>
+                                                }
+                                                else
+                                                {
+
+                                                    <span>Salvar Feedback</span>
+                                                }
+                                            </button>
+                                        </div>
+                                    </EditForm>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int TccId { get; set; }
+
+    private bool carregando = true;
+    private bool salvando = false;
+    private Tcc? tcc;
+    
+    private int? entregaEmAvaliacao;
+    private FeedbackDto feedbackAtual = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarTcc();
+    }
+
+    private async Task CarregarTcc()
+    {
+        carregando = true;
+        try
+        {
+            tcc = await Http.GetFromJsonAsync<Tcc>($"api/orientador/tcc/{TccId}");
+        }
+        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar os dados."); }
+        finally { carregando = false; }
+    }
+
+    private void AbrirModalFeedback(Entrega entrega)
+    {
+        entregaEmAvaliacao = entrega.Id;
+        // Preenche com o que já existe (se for uma edição)
+        feedbackAtual = new FeedbackDto
+        {
+            Feedback = entrega.Feedback ?? "",
+            Nota = entrega.Nota
+        };
+    }
+
+    private void FecharModalFeedback()
+    {
+        entregaEmAvaliacao = null;
+        feedbackAtual = new();
+    }
+
+    private async Task SalvarFeedback(int idEntrega)
+    {
+        salvando = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"api/orientador/entregas/{idEntrega}/feedback", feedbackAtual);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Avaliação salva com sucesso!");
+                FecharModalFeedback();
+                await CarregarTcc(); // Recarrega para atualizar a tela
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Erro ao salvar a avaliação.");
+            }
+        }
+        finally { salvando = false; }
+    }
+}

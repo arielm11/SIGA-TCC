@@ -97,4 +97,42 @@ public class OrientadorController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok("Proposta rejeitada.");
     }
+
+    [HttpGet("tcc/{idTcc}")]
+    public async Task<IActionResult> GetDetalhesTcc(int idTcc)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+        
+        var tcc = await _context.Tccs
+            .Include(t => t.Aluno)
+            .Include(t => t.Entregas.OrderByDescending(e => e.DataEnvio))
+            .FirstOrDefaultAsync(t => t.Id == idTcc && t.OrientadorId == profId);
+        
+        if (tcc == null) return NotFound("TCC não encontrado ou você não tem permissão para acessar.");
+
+        return Ok(tcc);
+    }
+
+    [HttpPost("entregas/{IdEntrega}/feedback")]
+    public async Task<IActionResult> RegistrarFeedback(int IdEntrega, [FromBody] FeedbackDto dto)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+        
+        var entrega = await _context.Entregas
+            .Include(e => e.Tcc)
+            .FirstOrDefaultAsync(e => e.Id == IdEntrega && e.Tcc!.OrientadorId == profId);
+        
+        if (entrega == null) return NotFound("Entrega não encontrada ou você não tem permissão para acessar.");
+
+        entrega.Feedback = dto.Feedback;
+        entrega.Nota = dto.Nota;
+
+        await _context.SaveChangesAsync();
+        
+        return Ok("Feedback registrado com sucesso.");
+    }
 }

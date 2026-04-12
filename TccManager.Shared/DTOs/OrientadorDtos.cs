@@ -24,3 +24,11 @@ public class RejeicaoDto
     [Required(ErrorMessage = "O motivo da rejeição é obrigatório!")]
     public string Motivo { get; set; } = string.Empty;
 }
+
+public class FeedbackDto
+{
+    [Required(ErrorMessage = "O feedback é obrigatório!")]
+    public string Feedback { get; set; } = string.Empty;
+
+    public decimal? Nota { get; set; }
+}
