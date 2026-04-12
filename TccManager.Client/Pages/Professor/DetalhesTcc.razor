@@ -23,12 +23,42 @@
     else if (tcc != null)
     {
         <div class="card shadow-sm mb-4 border-primary">
-            <div class="card-body">
-                <h3 class="text-primary fw-bold">@tcc.Titulo</h3>
-                <h5 class="text-muted"><i class="bi bi-person-fill me-2"></i>Aluno: @tcc.Aluno?.Nome</h5>
-                <hr />
-                <p><strong>Resumo:</strong> @tcc.Resumo</p>
-                <span class="badge bg-info text-dark">Status: @tcc.Status</span>
+            <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-start">
+                <div class="mb-3 mb-md-0">
+                    <h3 class="text-primary fw-bold">@tcc.Titulo</h3>
+                    <h5 class="text-muted"><i class="bi bi-person-fill me-2"></i>Aluno: @tcc.Aluno?.Nome</h5>
+                    <hr />
+                    <p><strong>Resumo:</strong> @tcc.Resumo</p>
+                    <span class="badge bg-info text-dark">Status: @tcc.Status</span>
+                </div>
+                
+                <div class="text-md-end text-start border-start-md ps-md-4 ms-md-4">
+                    @if (tcc.Status == StatusTcc.Aprovado || tcc.Status == StatusTcc.EmAndamento)
+                    {
+                        var temEntregaFinal = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
+                        
+                        <button class="btn btn-success btn-lg shadow-sm" disabled="@(!temEntregaFinal || processandoAceite)" @onclick="DarAceiteFinal">
+                            @if (processandoAceite)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <i class="bi bi-award-fill me-2"></i> Dar Aceite Final
+                        </button>
+                        
+                        @if (!temEntregaFinal)
+                        {
+                            <p class="text-muted small mt-2 mb-0">
+                                <i class="bi bi-info-circle me-1"></i> Aguardando envio da Versão Final pelo aluno.
+                            </p>
+                        }
+                    }
+                    else if (tcc.Status == StatusTcc.AguardandoDefesa)
+                    {
+                        <div class="alert alert-success py-2 px-3 mb-0 fw-bold border-success shadow-sm">
+                            <i class="bi bi-check-circle-fill me-2"></i> Aceite Final Concedido
+                        </div>
+                    }
+                </div>
             </div>
         </div>
 
@@ -206,6 +236,8 @@
     private bool salvandoAcompanhamento = false;
     private int? acompanhamentoEmEdicaoId = null;
 
+    private bool processandoAceite = false;
+
     protected override async Task OnInitializedAsync()
     {
         await CarregarTcc();
@@ -329,5 +361,29 @@
             }
         }
         catch { await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao excluir."); }
+    }
+
+    private async Task DarAceiteFinal()
+    {
+        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja dar o Aceite Final? Isso enviará o TCC para a Coordenação agendar a Banca.");
+        if (!confirm) return;
+
+        processandoAceite = true;
+        try
+        {
+            var response = await Http.PostAsync($"api/orientador/tcc/{TccId}/aceite-final", null);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Aceite final concedido com sucesso!");
+                await CarregarTcc();
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro: {erro}");
+            }
+        }
+        finally { processandoAceite = false; }
     }
 }

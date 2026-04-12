@@ -198,4 +198,27 @@ public class OrientadorController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok("Acompanhamento deletado com sucesso.");
     }
+
+    [HttpPost("tcc/{idTcc}/aceite-final")]
+    public async Task<IActionResult> DarAceiteFinal(int idTcc)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs
+            .Include(t => t.Entregas)
+            .FirstOrDefaultAsync(t => t.Id == idTcc && t.OrientadorId == profId);
+
+        if (tcc == null) return NotFound("TCC não encontrado ou sem permissão.");
+
+        var temEntregaFinal = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
+        if (!temEntregaFinal)
+            return BadRequest("Não é possível dar o aceite final. O aluno ainda não enviou a Versão Final do trabalho (RN03).");
+
+        tcc.Status = StatusTcc.AguardandoDefesa;
+        await _context.SaveChangesAsync();
+
+        return Ok("Aceite final registrado com sucesso. O TCC agora aguarda o agendamento da Banca.");
+    }
 }

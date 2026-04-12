@@ -5,5 +5,6 @@ public enum StatusTcc
     Aprovado = 1,
     Reprovado = 2,
     EmAndamento = 3,
-    Finalizado = 4
+    AguardandoDefesa = 4,
+    Finalizado = 5
 }
