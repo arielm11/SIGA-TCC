@@ -27,7 +27,7 @@
             <p class="mt-2 text-muted">Verificando situação...</p>
         </div>
     }
-    else if (tccExistente != null)
+    else if (tccExistente != null && tccExistente.Status != StatusTcc.Reprovado)
     {
         <div class="card shadow-sm border-primary">
             <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
@@ -283,12 +283,27 @@
     }
     else
     {
+
         <div class="card shadow-sm">
             <div class="card-body p-4">
-                <div class="alert alert-info mb-4">
-                    <i class="bi bi-info-circle me-2"></i>
-                    Para iniciar, submeta os dados da sua proposta de TCC.
-                </div>
+     
+                @if (tccExistente != null && tccExistente.Status == StatusTcc.Reprovado)
+                {
+                    <div class="alert alert-danger mb-4 shadow-sm border-danger">
+                        <h5><i class="bi bi-x-octagon-fill me-2"></i> Proposta Rejeitada</h5>
+                        <p>A sua proposta anterior ("<strong>@tccExistente.Titulo</strong>") foi avaliada e rejeitada pelo orientador.</p>
+                        <hr>
+                        <p class="mb-0"><strong>Motivo apontado:</strong> @tccExistente.MotivoRejeicao</p>
+                        <p class="mt-2 small text-dark fw-bold">Por favor, ajuste o tema e submeta uma nova proposta abaixo.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info mb-4">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Para iniciar, submeta os dados da sua proposta de TCC.
+                    </div>
+                }
 
                 <EditForm Model="proposta" OnValidSubmit="EnviarProposta">
                     <DataAnnotationsValidator />

@@ -32,7 +32,8 @@ public class TccController : ControllerBase
             return Unauthorized("Sessão inválida.");
 
         var tcc = await _context.Tccs
-            .Where(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado)
+            .Where(t => t.AlunoId == alunoId)
+            .OrderByDescending(t => t.DataCriacao)
             .FirstOrDefaultAsync();
 
         if (tcc == null)
