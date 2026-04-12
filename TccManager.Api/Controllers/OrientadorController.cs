@@ -1,10 +1,11 @@
-﻿using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TccManager.Api.Data;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Models;
 
 namespace TccManager.Api.Controllers;
 
@@ -72,7 +73,7 @@ public class OrientadorController : ControllerBase
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == id && t.Status == StatusTcc.Pendente);
 
         if (tcc == null) return NotFound("Proposta não encontrada ou já avaliada.");
-        
+
         tcc.Status = StatusTcc.Aprovado;
         tcc.OrientadorId = profId;
 
@@ -81,7 +82,7 @@ public class OrientadorController : ControllerBase
     }
 
     [HttpPost("propostas/{id}/rejeitar")]
-    public async Task<IActionResult> RejeitarProposta(int id, [FromBody] RejeicaoDto dto) 
+    public async Task<IActionResult> RejeitarProposta(int id, [FromBody] RejeicaoDto dto)
     {
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
@@ -104,12 +105,13 @@ public class OrientadorController : ControllerBase
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
-        
+
         var tcc = await _context.Tccs
             .Include(t => t.Aluno)
             .Include(t => t.Entregas.OrderByDescending(e => e.DataEnvio))
+            .Include(t => t.Acompanhamentos.OrderByDescending(a => a.DataReuniao))
             .FirstOrDefaultAsync(t => t.Id == idTcc && t.OrientadorId == profId);
-        
+
         if (tcc == null) return NotFound("TCC não encontrado ou você não tem permissão para acessar.");
 
         return Ok(tcc);
@@ -121,18 +123,79 @@ public class OrientadorController : ControllerBase
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
-        
+
         var entrega = await _context.Entregas
             .Include(e => e.Tcc)
             .FirstOrDefaultAsync(e => e.Id == IdEntrega && e.Tcc!.OrientadorId == profId);
-        
+
         if (entrega == null) return NotFound("Entrega não encontrada ou você não tem permissão para acessar.");
 
         entrega.Feedback = dto.Feedback;
         entrega.Nota = dto.Nota;
 
         await _context.SaveChangesAsync();
-        
+
         return Ok("Feedback registrado com sucesso.");
+    }
+
+    [HttpPost("tcc/{idTcc}/acompanhamentos")]
+    public async Task<IActionResult> RegistrarAcompanhamento(int idTcc, [FromBody] AcompanhamentoDto dto)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == idTcc && t.OrientadorId == profId);
+        if (tcc == null) return NotFound("TCC não encontrado ou sem permissão.");
+
+        var novoAcompanhamento = new Acompanhamento
+        {
+            TccId = idTcc,
+            DataReuniao = dto.DataReuniao.ToUniversalTime(),
+            Ata = dto.Ata
+        };
+
+        _context.Acompanhamentos.Add(novoAcompanhamento);
+        await _context.SaveChangesAsync();
+
+        return Ok("Acompanhamento registrado com sucesso.");
+    }
+
+    [HttpPut("tcc/{idTcc}/acompanhamentos/{idAcompanhamento}")]
+    public async Task<IActionResult> EditarAcompanhamento(int idTcc, int idAcompanhamento, [FromBody] AcompanhamentoDto dto)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var acompanhamento = await _context.Acompanhamentos
+            .Include(a => a.Tcc)
+            .FirstOrDefaultAsync(a => a.Id == idAcompanhamento && a.Tcc!.OrientadorId == profId);
+
+        if (acompanhamento == null) return NotFound("Acompanhamento não encontrado ou sem permissão.");
+
+        acompanhamento.DataReuniao = dto.DataReuniao.ToUniversalTime();
+        acompanhamento.Ata = dto.Ata;
+
+        await _context.SaveChangesAsync();
+        return Ok("Acompanhamento atualizado com sucesso.");
+    }
+
+    [HttpDelete("tcc/{idTcc}/acompanhamentos/{idAcompanhamento}")]
+    public async Task<IActionResult> DeletarAcompanhamento(int idTcc, int idAcompanhamento)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var acompanhamento = await _context.Acompanhamentos
+            .Include(a => a.Tcc)
+            .FirstOrDefaultAsync(a => a.Id == idAcompanhamento && a.Tcc!.OrientadorId == profId);
+
+        if (acompanhamento == null) return NotFound("Acompanhamento não encontrado ou sem permissão.");
+
+        _context.Acompanhamentos.Remove(acompanhamento);
+        await _context.SaveChangesAsync();
+        return Ok("Acompanhamento deletado com sucesso.");
     }
 }

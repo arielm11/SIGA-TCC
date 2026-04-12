@@ -32,3 +32,12 @@ public class FeedbackDto
 
     public decimal? Nota { get; set; }
 }
+
+public class AcompanhamentoDto
+{
+    [Required(ErrorMessage = "A data da reunião é obrigatória!")]
+    public DateTime DataReuniao { get; set; } = DateTime.Today;
+
+    [Required(ErrorMessage = "O registro da ata é obrigatória!")]
+    public string Ata { get; set; } = string.Empty;
+}
