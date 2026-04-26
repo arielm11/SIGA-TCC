@@ -50,6 +50,19 @@
                 </li>
             </Authorized>
         </AuthorizeView>
+
+        <AuthorizeView Roles="Coordenador">
+            <Authorized>
+                <li>
+                    <NavLink class="nav-link text-white" href="/coordenador/dashboard">
+                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
+                    </NavLink>
+                    <NavLink class="nav-link text-white" href="/coordenador/professores">
+                        <i class="bi bi-speedometer2 me-2"></i> Gestão de Professores
+                    </NavLink>
+                </li>
+            </Authorized>
+        </AuthorizeView>
     </ul>
 
     <hr>

@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Acompanhamento> Acompanhamentos { get; set; }
     public DbSet<Banca> Banca { get; set; }
     public DbSet<BancaAvaliador> BancaAvaliadores { get; set; }
+    public DbSet<MembroExterno> MembrosExternos { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

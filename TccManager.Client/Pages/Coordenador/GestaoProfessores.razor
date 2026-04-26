@@ -1,0 +1,292 @@
+﻿@page "/coordenador/professores"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Models
+@attribute [Authorize(Roles = "Coordenador")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-people-fill me-2"></i> Gestão do Corpo Docente e Avaliadores</h2>
+
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <button class="nav-link @(abaAtiva == "internos" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "internos"'>
+                <i class="bi bi-person-badge me-2"></i> Professores Internos (Orientadores)
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(abaAtiva == "externos" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "externos"'>
+                <i class="bi bi-person-workspace me-2"></i> Avaliadores Externos (Banca)
+            </button>
+        </li>
+    </ul>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p>Carregando lista...</p>
+        </div>
+    }
+    else
+    {
+        @if (abaAtiva == "internos" && professores != null)
+        {
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <p class="text-muted mb-4">Gerencie a carga de orientandos de cada professor. Professores marcados como indisponíveis não aparecerão na lista de designação.</p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Nome do Professor</th>
+                                    <th class="text-center">Carga Atual</th>
+                                    <th class="text-center">Limite de Alunos</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-end">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var prof in professores)
+                                {
+                                    <tr>
+                                        <td class="fw-bold">@prof.Nome</td>
+                                        <td class="text-center">
+                                            <span class="badge @(prof.CargaAtual >= prof.LimiteOrientandos ? "bg-danger" : "bg-primary") fs-6">
+                                                @prof.CargaAtual / @prof.LimiteOrientandos
+                                            </span>
+                                        </td>
+                                        <td class="text-center" style="width: 150px;">
+                                            <input type="number" class="form-control form-control-sm text-center" @bind="prof.LimiteOrientandos" min="1" max="20" />
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="form-check form-switch d-flex justify-content-center">
+                                                <input class="form-check-input" type="checkbox" role="switch" @bind="prof.AceitandoOrientandos">
+                                            </div>
+                                        </td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-success" @onclick="() => SalvarCapacidade(prof)">
+                                                <i class="bi bi-save"></i> Salvar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (abaAtiva == "externos" && externos != null)
+        {
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card shadow-sm border-primary">
+                        <div class="card-header bg-primary text-white fw-bold">Novo Avaliador Externo</div>
+                        <div class="card-body">
+                            <EditForm Model="novoExterno" OnValidSubmit="SalvarMembroExterno">
+                                <DataAnnotationsValidator />
+                                <div class="mb-3">
+                                    <label class="form-label">Nome Completo</label>
+                                    <InputText class="form-control" @bind-Value="novoExterno.Nome" />
+                                    <ValidationMessage For="@(() => novoExterno.Nome)" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">E-mail</label>
+                                    <InputText type="email" class="form-control" @bind-Value="novoExterno.Email" />
+                                    <ValidationMessage For="@(() => novoExterno.Email)" />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Instituição / Empresa</label>
+                                    <InputText class="form-control" @bind-Value="novoExterno.Instituicao" />
+                                    <ValidationMessage For="@(() => novoExterno.Instituicao)" />
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-plus-circle"></i> Adicionar Avaliador
+                                </button>
+                            </EditForm>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-8">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            @if (!externos.Any())
+                            {
+                                <div class="alert alert-light text-center mb-0">Nenhum avaliador externo cadastrado.</div>
+                            }
+                            else
+                            {
+                                <ul class="list-group list-group-flush">
+                                    @foreach (var membro in externos)
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-0 fw-bold">@membro.Nome</h6>
+                                                <small class="text-muted">
+                                                    <i class="bi bi-building me-1"></i> @membro.Instituicao |
+                                                    <i class="bi bi-envelope me-1"></i> @membro.Email
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => AbrirModalEdicao(membro)">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirMembroExterno(membro.Id)">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (exibirModalEdicao)
+{
+    <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Editar Avaliador Externo</h5>
+                    <button type="button" class="btn-close" @onclick="FecharModalEdicao"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="membroParaEdicao" OnValidSubmit="ConfirmarEdicao">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label">Nome Completo</label>
+                            <InputText class="form-control" @bind-Value="membroParaEdicao.Nome" />
+                            <ValidationMessage For="@(() => membroParaEdicao.Nome)" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">E-mail</label>
+                            <InputText type="email" class="form-control" @bind-Value="membroParaEdicao.Email" />
+                            <ValidationMessage For="@(() => membroParaEdicao.Email)" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Instituição / Empresa</label>
+                            <InputText class="form-control" @bind-Value="membroParaEdicao.Instituicao" />
+                            <ValidationMessage For="@(() => membroParaEdicao.Instituicao)" />
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" @onclick="FecharModalEdicao">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string abaAtiva = "internos";
+    private bool carregando = true;
+
+    private List<ProfessorResumoDto>? professores;
+    private List<MembroExterno>? externos;
+    
+    private MembroExterno novoExterno = new();
+    
+    // Variáveis para o Modal
+    private bool exibirModalEdicao = false;
+    private MembroExternoDto membroParaEdicao = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarDados();
+    }
+
+    private async Task CarregarDados()
+    {
+        carregando = true;
+        try
+        {
+            professores = await Http.GetFromJsonAsync<List<ProfessorResumoDto>>("api/coordenador/professores");
+            externos = await Http.GetFromJsonAsync<List<MembroExterno>>("api/coordenador/membros-externos");
+        }
+        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar os dados."); }
+        finally { carregando = false; }
+    }
+
+    private async Task SalvarCapacidade(ProfessorResumoDto prof)
+    {
+        var payload = new CapacidadeProfessorDto
+        {
+            LimiteOrientandos = prof.LimiteOrientandos,
+            AceitandoOrientandos = prof.AceitandoOrientandos
+        };
+
+        var response = await Http.PutAsJsonAsync($"api/coordenador/professores/{prof.Id}/capacidade", payload);
+        if (response.IsSuccessStatusCode)
+            await JSRuntime.InvokeVoidAsync("alert", "Capacidade salva com sucesso!");
+        else
+            await JSRuntime.InvokeVoidAsync("alert", "Erro ao salvar capacidade.");
+    }
+
+    private async Task SalvarMembroExterno()
+    {
+        var response = await Http.PostAsJsonAsync("api/coordenador/membros-externos", novoExterno);
+        if (response.IsSuccessStatusCode)
+        {
+            novoExterno = new();
+            await CarregarDados();
+        }
+    }
+
+    private async Task ExcluirMembroExterno(int id)
+    {
+        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja excluir este avaliador externo?");
+        if (!confirm) return;
+
+        var response = await Http.DeleteAsync($"api/coordenador/membros-externos/{id}");
+        if (response.IsSuccessStatusCode)
+            await CarregarDados();
+    }
+
+    // --- LÓGICA DO MODAL DE EDIÇÃO ---
+
+    private void AbrirModalEdicao(MembroExterno membro)
+    {
+        membroParaEdicao = new MembroExternoDto
+        {
+            Id = membro.Id,
+            Nome = membro.Nome,
+            Email = membro.Email,
+            Instituicao = membro.Instituicao
+        };
+        exibirModalEdicao = true;
+    }
+
+    private void FecharModalEdicao()
+    {
+        exibirModalEdicao = false;
+        membroParaEdicao = new();
+    }
+
+    private async Task ConfirmarEdicao()
+    {
+        var response = await Http.PutAsJsonAsync($"api/coordenador/membros-externos/{membroParaEdicao.Id}", membroParaEdicao);
+        if (response.IsSuccessStatusCode)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Avaliador atualizado com sucesso!");
+            FecharModalEdicao();
+            await CarregarDados();
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro ao atualizar avaliador.");
+        }
+    }
+}

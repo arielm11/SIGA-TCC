@@ -20,4 +20,7 @@ public class Usuario
     public TipoUsuario Tipo { get; set; } = TipoUsuario.Aluno;
 
     public bool Ativo { get; set; }
+
+    public int LimiteOrientandos { get; set; } = 5;
+    public bool AceitandoOrientandos { get; set; } = true;
 }
