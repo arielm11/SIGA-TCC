@@ -13,7 +13,13 @@ public class BancaAvaliador
     [ForeignKey("BancaId")]
     public Banca? Banca { get; set; }
 
-    public int ProfessorId { get; set; }
+    // Avaliador Interno
+    public int? ProfessorId { get; set; }
     [ForeignKey("ProfessorId")]
     public Usuario? Professor { get; set; }
+
+    // Avaliador Externo
+    public int? MembroExternoId { get; set; }
+    [ForeignKey("MembroExternoId")]
+    public MembroExterno? MembroExterno { get; set; }
 }

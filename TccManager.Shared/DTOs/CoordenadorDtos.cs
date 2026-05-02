@@ -27,3 +27,11 @@ public class CapacidadeProfessorDto
     public int LimiteOrientandos { get; set; }
     public bool AceitandoOrientandos { get; set; }
 }
+
+public class TccAguardandoBancaDto
+{
+    public int Id { get; set; }
+    public string Titulo { get; set; } = string.Empty;
+    public string NomeAluno { get; set; } = string.Empty;
+    public string NomeOrientador { get; set; } = string.Empty;
+}

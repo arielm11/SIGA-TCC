@@ -143,4 +143,58 @@ public class CoordenadorController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok("Membro externo removido com sucesso.");
     }
+
+    [HttpPost("tcc/{id}/banca")]
+    public async Task<IActionResult> AgendarBanca(int idTcc, [FromBody] AgendarBancaDto dto)
+    {
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == idTcc);
+        if (tcc == null || tcc.Status != StatusTcc.AguardandoDefesa)
+            return BadRequest("O TCC deve estar com status 'Aguardando Defesa' para agendar a banca.");
+
+        int totalMembros = dto.ProfessoresIds.Count + dto.MembrosExternosIds.Count;
+        if (totalMembros < 2)
+            return BadRequest("A banca deve ter no mínimo 2 membros avaliadores além do orientador (RN05).");
+
+        var banca = new Banca
+        {
+            TccId = idTcc,
+            DataHora = dto.DataHora.ToUniversalTime(),
+            Local = dto.Local
+        };
+
+        _context.Banca.Add(banca);
+        await _context.SaveChangesAsync(); // Salva para gerar o Id da Banca
+
+        // 4. Alocar Membros (Avaliadores)
+        foreach (var profId in dto.ProfessoresIds)
+        {
+            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = profId });
+        }
+
+        foreach (var extId in dto.MembrosExternosIds)
+        {
+            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, MembroExternoId = extId });
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok("Banca agendada com sucesso!");
+    }
+
+    [HttpGet("aguardando-banca")]
+    public async Task<IActionResult> GetTccsAguardandoBanca()
+    {
+        var lista = await _context.Tccs
+            .Include(t => t.Aluno)
+            .Include(t => t.Orientador)
+            .Where(t => t.Status == StatusTcc.AguardandoDefesa)
+            .Select(t => new TccAguardandoBancaDto
+            {
+                Id = t.Id,
+                Titulo = t.Titulo,
+                NomeAluno = t.Aluno!.Nome,
+                NomeOrientador = t.Orientador!.Nome
+            })
+            .ToListAsync();
+        return Ok(lista);
+    }
 }

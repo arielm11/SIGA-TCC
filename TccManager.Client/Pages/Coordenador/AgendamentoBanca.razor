@@ -1,0 +1,164 @@
+﻿@page "/coordenador/agendar-banca"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Models
+@attribute [Authorize(Roles = "Coordenador")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-calendar-plus me-2"></i> Agendamento de Bancas</h2>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-md-5">
+                <h5 class="fw-bold mb-3">TCCs Aguardando Defesa</h5>
+                <div class="list-group shadow-sm">
+                    @foreach (var item in tccsProntos)
+                    {
+                        <button class="list-group-item list-group-item-action @(tccSelecionadoId == item.Id ? "active" : "")"
+                                @onclick="() => SelecionarTcc(item.Id, item.NomeOrientador)">
+                            <div class="fw-bold">@item.NomeAluno</div>
+                            <small>@item.Titulo</small>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="col-md-7">
+                @if (tccSelecionadoId > 0)
+                {
+                    <div class="card shadow-sm border-primary animate__animated animate__fadeIn">
+                        <div class="card-body">
+                            <EditForm Model="agendamento" OnValidSubmit="GravarBanca">
+                                <DataAnnotationsValidator />
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Data e Hora</label>
+                                        <input type="datetime-local" class="form-control" @bind="agendamento.DataHora" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold">Local / Link Teams</label>
+                                        <InputText class="form-control" @bind-Value="agendamento.Local" placeholder="Sala ou URL" />
+                                    </div>
+                                </div>
+
+                                <h6 class="fw-bold border-bottom pb-2">Composição da Banca (RN05)</h6>
+                                <p class="text-muted small">Selecione pelo menos 2 membros. O Orientador (<strong>@orientadorNome</strong>) já faz parte automaticamente.</p>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold text-primary">Professores Internos</label>
+                                        <div style="max-height: 200px; overflow-y: auto;" class="border rounded p-2 bg-light">
+                                            @foreach (var prof in todosProfessores)
+                                            {
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           @onchange='(e) => ToggleMembro(prof.Id, (bool)e.Value, true)'>
+                                                    <label class="form-check-label small">@prof.Nome</label>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-bold text-success">Membros Externos</label>
+                                        <div style="max-height: 200px; overflow-y: auto;" class="border rounded p-2 bg-light">
+                                            @foreach (var ext in todosExternos)
+                                            {
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           @onchange='(e) => ToggleMembro(ext.Id, (bool)e.Value, false)'>
+                                                    <label class="form-check-label small">@ext.Nome (@ext.Instituicao)</label>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="text-end mt-4">
+                                    <button type="submit" class="btn btn-primary btn-lg"
+                                            disabled="@(agendamento.ProfessoresIds.Count + agendamento.MembrosExternosIds.Count < 2)">
+                                        <i class="bi bi-calendar-check me-2"></i> Confirmar Agendamento
+                                    </button>
+                                </div>
+                            </EditForm>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info text-center mt-5">Selecione um aluno na lista à esquerda para agendar a banca.</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool carregando = true;
+    private List<TccAguardandoBancaDto> tccsProntos = new();
+    private List<ProfessorResumoDto> todosProfessores = new();
+    private List<MembroExternoDto> todosExternos = new();
+
+    private int tccSelecionadoId = 0;
+    private string orientadorNome = "";
+    private AgendarBancaDto agendamento = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarListas();
+    }
+
+    private async Task CarregarListas()
+    {
+        carregando = true;
+        try
+        {
+            tccsProntos = await Http.GetFromJsonAsync<List<TccAguardandoBancaDto>>("api/coordenador/aguardando-banca");
+            todosProfessores = await Http.GetFromJsonAsync<List<ProfessorResumoDto>>("api/coordenador/professores");
+            todosExternos = await Http.GetFromJsonAsync<List<MembroExternoDto>>("api/coordenador/membros-externos");
+        }
+        finally { carregando = false; }
+    }
+
+    private void SelecionarTcc(int id, string orientador)
+    {
+        tccSelecionadoId = id;
+        orientadorNome = orientador;
+        agendamento = new AgendarBancaDto();
+    }
+
+    private void ToggleMembro(int id, bool selecionado, bool interno)
+    {
+        if (interno)
+        {
+            if (selecionado) agendamento.ProfessoresIds.Add(id);
+            else agendamento.ProfessoresIds.Remove(id);
+        }
+        else
+        {
+            if (selecionado) agendamento.MembrosExternosIds.Add(id);
+            else agendamento.MembrosExternosIds.Remove(id);
+        }
+    }
+
+    private async Task GravarBanca()
+    {
+        var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
+        if (resp.IsSuccessStatusCode)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Banca agendada com sucesso!");
+            tccSelecionadoId = 0;
+            await CarregarListas();
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("alert", await resp.Content.ReadAsStringAsync());
+        }
+    }
+}
