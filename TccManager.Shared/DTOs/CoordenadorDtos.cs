@@ -35,3 +35,12 @@ public class TccAguardandoBancaDto
     public string NomeAluno { get; set; } = string.Empty;
     public string NomeOrientador { get; set; } = string.Empty;
 }
+
+public class BancaPendenteDto
+{
+    public int TccId { get; set; }
+    public DateTime DataHora { get; set; }
+    public string Local { get; set; } = string.Empty;
+    public string TccTitulo { get; set; } = string.Empty;
+    public string NomeAluno { get; set; } = string.Empty;
+}

@@ -197,4 +197,52 @@ public class CoordenadorController : ControllerBase
             .ToListAsync();
         return Ok(lista);
     }
+
+    [HttpGet("bancas-pendentes-resultado")]
+    public async Task<IActionResult> GetBancasPendentesResultado()
+    {
+        var bancas = await _context.Banca
+            .Include(b => b.Tcc)
+                .ThenInclude(t => t.Aluno)
+            .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
+            .Select(b => new BancaPendenteDto {
+                TccId = b.Id,
+                DataHora =  b.DataHora,
+                Local = b.Local,
+                TccTitulo = b.Tcc.Titulo,
+                NomeAluno = b.Tcc.Aluno!.Nome
+            })
+            .ToListAsync(); 
+        return Ok(bancas);
+    }
+
+    [HttpPost("banca/{idBanca}/registrar-resultado")]
+    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta)
+    {
+        var banca = await _context.Banca
+            .Include(b => b.Tcc)
+            .FirstOrDefaultAsync(b => b.Id == idBanca);
+
+        if (banca == null) return NotFound("Banca não encontrada.");
+        if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("Resultado já registrado para esta banca.");
+
+        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
+        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
+
+        var uniqueFileName = Guid.NewGuid().ToString() + "_" + arquivoAta.FileName;
+        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await arquivoAta.CopyToAsync(stream);
+        }
+
+        banca.NotaFinal = notaFinal;
+        banca.AtaCaminho = $"/uploads/atas/{uniqueFileName}";
+
+        banca.Tcc!.Status = StatusTcc.Aprovado;
+
+        await _context.SaveChangesAsync();
+        return Ok("Resultado da banca registrado com sucesso!");
+    }
 }

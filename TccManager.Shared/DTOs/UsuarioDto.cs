@@ -10,4 +10,6 @@ public class UsuarioDto
     public string Senha { get; set; } = string.Empty;
     public TipoUsuario Tipo { get; set; }
     public bool Ativo { get; set; }
+
+
 }
