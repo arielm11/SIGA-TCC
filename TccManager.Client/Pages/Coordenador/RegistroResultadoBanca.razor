@@ -1,0 +1,181 @@
+﻿@page "/coordenador/registrar-resultado"
+@using Microsoft.AspNetCore.Authorization
+@using System.Net.Http.Headers
+@using TccManager.Shared.DTOs;
+@attribute [Authorize(Roles = "Coordenador")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-award-fill me-2"></i> Lançamento de Nota Final e Ata</h2>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-success"></div></div>
+    }
+    else if (!bancasPendentes.Any())
+    {
+        <div class="alert alert-success text-center shadow-sm">
+            <i class="bi bi-check-circle-fill me-2"></i> Não há nenhuma banca aguardando lançamento de nota no momento.
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card shadow-sm border-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Aluno</th>
+                                    <th>Título do TCC</th>
+                                    <th>Data da Banca</th>
+                                    <th class="text-end">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var banca in bancasPendentes)
+                                {
+                                    <tr>
+                                        <td class="fw-bold">@banca.NomeAluno</td>
+                                        <td>@banca.TccTitulo</td>
+                                        <td>@banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td class="text-end">
+                                            <button class="btn btn-sm btn-primary" @onclick="() => AbrirModal(banca.TccId, banca.NomeAluno)">
+                                                <i class="bi bi-file-earmark-arrow-up"></i> Registrar Resultado
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (exibirModal)
+{
+    <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-primary">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Registrar Resultado: @nomeAlunoSelecionado</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="FecharModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Nota Final</label>
+                        <input type="number" step="0.1" min="0" max="10" class="form-control form-control-lg text-center" @bind="notaFinal" placeholder="Ex: 9,5" />
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Arquivo da Ata Assinada (PDF)</label>
+                        <InputFile OnChange="CarregarArquivo" class="form-control" accept=".pdf" />
+                        @if (arquivoAta != null)
+                        {
+                            <small class="text-success mt-1 d-block"><i class="bi bi-check-circle me-1"></i> Arquivo selecionado: @arquivoAta.Name</small>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" @onclick="FecharModal">Cancelar</button>
+                    <button type="button" class="btn btn-success" disabled="@(arquivoAta == null || enviando)" @onclick="SalvarResultado">
+                        @if (enviando)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        <i class="bi bi-save me-1"></i> Confirmar Conclusão
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool carregando = true;
+    private bool enviando = false;
+    private List<BancaPendenteDto> bancasPendentes = new();
+
+    // Controles do Modal
+    private bool exibirModal = false;
+    private int bancaIdSelecionada = 0;
+    private string nomeAlunoSelecionado = "";
+
+    // Dados do Formulário
+    private decimal notaFinal = 0;
+    private IBrowserFile? arquivoAta;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarListas();
+    }
+
+    private async Task CarregarListas()
+    {
+        carregando = true;
+        try
+        {
+            bancasPendentes = await Http.GetFromJsonAsync<List<BancaPendenteDto>>("api/coordenador/bancas-pendentes-resultado") ?? new();
+        }
+        finally { carregando = false; }
+    }
+
+    private void AbrirModal(int id, string nome)
+    {
+        bancaIdSelecionada = id;
+        nomeAlunoSelecionado = nome;
+        notaFinal = 0;
+        arquivoAta = null;
+        exibirModal = true;
+    }
+
+    private void FecharModal()
+    {
+        exibirModal = false;
+        arquivoAta = null;
+    }
+
+    private void CarregarArquivo(InputFileChangeEventArgs e)
+    {
+        arquivoAta = e.File;
+    }
+
+    private async Task SalvarResultado()
+    {
+        if (arquivoAta == null) return;
+
+        enviando = true;
+        try
+        {
+            // Criando o form multipart para envio de arquivo + dados
+            using var content = new MultipartFormDataContent();
+
+            // Força a conversão da nota para string no formato universal (com ponto) para a API entender
+            content.Add(new StringContent(notaFinal.ToString(System.Globalization.CultureInfo.InvariantCulture)), "notaFinal");
+
+            // Prepara o arquivo (limite de 10MB)
+            var stream = arquivoAta.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(arquivoAta.ContentType);
+            content.Add(streamContent, "arquivoAta", arquivoAta.Name);
+
+            var response = await Http.PostAsync($"api/coordenador/banca/{bancaIdSelecionada}/registrar-resultado", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Nota e Ata registradas com sucesso! O TCC foi concluído.");
+                FecharModal();
+                await CarregarListas(); // Recarrega a tabela
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Erro ao registrar o resultado.");
+            }
+        }
+        finally { enviando = false; }
+    }
+}

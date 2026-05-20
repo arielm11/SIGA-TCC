@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TccManager.Api.Data;
 
@@ -11,9 +12,11 @@ using TccManager.Api.Data;
 namespace TccManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260426125522_FixMembrosExternosColuna")]
+    partial class FixMembrosExternosColuna
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -55,19 +58,12 @@ namespace TccManager.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AtaCaminho")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<DateTime>("DataHora")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Local")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal?>("NotaFinal")
-                        .HasColumnType("decimal(5,2)");
 
                     b.Property<int>("TccId")
                         .HasColumnType("int");
@@ -90,17 +86,12 @@ namespace TccManager.Api.Migrations
                     b.Property<int>("BancaId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("MembroExternoId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ProfessorId")
+                    b.Property<int>("ProfessorId")
                         .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("BancaId");
-
-                    b.HasIndex("MembroExternoId");
 
                     b.HasIndex("ProfessorId");
 
@@ -157,7 +148,7 @@ namespace TccManager.Api.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("Instituicao")
+                    b.Property<string>("Instituticao")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -280,18 +271,13 @@ namespace TccManager.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("TccManager.Shared.Models.MembroExterno", "MembroExterno")
-                        .WithMany()
-                        .HasForeignKey("MembroExternoId");
-
                     b.HasOne("TccManager.Shared.Models.Usuario", "Professor")
                         .WithMany()
                         .HasForeignKey("ProfessorId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Banca");
-
-                    b.Navigation("MembroExterno");
 
                     b.Navigation("Professor");
                 });
