@@ -1,0 +1,96 @@
+﻿@page "/avaliador/convites"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@attribute [Authorize(Roles = "Professor")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-envelope-paper-fill me-2"></i> Meus Convites de Banca</h2>
+    <p class="text-muted mb-4">Acompanhe aqui as defesas de TCC para as quais você foi convocado como avaliador e baixe os arquivos para leitura prévia.</p>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Buscando convites...</p>
+        </div>
+    }
+    else if (!convites.Any())
+    {
+        <div class="alert alert-info text-center shadow-sm py-4">
+            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+            <h5 class="fw-bold">Nenhum convite encontrado</h5>
+            <p class="mb-0">Você não possui alocações em bancas de TCC ativas no momento.</p>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var convite in convites)
+            {
+                <div class="col-md-6 mb-4">
+                    <div class="card shadow-sm h-100 border-primary animate__animated animate__fadeInUp">
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                            <span class="fw-bold">
+                                <i class="bi bi-calendar-event me-2"></i> @convite.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </span>
+                            <span class="badge bg-light text-primary">
+                                <i class="bi bi-geo-alt-fill me-1"></i> @convite.Local
+                            </span>
+                        </div>
+
+                        <div class="card-body">
+                            <h5 class="card-title fw-bold text-dark">@convite.TccTitulo</h5>
+                            <hr />
+                            <p class="mb-1"><strong><i class="bi bi-person me-2"></i> Aluno(a):</strong> @convite.NomeAluno</p>
+                            <p class="mb-3"><strong><i class="bi bi-person-badge me-2"></i> Orientador(a):</strong> @convite.NomeOrientador</p>
+                        </div>
+
+                        <div class="card-footer bg-light text-end">
+                            @if (!string.IsNullOrEmpty(convite.ArquivoFinalCaminho))
+                            {
+                                <a href="@($"{Http.BaseAddress?.ToString().TrimEnd('/')}{convite.ArquivoFinalCaminho}")" target="_blank" class="btn btn-success shadow-sm">
+                                    <i class="bi bi-file-earmark-pdf-fill me-2"></i> Baixar Versão Final (TCC)
+                                </a>
+                            }
+                            else
+                            {
+                                <button class="btn btn-secondary" disabled title="O aluno não enviou a versão final corretamente.">
+                                    <i class="bi bi-file-earmark-x me-2"></i> Arquivo Indisponível
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool carregando = true;
+    private List<ConviteBancaDto> convites = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarConvites();
+    }
+
+    private async Task CarregarConvites()
+    {
+        carregando = true;
+        try
+        {
+            convites = await Http.GetFromJsonAsync<List<ConviteBancaDto>>("api/avaliador/meus-convites") ?? new();
+        }
+        catch
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao buscar seus convites de banca.");
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+}
