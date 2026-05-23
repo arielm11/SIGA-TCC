@@ -18,8 +18,8 @@ Acesse os módulos completos através dos links abaixo:
 
 1. 🏠 **[Página Inicial da Wiki](../../wiki)** — Visão geral do escopo do projeto e histórico das 5 Ondas (*Waves*) de desenvolvimento.
 2. 🏛️ **[Arquitetura e Modelagem do Banco](../../wiki/Arquitetura-e-Modelagem-do-Banco)** — Divisão dos projetos da solução (.NET 9 + Blazor WASM) e o dicionário de dados do SQL Server (Entity Framework Core).
-3. 📋 **[Requisitos e Regras de Negócio](../../wiki/Requisitos-e-Regras-de-Negocio)** — Mapeamento completo dos Requisitos Funcionais (RFs) por perfil e as travas de validação severas (como a RN03 de Aceite Final e a RN05 de composição mínima da banca).
-4. 🛠️ **[Guia de Instalação e Configuração](../../wiki/Guia-de-Instalacao-e-Configuracao)** — Passo a passo para clonar o repositório, configurar a *Connection String*, rodar as *Migrations* e executar o script de *Seed* SQL para o primeiro acesso.
+3. 📋 **[Requisitos e Regras de Negócio](../../wiki/Requisitos-e-Regras-de-Negócio)** — Mapeamento completo dos Requisitos Funcionais (RFs) por perfil e as travas de validação severas (como a RN03 de Aceite Final e a RN05 de composição mínima da banca).
+4. 🛠️ **[Guia de Instalação e Configuração](../../wiki/Guia-de-Instalação-e-Configuração)** — Passo a passo para clonar o repositório, configurar a *Connection String*, rodar as *Migrations* e executar o script de *Seed* SQL para o primeiro acesso.
 
 ---
 
