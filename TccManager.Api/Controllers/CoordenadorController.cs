@@ -217,14 +217,19 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
-    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta)
+    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta, [FromForm] string? motivoReprovacao)
     {
         var banca = await _context.Banca
             .Include(b => b.Tcc)
             .FirstOrDefaultAsync(b => b.Id == idBanca);
 
         if (banca == null) return NotFound("Banca não encontrada.");
-        if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("Resultado já registrado para esta banca.");
+        if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
+
+        bool aprovado = notaFinal >= 6;
+
+        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
+            return BadRequest($"Nota inferior a 6.0. É obrigatório informar o motivo da reprovação.");
 
         var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
@@ -240,9 +245,22 @@ public class CoordenadorController : ControllerBase
         banca.NotaFinal = notaFinal;
         banca.AtaCaminho = $"/uploads/atas/{uniqueFileName}";
 
-        banca.Tcc!.Status = StatusTcc.Aprovado;
+        if (aprovado)
+        {
+            banca.Tcc!.Status = StatusTcc.Finalizado;
+            banca.Tcc.MotivoRejeicao = null;
+        }
+        else
+        {
+            banca.Tcc!.Status = StatusTcc.Reprovado;
+            banca.Tcc.MotivoRejeicao = motivoReprovacao;
+        }
 
         await _context.SaveChangesAsync();
-        return Ok("Resultado da banca registrado com sucesso!");
+        var mensagem = aprovado
+        ? "Resultado da banca registrado com sucesso! O TCC foi finalizado."
+        : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
+
+        return Ok(mensagem);
     }
 }
