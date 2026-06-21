@@ -69,8 +69,8 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label fw-bold">Nota Final</label>
-                        <input type="number" step="0.1" min="0" max="10" class="form-control form-control-lg text-center"
-                               @bind="notaFinal" @bind:after="AtualizarStatusAprovacao" placeholder="Ex: 9,5" />
+                        <input type="number" step="0.1" min="0" max="100" class="form-control form-control-lg text-center"
+                               @bind="notaFinal" @bind:after="AtualizarStatusAprovacao" placeholder="Ex: 85,0" />
 
                         @if (notaFinal > 0)
                         {
@@ -134,8 +134,8 @@
     private bool exibirModal = false;
     private int bancaIdSelecionada = 0;
     private string nomeAlunoSelecionado = "";
-    private const decimal notaMinimaAprovacao = 6.0m;
-    private const string notaMinimaExibicao = "6,0";
+    private const decimal notaMinimaAprovacao = 60.0m;
+    private const string notaMinimaExibicao = "60,0";
     private bool notaAprova = true;
     private string motivoReprovacao = string.Empty;
 
@@ -183,10 +183,7 @@
     private void AtualizarStatusAprovacao()
     {
         notaAprova = notaFinal >= notaMinimaAprovacao;
-        if (notaAprova)
-        {
-            motivoReprovacao = string.Empty;
-        }
+        if (notaAprova) motivoReprovacao = string.Empty;
     }
 
     private async Task SalvarResultado()
