@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TccManager.Client", "TccMan
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TccManager.Shared", "TccManager.Shared\TccManager.Shared.csproj", "{C49B970C-A224-4FEF-A711-4C0956C6D16E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TccManager.Tests", "TccManager.Tests\TccManager.Tests.csproj", "{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{C49B970C-A224-4FEF-A711-4C0956C6D16E}.Release|x64.Build.0 = Release|Any CPU
 		{C49B970C-A224-4FEF-A711-4C0956C6D16E}.Release|x86.ActiveCfg = Release|Any CPU
 		{C49B970C-A224-4FEF-A711-4C0956C6D16E}.Release|x86.Build.0 = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|x64.Build.0 = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Debug|x86.Build.0 = Debug|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|x64.ActiveCfg = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|x64.Build.0 = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|x86.ActiveCfg = Release|Any CPU
+		{95D7FACB-CE5F-4F67-945E-1AC76458C7CB}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

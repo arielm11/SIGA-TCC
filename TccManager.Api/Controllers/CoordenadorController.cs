@@ -14,6 +14,7 @@ namespace TccManager.Api.Controllers;
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private const decimal notaMinimaAprovacao = 60.0m;
 
     public CoordenadorController(AppDbContext context)
     {
@@ -226,10 +227,9 @@ public class CoordenadorController : ControllerBase
         if (banca == null) return NotFound("Banca não encontrada.");
         if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
 
-        bool aprovado = notaFinal >= 6;
+        bool aprovado = notaFinal >= notaMinimaAprovacao;
 
-        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
-            return BadRequest($"Nota inferior a 6.0. É obrigatório informar o motivo da reprovação.");
+        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao)) return BadRequest($"Nota inferior a 6.0. É obrigatório informar o motivo da reprovação.");
 
         var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
