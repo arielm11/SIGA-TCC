@@ -9,7 +9,7 @@ namespace TccManager.Tests.Controllers;
 
 public class CoordenadorController_AgendarBanca_Tests
 {
-    private const int idCoordenador = 1;
+    private const int idCoordenador  = 1;
     private const int idAluno = 10;
     private const int idProfessorOrientador = 20;
     private const int idProfessorAvaliador1 = 21;
@@ -47,7 +47,7 @@ public class CoordenadorController_AgendarBanca_Tests
     {
         // Arrange
         var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
 
         var dto = new AgendarBancaDto
         {
@@ -78,7 +78,7 @@ public class CoordenadorController_AgendarBanca_Tests
     {
         // Arrange — valida a regra RN05 (mínimo 2 membros avaliadores)
         var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
 
         var dto = new AgendarBancaDto
         {
@@ -120,7 +120,7 @@ public class CoordenadorController_AgendarBanca_Tests
         contextSetup.Tccs.Add(tcc);
         await contextSetup.SaveChangesAsync();
 
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
         var dto = new AgendarBancaDto
         {
             DataHora = DateTime.Now.AddDays(7),
@@ -141,7 +141,7 @@ public class CoordenadorController_AgendarBanca_Tests
     {
         // Arrange — nenhum TCC criado, idTcc não existe no banco
         var factory = new TccApiFactory();
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
 
         var dto = new AgendarBancaDto
         {
@@ -177,7 +177,7 @@ public class CoordenadorController_AgendarBanca_Tests
         contextSetup.MembrosExternos.Add(membroExterno);
         await contextSetup.SaveChangesAsync();
 
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
         var dto = new AgendarBancaDto
         {
             DataHora = DateTime.Now.AddDays(7),
@@ -204,19 +204,19 @@ public class CoordenadorController_AgendarBanca_Tests
     }
 
     [Fact]
-    public async Task Regressao_DataHora_NaoDeveSerAfetadaPelaCulturaOuFusoDoSistema()
+    public async Task FusoHorario_DataHora_DeveSerSempreConvertidaComoHorarioDeBrasilia()
     {
+
         // Arrange
         var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
-        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
 
-        // DateTime.Kind = Unspecified (como vem de um <input type="datetime-local">
-        // no Blazor, que é exatamente o cenário real do AgendamentoBanca.razor)
-        var dataHoraEnviada = new DateTime(2026, 8, 15, 14, 30, 0, DateTimeKind.Unspecified);
+        // 15/08/2026, 14:30 — horário "de Brasília" como o coordenador digitou na tela
+        var dataHoraEmBrasilia = new DateTime(2026, 8, 15, 14, 30, 0, DateTimeKind.Unspecified);
 
         var dto = new AgendarBancaDto
         {
-            DataHora = dataHoraEnviada,
+            DataHora = dataHoraEmBrasilia,
             Local = "Sala 101",
             ProfessoresIds = new List<int> { idProfessorAvaliador1, idProfessorAvaliador2 },
             MembrosExternosIds = new List<int>()
@@ -229,10 +229,8 @@ public class CoordenadorController_AgendarBanca_Tests
         using var context = factory.CriarContextoDireto();
         var banca = await context.Banca.FirstAsync(b => b.TccId == tccId);
 
-        // Assert
-        var horaLocalEsperada = TimeZoneInfo.ConvertTimeToUtc(
-            DateTime.SpecifyKind(dataHoraEnviada, DateTimeKind.Local));
+        var utcEsperado = new DateTime(2026, 8, 15, 17, 30, 0, DateTimeKind.Utc);
 
-        Assert.Equal(horaLocalEsperada, banca.DataHora);
+        Assert.Equal(utcEsperado, banca.DataHora);
     }
 }
