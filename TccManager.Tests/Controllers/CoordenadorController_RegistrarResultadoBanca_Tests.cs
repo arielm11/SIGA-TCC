@@ -35,6 +35,8 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         context.Tccs.Add(tcc);
         await context.SaveChangesAsync();
 
+        // Entrega Final — necessária para o cenário de "reprovado em banca" ser
+        // distinguido de "rejeitado na proposta" pela tela do aluno (Bug #1, item 4)
         context.Entregas.Add(new Entrega
         {
             TccId = tcc.Id,
@@ -65,7 +67,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             form.Add(new StringContent(motivo), "motivoReprovacao");
 
         // PDF fake mínimo só para passar da validação de "arquivo obrigatório"
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 }); // "%PDF"
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata-teste.pdf");
 
@@ -120,7 +122,8 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     [Fact]
     public async Task Caso2b_NotaBaixa_SemMotivo_DeveRetornarBadRequest()
     {
-        // Arrange
+        // Arrange — valida a regra de negócio no backend, independente do
+        // botão desabilitado no frontend (defesa em profundidade)
         var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
@@ -136,7 +139,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     [Fact]
     public async Task Caso3_NotaExatamenteNoLimite_DeveAprovar()
     {
-        // Arrange 
+        // Arrange — caso de fronteira: valida o operador ">=" usado na correção
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
@@ -157,7 +160,9 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     [Fact]
     public async Task Caso4_ReprovadoEmBanca_DeveTerEntregaFinalAssociada()
     {
-        // Arrange
+        // Arrange — valida a premissa usada pelo Client (FoiReprovadoNaBanca)
+        // para distinguir reprovação em banca de rejeição de proposta:
+        // a presença de uma Entrega do tipo Final.
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
@@ -166,7 +171,8 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             $"/api/coordenador/banca/{bancaId}/registrar-resultado",
             MontarFormResultado(30.0m, "Não atingiu a nota mínima.")); // escala 0-100: 30 reprova
 
-        // Assert
+        // Assert — simula a query do GetMeuTcc (com Include) para garantir
+        // que o sinal usado pelo front-end realmente existe nos dados
         using var context = factory.CriarContextoDireto();
         var tccComEntregas = await context.Tccs
             .Include(t => t.Entregas)
@@ -179,12 +185,14 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     [Fact]
     public async Task Caso5_BancaSemArquivoAta_DeveRetornarBadRequest()
     {
-        // Arrange
+        // Arrange — regressão: garante que a validação de arquivo obrigatório
+        // (que já existia antes da correção) continua funcionando
         var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         var form = new MultipartFormDataContent();
         form.Add(new StringContent("80.0"), "notaFinal"); // escala 0-100, valor irrelevante para este teste
+        // Propositalmente sem o campo "arquivoAta"
 
         // Act
         var response = await client.PostAsync(
@@ -217,6 +225,95 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     }
 
     [Fact]
+    public async Task Bug5_DuploLancamento_ApósAprovacao_DeveRetornarBadRequest()
+    {
+
+        // Arrange
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        // Act — primeiro lançamento: aprova o TCC normalmente
+        var primeiraResposta = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(85.0m));
+        primeiraResposta.EnsureSuccessStatusCode();
+
+        // Act — segundo lançamento na MESMA banca, com nota diferente
+        var segundaResposta = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(30.0m, "Tentativa de sobrescrever o resultado"));
+
+        // Assert — o segundo lançamento deve ser bloqueado
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, segundaResposta.StatusCode);
+
+        var corpoErro = await segundaResposta.Content.ReadAsStringAsync();
+        Assert.Contains("já foi registrado", corpoErro, StringComparison.OrdinalIgnoreCase);
+
+        // Assert — o estado original (da primeira chamada) deve permanecer intacto
+        using var context = factory.CriarContextoDireto();
+        var banca = await context.Banca.FirstAsync(b => b.Id == bancaId);
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+
+        Assert.Equal(85.0m, banca.NotaFinal);
+        Assert.Equal(StatusTcc.Finalizado, tcc.Status);
+        Assert.Null(tcc.MotivoRejeicao);
+    }
+
+    [Fact]
+    public async Task Bug5_DuploLancamento_ApósReprovacao_DeveRetornarBadRequest()
+    {
+        // Arrange
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        const string motivoOriginal = "Não atingiu os critérios mínimos de avaliação.";
+
+        // Act — primeiro lançamento: reprova o TCC
+        var primeiraResposta = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, motivoOriginal));
+        primeiraResposta.EnsureSuccessStatusCode();
+
+        // Act — segundo lançamento na MESMA banca, tentando aprovar agora
+        var segundaResposta = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(95.0m));
+
+        // Assert — o segundo lançamento deve ser bloqueado, mesmo tentando "corrigir para aprovar"
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, segundaResposta.StatusCode);
+
+        // Assert — o motivo e status originais (da reprovação) permanecem intactos
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+
+        Assert.Equal(StatusTcc.Reprovado, tcc.Status);
+        Assert.Equal(motivoOriginal, tcc.MotivoRejeicao);
+    }
+
+    [Fact]
+    public async Task Bug2_MensagemDeErro_ArquivoAusente_DeveSerEspecificaENaoMencionarDuploLancamento()
+    {
+        // Arrange — banca ainda em AguardandoDefesa, então não é caso do Bug #5
+        var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent("80.0"), "notaFinal");
+        // Propositalmente sem o campo "arquivoAta"
+
+        // Act
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado", form);
+
+        // Assert
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        var corpoErro = await response.Content.ReadAsStringAsync();
+        Assert.Contains("arquivo", corpoErro, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("já foi registrado", corpoErro, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("já registrado", corpoErro, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Regressao_NotaDecimal_NaoDeveSerAfetadaPelaCulturaDoSistema()
     {
         var culturaOriginal = Thread.CurrentThread.CurrentCulture;
@@ -241,11 +338,17 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             response.EnsureSuccessStatusCode();
 
             using var context = factory.CriarContextoDireto();
-            var banca = await context.Banca.FirstAsync(b => b.Id == bancaId)
+            var banca = await context.Banca.FirstAsync(b => b.Id == bancaId);
+
+            // Se o bug de cultura reaparecer, este valor virá como 855 (ou
+            // outra distorção), não 85.5 — é exatamente esse desvio que
+            // queremos pegar antes que chegue em produção de novo.
             Assert.Equal(85.5m, banca.NotaFinal);
         }
         finally
         {
+            // Restaura a cultura original da thread, mesmo se o teste falhar,
+            // para não afetar outros testes que rodem depois deste no mesmo processo
             Thread.CurrentThread.CurrentCulture = culturaOriginal;
             Thread.CurrentThread.CurrentUICulture = culturaOriginalUI;
         }

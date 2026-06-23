@@ -96,7 +96,7 @@ public class CoordenadorController : ControllerBase
 
         professor.LimiteOrientandos = dto.LimiteOrientandos;
         professor.AceitandoOrientandos = dto.AceitandoOrientandos;
-        
+
         await _context.SaveChangesAsync();
         return Ok("Capacidade do professor atualizada com sucesso.");
     }
@@ -145,7 +145,7 @@ public class CoordenadorController : ControllerBase
         return Ok("Membro externo removido com sucesso.");
     }
 
-    [HttpPost("tcc/{id}/banca")]
+    [HttpPost("tcc/{idTcc}/banca")]
     public async Task<IActionResult> AgendarBanca(int idTcc, [FromBody] AgendarBancaDto dto)
     {
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == idTcc);
@@ -206,14 +206,15 @@ public class CoordenadorController : ControllerBase
             .Include(b => b.Tcc)
                 .ThenInclude(t => t.Aluno)
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
-            .Select(b => new BancaPendenteDto {
+            .Select(b => new BancaPendenteDto
+            {
                 TccId = b.Id,
-                DataHora =  b.DataHora,
+                DataHora = b.DataHora,
                 Local = b.Local,
                 TccTitulo = b.Tcc.Titulo,
                 NomeAluno = b.Tcc.Aluno!.Nome
             })
-            .ToListAsync(); 
+            .ToListAsync();
         return Ok(bancas);
     }
 
@@ -224,12 +225,19 @@ public class CoordenadorController : ControllerBase
             .Include(b => b.Tcc)
             .FirstOrDefaultAsync(b => b.Id == idBanca);
 
-        if (banca == null) return NotFound("Banca não encontrada.");
-        if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
+        if (banca == null)
+            return NotFound("Banca não encontrada.");
+
+        if (banca.Tcc!.Status != StatusTcc.AguardandoDefesa)
+            return BadRequest("O resultado desta banca já foi registrado anteriormente. Não é possível registrar novamente.");
+
+        if (arquivoAta == null || arquivoAta.Length == 0)
+            return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
 
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
-        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao)) return BadRequest($"Nota inferior a 6.0. É obrigatório informar o motivo da reprovação.");
+        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
+            return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
 
         var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
@@ -247,19 +255,20 @@ public class CoordenadorController : ControllerBase
 
         if (aprovado)
         {
-            banca.Tcc!.Status = StatusTcc.Finalizado;
-            banca.Tcc.MotivoRejeicao = null;
+            banca.Tcc.Status = StatusTcc.Finalizado;
+            banca.Tcc.MotivoRejeicao = null; // limpa qualquer motivo anterior, se houver
         }
         else
         {
-            banca.Tcc!.Status = StatusTcc.Reprovado;
+            banca.Tcc.Status = StatusTcc.Reprovado;
             banca.Tcc.MotivoRejeicao = motivoReprovacao;
         }
 
         await _context.SaveChangesAsync();
+
         var mensagem = aprovado
-        ? "Resultado da banca registrado com sucesso! O TCC foi finalizado."
-        : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
+            ? "Resultado da banca registrado com sucesso! O TCC foi finalizado."
+            : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
 
         return Ok(mensagem);
     }
