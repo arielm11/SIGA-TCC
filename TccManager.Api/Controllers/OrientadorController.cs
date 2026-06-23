@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Data;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -151,7 +152,7 @@ public class OrientadorController : ControllerBase
         var novoAcompanhamento = new Acompanhamento
         {
             TccId = idTcc,
-            DataReuniao = dto.DataReuniao.ToUniversalTime(),
+            DataReuniao = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataReuniao),
             Ata = dto.Ata
         };
 
@@ -174,7 +175,7 @@ public class OrientadorController : ControllerBase
 
         if (acompanhamento == null) return NotFound("Acompanhamento não encontrado ou sem permissão.");
 
-        acompanhamento.DataReuniao = dto.DataReuniao.ToUniversalTime();
+        acompanhamento.DataReuniao = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataReuniao);
         acompanhamento.Ata = dto.Ata;
 
         await _context.SaveChangesAsync();

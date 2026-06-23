@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -159,14 +160,13 @@ public class CoordenadorController : ControllerBase
         var banca = new Banca
         {
             TccId = idTcc,
-            DataHora = dto.DataHora.ToUniversalTime(),
+            DataHora = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataHora),
             Local = dto.Local
         };
 
         _context.Banca.Add(banca);
         await _context.SaveChangesAsync(); // Salva para gerar o Id da Banca
 
-        // 4. Alocar Membros (Avaliadores)
         foreach (var profId in dto.ProfessoresIds)
         {
             _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = profId });
