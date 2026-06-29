@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -14,6 +15,7 @@ namespace TccManager.Api.Controllers;
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private const decimal notaMinimaAprovacao = 60.0m;
 
     public CoordenadorController(AppDbContext context)
     {
@@ -95,7 +97,7 @@ public class CoordenadorController : ControllerBase
 
         professor.LimiteOrientandos = dto.LimiteOrientandos;
         professor.AceitandoOrientandos = dto.AceitandoOrientandos;
-        
+
         await _context.SaveChangesAsync();
         return Ok("Capacidade do professor atualizada com sucesso.");
     }
@@ -144,7 +146,7 @@ public class CoordenadorController : ControllerBase
         return Ok("Membro externo removido com sucesso.");
     }
 
-    [HttpPost("tcc/{id}/banca")]
+    [HttpPost("tcc/{idTcc}/banca")]
     public async Task<IActionResult> AgendarBanca(int idTcc, [FromBody] AgendarBancaDto dto)
     {
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == idTcc);
@@ -158,14 +160,13 @@ public class CoordenadorController : ControllerBase
         var banca = new Banca
         {
             TccId = idTcc,
-            DataHora = dto.DataHora.ToUniversalTime(),
+            DataHora = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataHora),
             Local = dto.Local
         };
 
         _context.Banca.Add(banca);
         await _context.SaveChangesAsync(); // Salva para gerar o Id da Banca
 
-        // 4. Alocar Membros (Avaliadores)
         foreach (var profId in dto.ProfessoresIds)
         {
             _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = profId });
@@ -205,26 +206,38 @@ public class CoordenadorController : ControllerBase
             .Include(b => b.Tcc)
                 .ThenInclude(t => t.Aluno)
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
-            .Select(b => new BancaPendenteDto {
+            .Select(b => new BancaPendenteDto
+            {
                 TccId = b.Id,
-                DataHora =  b.DataHora,
+                DataHora = b.DataHora,
                 Local = b.Local,
                 TccTitulo = b.Tcc.Titulo,
                 NomeAluno = b.Tcc.Aluno!.Nome
             })
-            .ToListAsync(); 
+            .ToListAsync();
         return Ok(bancas);
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
-    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta)
+    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta, [FromForm] string? motivoReprovacao)
     {
         var banca = await _context.Banca
             .Include(b => b.Tcc)
             .FirstOrDefaultAsync(b => b.Id == idBanca);
 
-        if (banca == null) return NotFound("Banca não encontrada.");
-        if (arquivoAta == null || arquivoAta.Length == 0) return BadRequest("Resultado já registrado para esta banca.");
+        if (banca == null)
+            return NotFound("Banca não encontrada.");
+
+        if (banca.Tcc!.Status != StatusTcc.AguardandoDefesa)
+            return BadRequest("O resultado desta banca já foi registrado anteriormente. Não é possível registrar novamente.");
+
+        if (arquivoAta == null || arquivoAta.Length == 0)
+            return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
+
+        bool aprovado = notaFinal >= notaMinimaAprovacao;
+
+        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
+            return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
 
         var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
         if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
@@ -240,9 +253,23 @@ public class CoordenadorController : ControllerBase
         banca.NotaFinal = notaFinal;
         banca.AtaCaminho = $"/uploads/atas/{uniqueFileName}";
 
-        banca.Tcc!.Status = StatusTcc.Aprovado;
+        if (aprovado)
+        {
+            banca.Tcc.Status = StatusTcc.Finalizado;
+            banca.Tcc.MotivoRejeicao = null; // limpa qualquer motivo anterior, se houver
+        }
+        else
+        {
+            banca.Tcc.Status = StatusTcc.Reprovado;
+            banca.Tcc.MotivoRejeicao = motivoReprovacao;
+        }
 
         await _context.SaveChangesAsync();
-        return Ok("Resultado da banca registrado com sucesso!");
+
+        var mensagem = aprovado
+            ? "Resultado da banca registrado com sucesso! O TCC foi finalizado."
+            : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
+
+        return Ok(mensagem);
     }
 }

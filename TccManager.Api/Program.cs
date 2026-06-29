@@ -2,12 +2,17 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Binders;
+using TccManager.Api.Data;
 using TccManager.Api.Data;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+{
+    options.ModelBinderProviders.Insert(0, new InvariantDecimalModelBinderProvider());
+})
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -46,7 +51,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowBlazorClient",
         policy =>
         {
-            policy.WithOrigins("https://localhost:7249","http://localhost:5075")
+            policy.WithOrigins("https://localhost:7249", "http://localhost:5075")
                   .AllowAnyHeader()
                   .AllowAnyMethod();
         });
@@ -76,3 +81,5 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
