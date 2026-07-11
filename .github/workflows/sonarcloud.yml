@@ -1,0 +1,84 @@
+name: SonarQube Cloud
+
+# Secrets necessários neste repositório (Settings > Secrets and variables > Actions):
+#   SONAR_TOKEN -> token gerado no SonarQube Cloud (My Account > Security)
+#
+# Projeto/organização já configurados no SonarQube Cloud:
+#   organization: arielm11
+#   projectKey:   arielm11_SIGA-TCC
+#
+# Cobertura: o projeto usa coverlet.collector (via --collect:"XPlat Code
+# Coverage"), não coverlet.msbuild — por isso a coleta abaixo força o
+# formato OpenCover via runsettings inline, em vez de /p:CollectCoverage=true
+# (que só funciona com coverlet.msbuild).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "9.0.x" # mesmo valor usado no ci.yml — mantenha sincronizado
+
+jobs:
+  sonarcloud:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # necessário para o Sonar calcular blame/histórico corretamente
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Setup Java (requerido pelo scanner do Sonar)
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Cache do SonarQube scanner
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/scanner
+          key: ${{ runner.os }}-sonar-scanner
+          restore-keys: ${{ runner.os }}-sonar-scanner
+
+      - name: Instalar dotnet-sonarscanner
+        run: dotnet tool install --global dotnet-sonarscanner --version 11.2.0
+
+      - name: Iniciar análise Sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          dotnet sonarscanner begin
+          /k:"arielm11_SIGA-TCC"
+          /o:"arielm11"
+          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.cs.vstest.reportsPaths="**/*.trx"
+          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test com cobertura
+        run: >
+          dotnet test --no-restore --configuration Release
+          --logger "trx"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Finalizar análise Sonar
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
