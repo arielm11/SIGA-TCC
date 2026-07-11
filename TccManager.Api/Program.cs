@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using FluentValidation;
 using TccManager.Api.Binders;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Filters;
 using TccManager.Api.Middleware;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Auth;
@@ -22,6 +24,7 @@ try
     builder.Services.AddControllers(options =>
     {
         options.ModelBinderProviders.Insert(0, new InvariantDecimalModelBinderProvider());
+        options.Filters.Add<FluentValidationActionFilter>();
     })
         .AddJsonOptions(options =>
         {
@@ -30,6 +33,9 @@ try
 
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
+
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
     // Configuração do Entity Framework (Banco de Dados)
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
