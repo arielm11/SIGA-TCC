@@ -15,6 +15,11 @@ public class TccApiFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Development");
 
+        // Jwt:Key vem vazio no appsettings.json versionado; sem uma chave com tamanho
+        // suficiente (>= 256 bits para HMAC-SHA256) o AuthController.Login lança ao gerar
+        // o token e um login com credenciais válidas retornaria 500 em vez de 200.
+        builder.UseSetting("Jwt:Key", "chave-de-teste-super-secreta-para-jwt-1234567890");
+
         builder.ConfigureServices(services =>
         {
             // ── Remove TODOS os registros relacionados ao AppDbContext/SqlServer ──

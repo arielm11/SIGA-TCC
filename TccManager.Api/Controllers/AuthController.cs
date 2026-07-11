@@ -1,12 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using TccManager.Api.Data;
+using TccManager.Api.Services.Auth;
 using TccManager.Shared.DTOs;
-using TccManager.Shared.Models;
 
 namespace TccManager.Api.Controllers;
 
@@ -15,16 +13,17 @@ namespace TccManager.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IConfiguration _configuration;
+    private readonly IAuthTokenService _authTokenService;
 
-    public AuthController(AppDbContext context, IConfiguration configuration)
+    public AuthController(AppDbContext context, IAuthTokenService authTokenService)
     {
         _context = context;
-        _configuration = configuration;
+        _authTokenService = authTokenService;
     }
 
-
     [HttpPost("login")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
         var usuario = await _context.Usuarios
@@ -36,38 +35,41 @@ public class AuthController : ControllerBase
         if (!usuario.Ativo)
             return Unauthorized("Usuário inativo.");
 
-        var token = GerarTokenJtw(usuario);
+        var par = await _authTokenService.LoginAsync(usuario);
 
-        return Ok(new LoginResponseDto 
-        { 
-            Token = token,
+        return Ok(new LoginResponseDto
+        {
+            Token = par.Token,
+            RefreshToken = par.RefreshToken,
             Nome = usuario.Nome,
             Email = usuario.Email
         });
     }
 
-    private string GerarTokenJtw(Usuario usuario)
+    [HttpPost("refresh")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequestDto dto)
     {
-        var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]!);
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, usuario.Id.ToString()),
-            new Claim(ClaimTypes.Name, usuario.Nome),
-            new Claim(ClaimTypes.Email, usuario.Email),
-            new Claim(ClaimTypes.Role, usuario.Tipo.ToString())
-        };
+        if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+            return Unauthorized();
 
-        var tokenDescriptor = new SecurityTokenDescriptor
-        {
-            Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddHours(1),
-            Issuer = _configuration["Jwt:Issuer"],
-            Audience = _configuration["Jwt:Audience"],
-            SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-        };
+        var par = await _authTokenService.RefreshAsync(dto.RefreshToken);
 
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-        return tokenHandler.WriteToken(token);
+        if (par == null)
+            return Unauthorized();
+
+        return Ok(par);
+    }
+
+    [HttpPost("logout")]
+    [AllowAnonymous]
+    [EnableRateLimiting("login")]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequestDto dto)
+    {
+        if (!string.IsNullOrWhiteSpace(dto.RefreshToken))
+            await _authTokenService.LogoutAsync(dto.RefreshToken);
+
+        return NoContent();
     }
 }

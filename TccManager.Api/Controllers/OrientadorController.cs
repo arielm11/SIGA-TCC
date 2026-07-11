@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Data;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -16,10 +17,14 @@ namespace TccManager.Api.Controllers;
 public class OrientadorController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ISanitizerService _sanitizerService;
+    private readonly ITccNotificationService _notificationService;
 
-    public OrientadorController(AppDbContext context)
+    public OrientadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService)
     {
         _context = context;
+        _sanitizerService = sanitizerService;
+        _notificationService = notificationService;
     }
 
     [HttpGet("dashboard")]
@@ -79,6 +84,9 @@ public class OrientadorController : ControllerBase
         tcc.OrientadorId = profId;
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
+
         return Ok("Proposta enviada com sucesso!");
     }
 
@@ -94,9 +102,12 @@ public class OrientadorController : ControllerBase
         if (tcc == null) return NotFound("Proposta não encontrada ou já avaliada.");
 
         tcc.Status = StatusTcc.Reprovado;
-        tcc.MotivoRejeicao = dto.Motivo;
+        tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
+
         return Ok("Proposta rejeitada.");
     }
 
@@ -131,10 +142,12 @@ public class OrientadorController : ControllerBase
 
         if (entrega == null) return NotFound("Entrega não encontrada ou você não tem permissão para acessar.");
 
-        entrega.Feedback = dto.Feedback;
+        entrega.Feedback = _sanitizerService.Sanitizar(dto.Feedback);
         entrega.Nota = dto.Nota;
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarFeedbackRegistradoAsync(entrega.Id);
 
         return Ok("Feedback registrado com sucesso.");
     }
@@ -153,7 +166,7 @@ public class OrientadorController : ControllerBase
         {
             TccId = idTcc,
             DataReuniao = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataReuniao),
-            Ata = dto.Ata
+            Ata = _sanitizerService.Sanitizar(dto.Ata)!
         };
 
         _context.Acompanhamentos.Add(novoAcompanhamento);
@@ -176,7 +189,7 @@ public class OrientadorController : ControllerBase
         if (acompanhamento == null) return NotFound("Acompanhamento não encontrado ou sem permissão.");
 
         acompanhamento.DataReuniao = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dto.DataReuniao);
-        acompanhamento.Ata = dto.Ata;
+        acompanhamento.Ata = _sanitizerService.Sanitizar(dto.Ata)!;
 
         await _context.SaveChangesAsync();
         return Ok("Acompanhamento atualizado com sucesso.");
@@ -219,6 +232,8 @@ public class OrientadorController : ControllerBase
 
         tcc.Status = StatusTcc.AguardandoDefesa;
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarAceiteFinalAsync(tcc.Id);
 
         return Ok("Aceite final registrado com sucesso. O TCC agora aguarda o agendamento da Banca.");
     }

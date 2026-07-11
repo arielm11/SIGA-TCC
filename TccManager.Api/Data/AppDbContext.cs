@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<Banca> Banca { get; set; }
     public DbSet<BancaAvaliador> BancaAvaliadores { get; set; }
     public DbSet<MembroExterno> MembrosExternos { get; set; }
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -28,5 +29,25 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(ba => ba.ProfessorId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("refresh_tokens");
+
+            entity.Property(rt => rt.TokenHash)
+                .HasColumnType("char(64)")
+                .IsRequired();
+
+            entity.Property(rt => rt.ReplacedByTokenHash)
+                .HasColumnType("char(64)");
+
+            entity.HasIndex(rt => rt.TokenHash).IsUnique();
+            entity.HasIndex(rt => rt.UsuarioId);
+
+            entity.HasOne(rt => rt.Usuario)
+                .WithMany()
+                .HasForeignKey(rt => rt.UsuarioId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }

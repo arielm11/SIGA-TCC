@@ -8,6 +8,12 @@
 appsettings.Local.json
 appsettings.Development.json
 
+# Serilog file sink output
+TccManager.Api/Logs/
+
+# Claude file output
+docs/
+
 # User-specific files
 *.rsuser
 *.suo

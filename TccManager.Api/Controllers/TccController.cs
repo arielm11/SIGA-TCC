@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -16,11 +17,13 @@ public class TccController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IWebHostEnvironment _environment;
+    private readonly ISanitizerService _sanitizerService;
 
-    public TccController(AppDbContext context, IWebHostEnvironment environment)
+    public TccController(AppDbContext context, IWebHostEnvironment environment, ISanitizerService sanitizerService)
     {
         _context = context;
         _environment = environment;
+        _sanitizerService = sanitizerService;
     }
 
     [HttpGet("meu-tcc")]
@@ -57,8 +60,8 @@ public class TccController : ControllerBase
 
         var tcc = new Tcc
         {
-            Titulo = dto.Titulo,
-            Resumo = dto.Resumo,
+            Titulo = _sanitizerService.Sanitizar(dto.Titulo)!,
+            Resumo = _sanitizerService.Sanitizar(dto.Resumo)!,
             AlunoId = alunoId,
             Status = StatusTcc.Pendente,
             DataCriacao = DateTime.UtcNow

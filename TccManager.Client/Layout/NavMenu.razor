@@ -1,10 +1,12 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
+@using TccManager.Shared.DTOs
 
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ILocalStorageService LocalStorage
 @inject NavigationManager Navigation
+@inject IHttpClientFactory HttpClientFactory
 
 <div class="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 280px; height: 100vh;">
 
@@ -108,7 +110,27 @@
 @code {
     private async Task Logout()
     {
+        // RF05/§6.7: notifica o servidor para revogar o refresh token da sessão antes de
+        // limpar o estado local. Best-effort — falha de rede aqui não deve impedir o
+        // logout local, apenas é registrada.
+        try
+        {
+            var refreshToken = await LocalStorage.GetItemAsStringAsync("refreshToken");
+            refreshToken = refreshToken?.Replace("\"", string.Empty);
+
+            if (!string.IsNullOrWhiteSpace(refreshToken))
+            {
+                var authRawClient = HttpClientFactory.CreateClient("AuthRaw");
+                await authRawClient.PostAsJsonAsync("api/auth/logout", new LogoutRequestDto { RefreshToken = refreshToken });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Falha ao notificar logout ao servidor (best-effort): {ex.Message}");
+        }
+
         await LocalStorage.RemoveItemAsync("authToken");
+        await LocalStorage.RemoveItemAsync("refreshToken");
         ((CustomAuthStateProvider)AuthStateProvider).NotifyUserLogout();
         Navigation.NavigateTo("/login");
     }

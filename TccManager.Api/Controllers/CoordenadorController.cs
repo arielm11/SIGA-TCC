@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -15,11 +16,15 @@ namespace TccManager.Api.Controllers;
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ISanitizerService _sanitizerService;
+    private readonly ITccNotificationService _notificationService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
-    public CoordenadorController(AppDbContext context)
+    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService)
     {
         _context = context;
+        _sanitizerService = sanitizerService;
+        _notificationService = notificationService;
     }
 
     [HttpGet("dashboard-stats")]
@@ -86,6 +91,10 @@ public class CoordenadorController : ControllerBase
         tcc.Status = StatusTcc.Aprovado;
 
         await _context.SaveChangesAsync();
+
+        // Mesmo evento/template de OrientadorController.AprovarProposta (RF7).
+        await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
+
         return Ok("Orientador designado com sucesso.");
     }
 
@@ -178,6 +187,11 @@ public class CoordenadorController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+
+        // Disparo após o SaveChanges que persiste os BancaAvaliador, para que a lista
+        // de avaliadores já esteja completa na resolução de destinatários (RF9).
+        await _notificationService.NotificarBancaAgendadaAsync(banca.Id);
+
         return Ok("Banca agendada com sucesso!");
     }
 
@@ -261,10 +275,12 @@ public class CoordenadorController : ControllerBase
         else
         {
             banca.Tcc.Status = StatusTcc.Reprovado;
-            banca.Tcc.MotivoRejeicao = motivoReprovacao;
+            banca.Tcc.MotivoRejeicao = _sanitizerService.Sanitizar(motivoReprovacao);
         }
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarResultadoBancaAsync(banca.Id, aprovado);
 
         var mensagem = aprovado
             ? "Resultado da banca registrado com sucesso! O TCC foi finalizado."
