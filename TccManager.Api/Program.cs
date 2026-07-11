@@ -70,6 +70,8 @@ try
 
     builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
 
+    builder.Services.AddEmailNotifications(builder.Configuration);
+
     var app = builder.Build();
 
     if (app.Environment.IsDevelopment())

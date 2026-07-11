@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Data;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -17,11 +18,13 @@ public class OrientadorController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ISanitizerService _sanitizerService;
+    private readonly ITccNotificationService _notificationService;
 
-    public OrientadorController(AppDbContext context, ISanitizerService sanitizerService)
+    public OrientadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService)
     {
         _context = context;
         _sanitizerService = sanitizerService;
+        _notificationService = notificationService;
     }
 
     [HttpGet("dashboard")]
@@ -81,6 +84,9 @@ public class OrientadorController : ControllerBase
         tcc.OrientadorId = profId;
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
+
         return Ok("Proposta enviada com sucesso!");
     }
 
@@ -99,6 +105,9 @@ public class OrientadorController : ControllerBase
         tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
+
         return Ok("Proposta rejeitada.");
     }
 
@@ -137,6 +146,8 @@ public class OrientadorController : ControllerBase
         entrega.Nota = dto.Nota;
 
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarFeedbackRegistradoAsync(entrega.Id);
 
         return Ok("Feedback registrado com sucesso.");
     }
@@ -221,6 +232,8 @@ public class OrientadorController : ControllerBase
 
         tcc.Status = StatusTcc.AguardandoDefesa;
         await _context.SaveChangesAsync();
+
+        await _notificationService.NotificarAceiteFinalAsync(tcc.Id);
 
         return Ok("Aceite final registrado com sucesso. O TCC agora aguarda o agendamento da Banca.");
     }

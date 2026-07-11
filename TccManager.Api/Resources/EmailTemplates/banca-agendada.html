@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Banca de TCC agendada</title>
+</head>
+<body style="font-family: Arial, sans-serif; color: #222; background-color: #f4f4f4; padding: 24px;">
+  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; padding: 24px; border: 1px solid #e0e0e0;">
+    <h2 style="color: #1565c0;">Banca de TCC agendada</h2>
+    <p>A banca de defesa do TCC <strong>"{{TituloTcc}}"</strong>, do aluno <strong>{{NomeAluno}}</strong>, foi agendada.</p>
+    <p><strong>Data e horário:</strong> {{DataHora}} (horário de Brasília)</p>
+    <p><strong>Local:</strong> {{Local}}</p>
+    <p><strong>Membros da banca avaliadora:</strong></p>
+    <ul>
+      {{ListaMembrosBanca}}
+    </ul>
+    <p>Caso você seja um membro externo convidado, esta mensagem serve como convite formal para participar da defesa.</p>
+    <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 24px 0;">
+    <p style="font-size: 12px; color: #888;">Esta é uma mensagem automática do SIGA-TCC. Não responda a este e-mail.</p>
+  </div>
+</body>
+</html>
