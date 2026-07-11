@@ -51,9 +51,21 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "expirado")]
+    [Parameter]
+    public string? Expirado { get; set; }
+
     private LoginDto loginModel = new();
     private string mensagemErro = string.Empty;
     private bool carregando = false;
+
+    protected override void OnInitialized()
+    {
+        if (Expirado == "1")
+        {
+            mensagemErro = "Sua sessão expirou. Faça login novamente.";
+        }
+    }
 
     private async Task HandleLogin()
     {
@@ -66,6 +78,7 @@
             {
                 var resultado = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
                 await LocalStorage.SetItemAsync("authToken", resultado!.Token);
+                await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
                 AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
                 Navigation.NavigateTo("/");
@@ -75,9 +88,9 @@
                 mensagemErro = "Credenciais inválidas. Tente novamente.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            mensagemErro = $"Ocorreu um erro: {ex.Message}";
+            mensagemErro = "Não foi possível entrar. Tente novamente em instantes.";
         }
         finally
         {

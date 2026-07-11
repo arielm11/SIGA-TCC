@@ -7,6 +7,7 @@ using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Middleware;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Auth;
 using System.Text;
 using Serilog;
 
@@ -69,6 +70,9 @@ try
     builder.Services.ConfigureRateLimiting(builder.Configuration);
 
     builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
+
+    builder.Services.AddScoped<ITokenService, TokenService>();
+    builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();
 
     builder.Services.AddEmailNotifications(builder.Configuration);
 

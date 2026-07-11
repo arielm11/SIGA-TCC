@@ -1,19 +1,25 @@
-﻿using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Json;
 using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.Extensions.DependencyInjection;
+using TccManager.Client.Services;
 
 namespace TccManager.Client.Providers;
+
 public class CustomAuthStateProvider : AuthenticationStateProvider
 {
     private readonly ILocalStorageService _localStorage;
-    private readonly HttpClient _http;
+    private readonly IServiceProvider _serviceProvider;
 
-    public CustomAuthStateProvider(ILocalStorageService localStorage, HttpClient http)
+    // ITokenRefreshCoordinator é resolvido sob demanda (via IServiceProvider) em vez de
+    // injetado diretamente no construtor: o coordenador, por sua vez, depende deste
+    // provider (para chamar NotifyUserAuthentication após renovar — §6.3 da
+    // arquitetura), então a injeção direta nos dois sentidos formaria um ciclo de DI.
+    public CustomAuthStateProvider(ILocalStorageService localStorage, IServiceProvider serviceProvider)
     {
         _localStorage = localStorage;
-        _http = http;
+        _serviceProvider = serviceProvider;
     }
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
@@ -25,35 +31,36 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
         if (string.IsNullOrWhiteSpace(token))
             return anonymousState;
 
-        token = token.Replace("\"", "");
+        token = token.Replace("\"", string.Empty);
 
-        var claims = ParseClaimsFromJwt(token);
-
-        var expClaim = claims.FirstOrDefault(c => c.Type == "exp");
-        if (expClaim != null && long.TryParse(expClaim.Value, out long expTime))
+        if (EstaExpirado(token))
         {
-            var dataExpiracao = DateTimeOffset.FromUnixTimeSeconds(expTime).UtcDateTime;
+            // P-C1: o access token expirou, mas pode existir um refresh token ainda
+            // válido — tenta renovar (reaproveitando o mesmo coordenador single-flight
+            // usado pelo handler de 401) antes de declarar a sessão anônima, evitando
+            // deslogar prematuramente uma sessão ainda renovável apenas por navegação.
+            var refreshCoordinator = _serviceProvider.GetRequiredService<ITokenRefreshCoordinator>();
+            var refreshOk = await refreshCoordinator.EnsureRefreshedAsync(token);
 
-            if (dataExpiracao <= DateTime.UtcNow)
-            {
-                await _localStorage.RemoveItemAsync("authToken");
-                _http.DefaultRequestHeaders.Authorization = null;
+            if (!refreshOk)
                 return anonymousState;
-            }
+
+            var tokenRenovado = await _localStorage.GetItemAsStringAsync("authToken");
+            if (string.IsNullOrWhiteSpace(tokenRenovado))
+                return anonymousState;
+
+            token = tokenRenovado.Replace("\"", string.Empty);
         }
 
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        var identity = new ClaimsIdentity(claims, "jwt"); 
+        var claims = ParseClaimsFromJwt(token);
+        var identity = new ClaimsIdentity(claims, "jwt");
         var usuario = new ClaimsPrincipal(identity);
 
         return new AuthenticationState(usuario);
     }
 
-    public void NotifyUserAuthentication(string token) 
+    public void NotifyUserAuthentication(string token)
     {
-        _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
         var claims = ParseClaimsFromJwt(token);
         var identity = new ClaimsIdentity(claims, "jwt");
         var usuario = new ClaimsPrincipal(identity);
@@ -63,23 +70,44 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
 
     public void NotifyUserLogout()
     {
-        _http.DefaultRequestHeaders.Authorization = null;
-
         var anonymousUser = new ClaimsPrincipal(new ClaimsIdentity());
 
         NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(anonymousUser)));
     }
 
-    private IEnumerable<Claim> ParseClaimsFromJwt(string jwt)
+    private static bool EstaExpirado(string token)
+    {
+        var claims = ParseClaimsFromJwt(token);
+        var expClaim = claims.FirstOrDefault(c => c.Type == "exp");
+
+        if (expClaim == null || !long.TryParse(expClaim.Value, out var expTime))
+            return false;
+
+        var dataExpiracao = DateTimeOffset.FromUnixTimeSeconds(expTime).UtcDateTime;
+        return dataExpiracao <= DateTime.UtcNow;
+    }
+
+    private static IEnumerable<Claim> ParseClaimsFromJwt(string jwt)
     {
         var claims = new List<Claim>();
-        var payload = jwt.Split('.')[1];
-        var jsonBytes = ParseBase64WithoutPadding(payload);
-        var keyValuePairs = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes);
 
-        if (keyValuePairs != null) 
+        Dictionary<string, object>? keyValuePairs;
+        try
         {
-            foreach (var kvp in keyValuePairs) 
+            var payload = jwt.Split('.')[1];
+            var jsonBytes = ParseBase64WithoutPadding(payload);
+            keyValuePairs = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes);
+        }
+        catch (Exception ex) when (ex is IndexOutOfRangeException or FormatException or JsonException)
+        {
+            // Token malformado em localStorage (ex.: corrompido manualmente): trata como
+            // anônimo em vez de propagar exceção para GetAuthenticationStateAsync.
+            return claims;
+        }
+
+        if (keyValuePairs != null)
+        {
+            foreach (var kvp in keyValuePairs)
             {
                 var value = kvp.Value.ToString() ?? "";
                 var claimType = kvp.Key;
@@ -92,8 +120,8 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
                 {
                     claimType = ClaimTypes.Name;
                 }
-                else if (claimType == "nameid" || claimType.Contains("/claims/nameid")) 
-                { 
+                else if (claimType == "nameid" || claimType.Contains("/claims/nameid"))
+                {
                     claimType = ClaimTypes.NameIdentifier;
                 }
 
@@ -116,17 +144,17 @@ public class CustomAuthStateProvider : AuthenticationStateProvider
                         Console.WriteLine($"Erro ao desserializar o valor do claim '{claimType}': {value}");
                     }
                 }
-                else 
-                { 
+                else
+                {
                     claims.Add(new Claim(claimType, value));
                 }
-            }        
+            }
         }
 
         return claims;
     }
 
-    private byte[] ParseBase64WithoutPadding(string base64)
+    private static byte[] ParseBase64WithoutPadding(string base64)
     {
         switch (base64.Length % 4)
         {
