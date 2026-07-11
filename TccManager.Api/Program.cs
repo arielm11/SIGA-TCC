@@ -6,6 +6,7 @@ using TccManager.Api.Binders;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Middleware;
+using TccManager.Api.Services;
 using System.Text;
 using Serilog;
 
@@ -66,6 +67,8 @@ try
     });
 
     builder.Services.ConfigureRateLimiting(builder.Configuration);
+
+    builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
 
     var app = builder.Build();
 

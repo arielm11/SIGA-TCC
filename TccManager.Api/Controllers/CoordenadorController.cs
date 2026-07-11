@@ -15,11 +15,13 @@ namespace TccManager.Api.Controllers;
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ISanitizerService _sanitizerService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
-    public CoordenadorController(AppDbContext context)
+    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService)
     {
         _context = context;
+        _sanitizerService = sanitizerService;
     }
 
     [HttpGet("dashboard-stats")]
@@ -261,7 +263,7 @@ public class CoordenadorController : ControllerBase
         else
         {
             banca.Tcc.Status = StatusTcc.Reprovado;
-            banca.Tcc.MotivoRejeicao = motivoReprovacao;
+            banca.Tcc.MotivoRejeicao = _sanitizerService.Sanitizar(motivoReprovacao);
         }
 
         await _context.SaveChangesAsync();
