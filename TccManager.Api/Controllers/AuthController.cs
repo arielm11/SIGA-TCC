@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -25,6 +26,7 @@ public class AuthController : ControllerBase
 
 
     [HttpPost("login")]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
         var usuario = await _context.Usuarios
@@ -38,8 +40,8 @@ public class AuthController : ControllerBase
 
         var token = GerarTokenJtw(usuario);
 
-        return Ok(new LoginResponseDto 
-        { 
+        return Ok(new LoginResponseDto
+        {
             Token = token,
             Nome = usuario.Nome,
             Email = usuario.Email
