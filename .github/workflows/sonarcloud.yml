@@ -59,7 +59,7 @@ jobs:
           dotnet sonarscanner begin
           /k:"arielm11_SIGA-TCC"
           /o:"arielm11"
-          /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.token="$SONAR_TOKEN"
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.cs.vstest.reportsPaths="**/*.trx"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
@@ -81,4 +81,4 @@ jobs:
       - name: Finalizar análise Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.token="${{ secrets.SONAR_TOKEN }}"
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
