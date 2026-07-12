@@ -8,6 +8,7 @@ using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Filters;
 using TccManager.Api.Middleware;
+using TccManager.Api.ModelBinding;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Auth;
 using System.Text;
@@ -24,6 +25,7 @@ try
     builder.Services.AddControllers(options =>
     {
         options.ModelBinderProviders.Insert(0, new InvariantDecimalModelBinderProvider());
+        options.ModelBinderProviders.Insert(0, new PaginacaoQueryModelBinderProvider());
         options.Filters.Add<FluentValidationActionFilter>();
     })
         .AddJsonOptions(options =>

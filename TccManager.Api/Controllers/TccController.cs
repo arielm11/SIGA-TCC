@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -96,7 +97,7 @@ public class TccController : ControllerBase
 
     [HttpGet("entregas")]
     [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> GetMinhasEntregas()
+    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
@@ -108,7 +109,7 @@ public class TccController : ControllerBase
         var entregas = await _context.Entregas
             .Where(e => e.TccId == tcc.Id)
             .OrderByDescending(e => e.DataEnvio)
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao);
 
         return Ok(entregas);
     }

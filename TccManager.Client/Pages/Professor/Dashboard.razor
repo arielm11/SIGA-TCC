@@ -24,17 +24,17 @@
                 <div class="card shadow-sm border-warning h-100">
                     <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-inbox-fill me-2"></i> Propostas Pendentes</span>
-                        <span class="badge bg-dark rounded-pill">@dashboard.PropostasPendentes.Count</span>
+                        <span class="badge bg-dark rounded-pill">@dashboard.PropostasPendentes.TotalCount</span>
                     </div>
                     <div class="card-body bg-light">
-                        @if (!dashboard.PropostasPendentes.Any())
+                        @if (!dashboard.PropostasPendentes.Items.Any())
                         {
                             <p class="text-muted text-center mt-3">Não há propostas aguardando aprovação.</p>
                         }
                         else
                         {
                             <div class="accordion" id="accordionPendentes">
-                                @foreach (var tcc in dashboard.PropostasPendentes)
+                                @foreach (var tcc in dashboard.PropostasPendentes.Items)
                                 {
                                     <div class="accordion-item mb-2 border">
                                         <h2 class="accordion-header" id="heading_@tcc.Id">
@@ -60,6 +60,8 @@
                                     </div>
                                 }
                             </div>
+
+                            <Paginacao PaginaAtual="dashboard.PropostasPendentes.CurrentPage" TotalPaginas="dashboard.PropostasPendentes.TotalPages" OnMudarPagina="MudarPaginaPropostasPendentes" />
                         }
                     </div>
                 </div>
@@ -105,6 +107,7 @@
 @code {
     private bool carregando = true;
     private DashboardOrientadorDto? dashboard;
+    private int paginaPropostasPendentes = 1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,10 +119,16 @@
         carregando = true;
         try
         {
-            dashboard = await Http.GetFromJsonAsync<DashboardOrientadorDto>("api/orientador/dashboard");
+            dashboard = await Http.GetFromJsonAsync<DashboardOrientadorDto>($"api/orientador/dashboard?page={paginaPropostasPendentes}");
         }
         catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar o dashboard."); }
         finally { carregando = false; }
+    }
+
+    private async Task MudarPaginaPropostasPendentes(int novaPagina)
+    {
+        paginaPropostasPendentes = novaPagina;
+        await CarregarDashboard();
     }
 
     // RF011: Aprovar Proposta

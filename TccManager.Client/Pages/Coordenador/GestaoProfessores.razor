@@ -36,7 +36,7 @@
             <div class="card shadow-sm">
                 <div class="card-body">
                     <p class="text-muted mb-4">Gerencie a carga de orientandos de cada professor. Professores marcados como indisponíveis não aparecerão na lista de designação.</p>
-                    
+
                     <div class="table-responsive">
                         <table class="table table-hover align-middle">
                             <thead class="table-light">
@@ -49,7 +49,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var prof in professores)
+                                @foreach (var prof in professores.Items)
                                 {
                                     <tr>
                                         <td class="fw-bold">@prof.Nome</td>
@@ -76,6 +76,8 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <Paginacao PaginaAtual="professores.CurrentPage" TotalPaginas="professores.TotalPages" OnMudarPagina="MudarPaginaProfessores" />
                 </div>
             </div>
         }
@@ -115,14 +117,14 @@
                 <div class="col-md-8">
                     <div class="card shadow-sm">
                         <div class="card-body">
-                            @if (!externos.Any())
+                            @if (!externos.Items.Any())
                             {
                                 <div class="alert alert-light text-center mb-0">Nenhum avaliador externo cadastrado.</div>
                             }
                             else
                             {
                                 <ul class="list-group list-group-flush">
-                                    @foreach (var membro in externos)
+                                    @foreach (var membro in externos.Items)
                                     {
                                         <li class="list-group-item d-flex justify-content-between align-items-center">
                                             <div>
@@ -143,6 +145,8 @@
                                         </li>
                                     }
                                 </ul>
+
+                                <Paginacao PaginaAtual="externos.CurrentPage" TotalPaginas="externos.TotalPages" OnMudarPagina="MudarPaginaExternos" />
                             }
                         </div>
                     </div>
@@ -194,11 +198,14 @@
     private string abaAtiva = "internos";
     private bool carregando = true;
 
-    private List<ProfessorResumoDto>? professores;
-    private List<MembroExterno>? externos;
-    
+    private PagedResult<ProfessorResumoDto>? professores;
+    private PagedResult<MembroExternoDto>? externos;
+
+    private int paginaProfessores = 1;
+    private int paginaExternos = 1;
+
     private MembroExterno novoExterno = new();
-    
+
     // Variáveis para o Modal
     private bool exibirModalEdicao = false;
     private MembroExternoDto membroParaEdicao = new();
@@ -213,11 +220,23 @@
         carregando = true;
         try
         {
-            professores = await Http.GetFromJsonAsync<List<ProfessorResumoDto>>("api/coordenador/professores");
-            externos = await Http.GetFromJsonAsync<List<MembroExterno>>("api/coordenador/membros-externos");
+            professores = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={paginaProfessores}");
+            externos = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={paginaExternos}");
         }
         catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar os dados."); }
         finally { carregando = false; }
+    }
+
+    private async Task MudarPaginaProfessores(int novaPagina)
+    {
+        paginaProfessores = novaPagina;
+        professores = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={paginaProfessores}");
+    }
+
+    private async Task MudarPaginaExternos(int novaPagina)
+    {
+        paginaExternos = novaPagina;
+        externos = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={paginaExternos}");
     }
 
     private async Task SalvarCapacidade(ProfessorResumoDto prof)
@@ -257,7 +276,7 @@
 
     // --- LÓGICA DO MODAL DE EDIÇÃO ---
 
-    private void AbrirModalEdicao(MembroExterno membro)
+    private void AbrirModalEdicao(MembroExternoDto membro)
     {
         membroParaEdicao = new MembroExternoDto
         {

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
@@ -28,7 +29,7 @@ public class OrientadorController : ControllerBase
     }
 
     [HttpGet("dashboard")]
-    public async Task<IActionResult> GetDaboard()
+    public async Task<IActionResult> GetDaboard([FromQuery] PaginacaoQuery paginacao)
     {
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
@@ -37,6 +38,7 @@ public class OrientadorController : ControllerBase
         var pendentes = await _context.Tccs
             .Include(t => t.Aluno)
             .Where(t => t.Status == StatusTcc.Pendente)
+            .OrderByDescending(t => t.DataCriacao)
             .Select(t => new TccResumoDto
             {
                 Id = t.Id,
@@ -45,7 +47,7 @@ public class OrientadorController : ControllerBase
                 NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconecido",
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
-            }).ToListAsync();
+            }).ToPagedResultAsync(paginacao);
 
         var ativos = await _context.Tccs
             .Include(t => t.Aluno)

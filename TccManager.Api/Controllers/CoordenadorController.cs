@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
@@ -42,7 +43,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("professores")]
-    public async Task<IActionResult> GetProfessores()
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao)
     {
         var professores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
@@ -55,7 +56,7 @@ public class CoordenadorController : ControllerBase
                 CargaAtual = _context.Tccs.Count(t => t.OrientadorId == u.Id && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
             })
             .OrderBy(p => p.Nome)
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao);
 
         return Ok(professores);
     }
@@ -113,9 +114,19 @@ public class CoordenadorController : ControllerBase
 
     // --- CRUD MEMBROS EXTERNOS ---
     [HttpGet("membros-externos")]
-    public async Task<IActionResult> GetMembrosExternos()
+    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao)
     {
-        var membros = await _context.MembrosExternos.OrderBy(m => m.Nome).ToListAsync();
+        var membros = await _context.MembrosExternos
+            .OrderBy(m => m.Nome)
+            .Select(m => new MembroExternoDto
+            {
+                Id = m.Id,
+                Nome = m.Nome,
+                Email = m.Email,
+                Instituicao = m.Instituicao
+            })
+            .ToPagedResultAsync(paginacao);
+
         return Ok(membros);
     }
 
