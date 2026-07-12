@@ -9,6 +9,7 @@ using TccManager.Api.Services.Email;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using TccManager.Tests.Services.Email;
 using Xunit;
 
@@ -29,7 +30,7 @@ public class NotificacaoIntegracao_Tests
     private const int idAvaliador1 = 21;
     private const int idAvaliador2 = 22;
 
-    private sealed class FactoryComFilaFake : TccApiFactory
+    private sealed class FactoryComFilaFake : WebRootIsolatedApiFactory
     {
         private readonly FakeEmailQueue _fila;
 

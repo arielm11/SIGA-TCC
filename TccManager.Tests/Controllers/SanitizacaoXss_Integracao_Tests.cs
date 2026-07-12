@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Controllers;
@@ -136,9 +137,9 @@ public class SanitizacaoXss_Integracao_Tests
 
     // ── Caminho multipart/form-data ─────────────────────────────────────────
 
-    private async Task<(TccApiFactory factory, int bancaId, int tccId)> PrepararCenarioComBancaPendente()
+    private async Task<(WebRootIsolatedApiFactory factory, int bancaId, int tccId)> PrepararCenarioComBancaPendente()
     {
-        var factory = new TccApiFactory();
+        var factory = new WebRootIsolatedApiFactory();
         using var context = factory.CriarContextoDireto();
 
         context.Usuarios.Add(new Usuario { Id = ID_ALUNO, Nome = "Aluno Teste", Email = "aluno@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true });
@@ -182,6 +183,7 @@ public class SanitizacaoXss_Integracao_Tests
     {
         // Arrange
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(ID_COORDENADOR, "Coordenador");
 
         var form = new MultipartFormDataContent();

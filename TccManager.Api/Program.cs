@@ -11,6 +11,7 @@ using TccManager.Api.Middleware;
 using TccManager.Api.ModelBinding;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Auth;
+using TccManager.Api.Services.Storage;
 using System.Text;
 using Serilog;
 
@@ -78,6 +79,7 @@ try
     builder.Services.ConfigureRateLimiting(builder.Configuration);
 
     builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
+    builder.Services.AddSingleton<IStorageService, LocalStorageService>();
 
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();

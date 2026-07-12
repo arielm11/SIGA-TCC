@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Controllers;
@@ -12,56 +12,6 @@ public class TccController_EnviarEntrega_Tests
 {
     private const int idAluno = 10;
     private const int idProfessor = 20;
-
-    /// <summary>
-    /// Variante da <see cref="TccApiFactory"/> que redireciona o WebRootPath do host de
-    /// teste para um diretório temporário isolado por execução. O caminho de sucesso
-    /// (RF4) grava fisicamente o arquivo em <c>WebRootPath/uploads/entregas</c>; sem esse
-    /// redirecionamento os arquivos iriam para o wwwroot real do projeto TccManager.Api.
-    /// O diretório é criado no construtor e removido no Dispose (mesmo em caso de falha),
-    /// para não poluir o repositório nem acumular resíduo entre execuções.
-    /// </summary>
-    private sealed class EnviarEntregaApiFactory : TccApiFactory
-    {
-        public readonly string WebRootTemp;
-
-        public EnviarEntregaApiFactory()
-        {
-            WebRootTemp = Path.Combine(
-                Path.GetTempPath(),
-                "siga-tcc-tests",
-                "webroot",
-                Guid.NewGuid().ToString());
-            Directory.CreateDirectory(WebRootTemp);
-        }
-
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            base.ConfigureWebHost(builder);
-            builder.UseWebRoot(WebRootTemp);
-        }
-
-        public string PastaEntregas => Path.Combine(WebRootTemp, "uploads", "entregas");
-
-        protected override void Dispose(bool disposing)
-        {
-            base.Dispose(disposing);
-
-            if (disposing)
-            {
-                try
-                {
-                    if (Directory.Exists(WebRootTemp))
-                        Directory.Delete(WebRootTemp, recursive: true);
-                }
-                catch
-                {
-                    // Limpeza best-effort: um arquivo eventualmente travado no SO não deve
-                    // derrubar o teste nem mascarar o resultado real da asserção.
-                }
-            }
-        }
-    }
 
     private static async Task<int> SemearTccAsync(
         TccApiFactory factory,
@@ -145,7 +95,7 @@ public class TccController_EnviarEntrega_Tests
     [Fact]
     public async Task RF1_EntregaFinal_SemOrientador_DeveRetornarBadRequest()
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
@@ -171,7 +121,7 @@ public class TccController_EnviarEntrega_Tests
     [InlineData(StatusTcc.Finalizado)]
     public async Task RF2_TccNaoAprovado_DeveRetornarBadRequest(StatusTcc status)
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, status, comOrientador: true);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
@@ -193,7 +143,7 @@ public class TccController_EnviarEntrega_Tests
     [Fact]
     public async Task RF3_ReenvioComEntregaFinalExistente_DeveRetornarBadRequest()
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(
             factory, StatusTcc.Aprovado, comOrientador: true, comEntregaFinal: true);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
@@ -217,7 +167,7 @@ public class TccController_EnviarEntrega_Tests
     [Fact]
     public async Task RF4_EntregaParcial_ComTccAprovado_DeveRetornarOk()
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
@@ -243,7 +193,7 @@ public class TccController_EnviarEntrega_Tests
     [Fact]
     public async Task RF4_EntregaFinal_ComOrientador_DeveRetornarOk()
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: true);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
@@ -269,7 +219,7 @@ public class TccController_EnviarEntrega_Tests
     [InlineData("entrega")]
     public async Task RF5_ExtensaoNaoPermitida_DeveRetornarBadRequest(string nomeArquivo)
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: true);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
@@ -295,7 +245,7 @@ public class TccController_EnviarEntrega_Tests
     [InlineData("entrega.zip", "application/zip")]
     public async Task RF5_ExtensaoPermitida_DeveRetornarOk(string nomeArquivo, string contentType)
     {
-        using var factory = new EnviarEntregaApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
