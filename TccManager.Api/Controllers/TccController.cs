@@ -156,7 +156,7 @@ public class TccController : ControllerBase
         var entrega = new Entrega
         {
             TccId = tcc.Id,
-            Titulo = tituloEntrega,
+            Titulo = _sanitizerService.Sanitizar(tituloEntrega)!,
             ArquivoCaminho = $"/uploads/entregas/{fileName}",
             Tipo = tipo,
             DataEnvio = DateTime.UtcNow
