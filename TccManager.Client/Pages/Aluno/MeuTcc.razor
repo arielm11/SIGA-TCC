@@ -407,7 +407,8 @@
 
     private async Task CarregarEntregas()
     {
-        entregasFeitas = await Http.GetFromJsonAsync<List<Entrega>>("api/tcc/entregas");
+        var entregasPaginado = await Http.GetFromJsonAsync<PagedResult<Entrega>>($"api/tcc/entregas?pageSize={PaginacaoQuery.MaxPageSize}");
+        entregasFeitas = entregasPaginado?.Items ?? new();
 
         meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
 

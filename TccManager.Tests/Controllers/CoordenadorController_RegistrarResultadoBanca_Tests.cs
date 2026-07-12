@@ -1,7 +1,8 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Controllers;
@@ -12,9 +13,9 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     private const int idAluno = 10;
     private const int idProfessor = 20;
 
-    private async Task<(TccApiFactory factory, int bancaId, int tccId)> PrepararCenarioComBancaPendente()
+    private async Task<(WebRootIsolatedApiFactory factory, int bancaId, int tccId)> PrepararCenarioComBancaPendente()
     {
-        var factory = new TccApiFactory();
+        var factory = new WebRootIsolatedApiFactory();
         using var context = factory.CriarContextoDireto();
 
         var aluno = new Usuario { Id = idAluno, Nome = "Aluno Teste", Email = "aluno@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true };
@@ -79,6 +80,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     {
         // Arrange
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act
@@ -94,6 +96,11 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
 
         Assert.Equal(StatusTcc.Finalizado, tcc.Status);
         Assert.Null(tcc.MotivoRejeicao);
+
+        // O arquivo físico da ata deve ter sido gravado no web root temporário isolado,
+        // e não no wwwroot real do projeto.
+        Assert.True(Directory.Exists(factory.PastaAtas));
+        Assert.Single(Directory.GetFiles(factory.PastaAtas));
     }
 
     [Fact]
@@ -101,6 +108,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     {
         // Arrange
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
         const string motivoEsperado = "Trabalho não atendeu aos requisitos metodológicos mínimos.";
 
@@ -125,6 +133,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         // Arrange — valida a regra de negócio no backend, independente do
         // botão desabilitado no frontend (defesa em profundidade)
         var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
+        using var _fd = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act
@@ -141,6 +150,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     {
         // Arrange — caso de fronteira: valida o operador ">=" usado na correção
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act
@@ -164,6 +174,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         // para distinguir reprovação em banca de rejeição de proposta:
         // a presença de uma Entrega do tipo Final.
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act
@@ -188,6 +199,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         // Arrange — regressão: garante que a validação de arquivo obrigatório
         // (que já existia antes da correção) continua funcionando
         var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
+        using var _fd = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         var form = new MultipartFormDataContent();
@@ -206,7 +218,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     public async Task BancaInexistente_DeveRetornarNotFound()
     {
         // Arrange
-        var factory = new TccApiFactory();
+        using var factory = new WebRootIsolatedApiFactory();
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act
@@ -230,6 +242,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
 
         // Arrange
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         // Act — primeiro lançamento: aprova o TCC normalmente
@@ -264,6 +277,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     {
         // Arrange
         var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
         const string motivoOriginal = "Não atingiu os critérios mínimos de avaliação.";
 
@@ -294,6 +308,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
     {
         // Arrange — banca ainda em AguardandoDefesa, então não é caso do Bug #5
         var (factory, bancaId, _) = await PrepararCenarioComBancaPendente();
+        using var _fd = factory;
         var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
         var form = new MultipartFormDataContent();
@@ -327,6 +342,7 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             Thread.CurrentThread.CurrentUICulture = culturaPtBr;
 
             var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+            using var _ = factory;
             var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
 
             // Act — envia "85.5" no formato InvariantCulture (igual ao Client real)

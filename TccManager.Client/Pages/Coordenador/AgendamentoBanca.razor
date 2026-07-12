@@ -120,8 +120,12 @@
         try
         {
             tccsProntos = await Http.GetFromJsonAsync<List<TccAguardandoBancaDto>>("api/coordenador/aguardando-banca");
-            todosProfessores = await Http.GetFromJsonAsync<List<ProfessorResumoDto>>("api/coordenador/professores");
-            todosExternos = await Http.GetFromJsonAsync<List<MembroExternoDto>>("api/coordenador/membros-externos");
+
+            var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
+            todosProfessores = professoresPaginado?.Items ?? new();
+
+            var externosPaginado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?pageSize={PaginacaoQuery.MaxPageSize}");
+            todosExternos = externosPaginado?.Items ?? new();
         }
         finally { carregando = false; }
     }

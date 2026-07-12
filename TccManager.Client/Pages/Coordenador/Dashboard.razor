@@ -160,7 +160,8 @@
         {
             stats = await Http.GetFromJsonAsync<DashboardCoordenadorDto>("api/coordenador/dashboard-stats");
             pendentes = await Http.GetFromJsonAsync<List<TccResumoDto>>("api/coordenador/propostas-pendentes");
-            professores = await Http.GetFromJsonAsync<List<ProfessorResumoDto>>("api/coordenador/professores");
+            var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
+            professores = professoresPaginado?.Items;
         }
         catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar dados do painel."); }
         finally { carregando = false; }

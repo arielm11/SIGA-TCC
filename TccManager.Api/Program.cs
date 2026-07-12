@@ -2,12 +2,16 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using FluentValidation;
 using TccManager.Api.Binders;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Filters;
 using TccManager.Api.Middleware;
+using TccManager.Api.ModelBinding;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Auth;
+using TccManager.Api.Services.Storage;
 using System.Text;
 using Serilog;
 
@@ -22,6 +26,8 @@ try
     builder.Services.AddControllers(options =>
     {
         options.ModelBinderProviders.Insert(0, new InvariantDecimalModelBinderProvider());
+        options.ModelBinderProviders.Insert(0, new PaginacaoQueryModelBinderProvider());
+        options.Filters.Add<FluentValidationActionFilter>();
     })
         .AddJsonOptions(options =>
         {
@@ -30,6 +36,9 @@ try
 
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
+
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
     // Configuração do Entity Framework (Banco de Dados)
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -70,6 +79,7 @@ try
     builder.Services.ConfigureRateLimiting(builder.Configuration);
 
     builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
+    builder.Services.AddSingleton<IStorageService, LocalStorageService>();
 
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();

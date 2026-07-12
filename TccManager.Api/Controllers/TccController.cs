@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -16,14 +18,14 @@ namespace TccManager.Api.Controllers;
 public class TccController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IWebHostEnvironment _environment;
     private readonly ISanitizerService _sanitizerService;
+    private readonly IStorageService _storageService;
 
-    public TccController(AppDbContext context, IWebHostEnvironment environment, ISanitizerService sanitizerService)
+    public TccController(AppDbContext context, ISanitizerService sanitizerService, IStorageService storageService)
     {
         _context = context;
-        _environment = environment;
         _sanitizerService = sanitizerService;
+        _storageService = storageService;
     }
 
     [HttpGet("meu-tcc")]
@@ -96,7 +98,7 @@ public class TccController : ControllerBase
 
     [HttpGet("entregas")]
     [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> GetMinhasEntregas()
+    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
@@ -108,7 +110,7 @@ public class TccController : ControllerBase
         var entregas = await _context.Entregas
             .Where(e => e.TccId == tcc.Id)
             .OrderByDescending(e => e.DataEnvio)
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao);
 
         return Ok(entregas);
     }
@@ -142,22 +144,17 @@ public class TccController : ControllerBase
         if (tipo == TipoEntrega.Final && tcc.OrientadorId == null)
             return BadRequest("Você não pode enviar a versão FINAL sem ter um Orientador definido (RN03).");
 
-        var uploadsFolder = Path.Combine(_environment.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads", "entregas");
-        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
-
-        var fileName = $"{Guid.NewGuid()}_{Path.GetFileName(arquivo.FileName)}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
+        string caminho;
+        using (var stream = arquivo.OpenReadStream())
         {
-            await arquivo.CopyToAsync(stream);
+            caminho = await _storageService.UploadAsync(stream, arquivo.FileName, CategoriaArquivo.Entregas);
         }
 
         var entrega = new Entrega
         {
             TccId = tcc.Id,
-            Titulo = tituloEntrega,
-            ArquivoCaminho = $"/uploads/entregas/{fileName}",
+            Titulo = _sanitizerService.Sanitizar(tituloEntrega)!,
+            ArquivoCaminho = caminho,
             Tipo = tipo,
             DataEnvio = DateTime.UtcNow
         };

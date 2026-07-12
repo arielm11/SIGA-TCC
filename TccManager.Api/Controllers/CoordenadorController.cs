@@ -2,8 +2,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
+using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -18,13 +20,15 @@ public class CoordenadorController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ISanitizerService _sanitizerService;
     private readonly ITccNotificationService _notificationService;
+    private readonly IStorageService _storageService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
-    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService)
+    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService, IStorageService storageService)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _notificationService = notificationService;
+        _storageService = storageService;
     }
 
     [HttpGet("dashboard-stats")]
@@ -42,7 +46,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("professores")]
-    public async Task<IActionResult> GetProfessores()
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao)
     {
         var professores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
@@ -55,7 +59,7 @@ public class CoordenadorController : ControllerBase
                 CargaAtual = _context.Tccs.Count(t => t.OrientadorId == u.Id && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
             })
             .OrderBy(p => p.Nome)
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao);
 
         return Ok(professores);
     }
@@ -113,9 +117,19 @@ public class CoordenadorController : ControllerBase
 
     // --- CRUD MEMBROS EXTERNOS ---
     [HttpGet("membros-externos")]
-    public async Task<IActionResult> GetMembrosExternos()
+    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao)
     {
-        var membros = await _context.MembrosExternos.OrderBy(m => m.Nome).ToListAsync();
+        var membros = await _context.MembrosExternos
+            .OrderBy(m => m.Nome)
+            .Select(m => new MembroExternoDto
+            {
+                Id = m.Id,
+                Nome = m.Nome,
+                Email = m.Email,
+                Instituicao = m.Instituicao
+            })
+            .ToPagedResultAsync(paginacao);
+
         return Ok(membros);
     }
 
@@ -253,19 +267,14 @@ public class CoordenadorController : ControllerBase
         if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
             return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
 
-        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "atas");
-        if (!Directory.Exists(uploadsFolder)) Directory.CreateDirectory(uploadsFolder);
-
-        var uniqueFileName = Guid.NewGuid().ToString() + "_" + arquivoAta.FileName;
-        var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-        using (var stream = new FileStream(filePath, FileMode.Create))
+        string caminho;
+        using (var stream = arquivoAta.OpenReadStream())
         {
-            await arquivoAta.CopyToAsync(stream);
+            caminho = await _storageService.UploadAsync(stream, arquivoAta.FileName, CategoriaArquivo.Atas);
         }
 
         banca.NotaFinal = notaFinal;
-        banca.AtaCaminho = $"/uploads/atas/{uniqueFileName}";
+        banca.AtaCaminho = caminho;
 
         if (aprovado)
         {

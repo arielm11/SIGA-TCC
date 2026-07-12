@@ -5,7 +5,7 @@ namespace TccManager.Shared.DTOs;
 
 public class DashboardOrientadorDto
 {
-    public List<TccResumoDto> PropostasPendentes { get; set; } = new();
+    public PagedResult<TccResumoDto> PropostasPendentes { get; set; } = new();
     public List<TccResumoDto> OrientandosAtivos { get; set; } = new();
 }
 
