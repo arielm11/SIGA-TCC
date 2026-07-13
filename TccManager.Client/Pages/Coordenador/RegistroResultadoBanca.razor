@@ -62,64 +62,86 @@
     <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
         <div class="modal-dialog">
             <div class="modal-content border-primary">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title">Registrar Resultado: @nomeAlunoSelecionado</h5>
-                    <button type="button" class="btn-close btn-close-white" @onclick="FecharModal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Nota Final</label>
-                        <input type="number" step="0.1" min="0" max="100" class="form-control form-control-lg text-center"
-                               @bind="notaFinal" @bind:after="AtualizarStatusAprovacao" placeholder="Ex: 85,0" />
-
-                        @if (notaFinal > 0)
-                        {
-                            @if (notaAprova)
-                            {
-                                <div class="alert alert-success mt-2 py-2 mb-0 text-center">
-                                    <i class="bi bi-check-circle-fill me-2"></i> Nota aprova o TCC (mínimo: @notaMinimaExibicao)
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="alert alert-danger mt-2 py-2 mb-0 text-center">
-                                    <i class="bi bi-x-circle-fill me-2"></i> Nota reprova o TCC (mínimo: @notaMinimaExibicao)
-                                </div>
-                            }
-                        }
+                @if (resultadoRegistrado)
+                {
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title"><i class="bi bi-check-circle-fill me-2"></i>Resultado Registrado</h5>
                     </div>
+                    <div class="modal-body text-center py-4">
+                        <p>@mensagemSucesso</p>
+                        <button type="button" class="btn btn-outline-primary" disabled="@baixandoAta" @onclick="() => BaixarAtaPdf(bancaIdSelecionada)">
+                            @if (baixandoAta)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <i class="bi bi-file-earmark-pdf me-1"></i> Baixar Ata (PDF)
+                        </button>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" @onclick="FecharModal">Fechar</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title">Registrar Resultado: @nomeAlunoSelecionado</h5>
+                        <button type="button" class="btn-close btn-close-white" @onclick="FecharModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Nota Final</label>
+                            <input type="number" step="0.1" min="0" max="100" class="form-control form-control-lg text-center"
+                                   @bind="notaFinal" @bind:after="AtualizarStatusAprovacao" placeholder="Ex: 85,0" />
 
-                    @if (notaFinal > 0 && !notaAprova)
-                    {
-                        <div class="mb-4">
-                            <label class="form-label fw-bold text-danger">Motivo da Reprovação</label>
-                            <textarea class="form-control" rows="3" @bind="motivoReprovacao"
-                                      placeholder="Descreva o motivo da reprovação na banca..."></textarea>
-                            <small class="text-muted">Obrigatório quando a nota é inferior ao mínimo de aprovação.</small>
+                            @if (notaFinal > 0)
+                            {
+                                @if (notaAprova)
+                                {
+                                    <div class="alert alert-success mt-2 py-2 mb-0 text-center">
+                                        <i class="bi bi-check-circle-fill me-2"></i> Nota aprova o TCC (mínimo: @notaMinimaExibicao)
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="alert alert-danger mt-2 py-2 mb-0 text-center">
+                                        <i class="bi bi-x-circle-fill me-2"></i> Nota reprova o TCC (mínimo: @notaMinimaExibicao)
+                                    </div>
+                                }
+                            }
                         </div>
-                    }
 
-                    <div class="mb-4">
-                        <label class="form-label fw-bold">Arquivo da Ata Assinada (PDF)</label>
-                        <InputFile OnChange="CarregarArquivo" class="form-control" accept=".pdf" />
-                        @if (arquivoAta != null)
+                        @if (notaFinal > 0 && !notaAprova)
                         {
-                            <small class="text-success mt-1 d-block"><i class="bi bi-check-circle me-1"></i> Arquivo selecionado: @arquivoAta.Name</small>
+                            <div class="mb-4">
+                                <label class="form-label fw-bold text-danger">Motivo da Reprovação</label>
+                                <textarea class="form-control" rows="3" @bind="motivoReprovacao"
+                                          placeholder="Descreva o motivo da reprovação na banca..."></textarea>
+                                <small class="text-muted">Obrigatório quando a nota é inferior ao mínimo de aprovação.</small>
+                            </div>
                         }
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Arquivo da Ata Assinada (PDF)</label>
+                            <InputFile OnChange="CarregarArquivo" class="form-control" accept=".pdf" />
+                            @if (arquivoAta != null)
+                            {
+                                <small class="text-success mt-1 d-block"><i class="bi bi-check-circle me-1"></i> Arquivo selecionado: @arquivoAta.Name</small>
+                            }
+                        </div>
                     </div>
-                </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" @onclick="FecharModal">Cancelar</button>
-                    <button type="button" class="btn @(notaAprova ? "btn-success" : "btn-danger")"
-                            disabled="@(arquivoAta == null || enviando || notaFinal <= 0 || (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao)))"
-                            @onclick="SalvarResultado">
-                        @if (enviando)
-                        {
-                            <span class="spinner-border spinner-border-sm me-2"></span>
-                        }
-                        <i class="bi bi-save me-1"></i> @(notaAprova ? "Confirmar Aprovação" : "Confirmar Reprovação")
-                    </button>
-                </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" @onclick="FecharModal">Cancelar</button>
+                        <button type="button" class="btn @(notaAprova ? "btn-success" : "btn-danger")"
+                                disabled="@(arquivoAta == null || enviando || notaFinal <= 0 || (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao)))"
+                                @onclick="SalvarResultado">
+                            @if (enviando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                            }
+                            <i class="bi bi-save me-1"></i> @(notaAprova ? "Confirmar Aprovação" : "Confirmar Reprovação")
+                        </button>
+                    </div>
+                }
             </div>
         </div>
     </div>
@@ -138,6 +160,12 @@
     private const string notaMinimaExibicao = "60,0";
     private bool notaAprova = true;
     private string motivoReprovacao = string.Empty;
+
+    // Estado de sucesso pós-registro (RF-05): mantém o modal aberto mostrando o botão
+    // de download do PDF da ata, em vez de fechar direto após o alert.
+    private bool resultadoRegistrado = false;
+    private string mensagemSucesso = string.Empty;
+    private bool baixandoAta = false;
 
     // Dados do Formulário
     private decimal notaFinal = 0;
@@ -166,13 +194,46 @@
         arquivoAta = null;
         motivoReprovacao = string.Empty;
         notaAprova = true;
+        resultadoRegistrado = false;
+        mensagemSucesso = string.Empty;
         exibirModal = true;
     }
 
-    private void FecharModal()
+    private async Task FecharModal()
     {
+        var precisaRecarregar = resultadoRegistrado;
+
         exibirModal = false;
         arquivoAta = null;
+        resultadoRegistrado = false;
+        mensagemSucesso = string.Empty;
+
+        if (precisaRecarregar)
+        {
+            await CarregarListas();
+        }
+    }
+
+    private async Task BaixarAtaPdf(int bancaId)
+    {
+        baixandoAta = true;
+        try
+        {
+            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-pdf");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{bancaId}.pdf", "application/pdf", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar a ata: {erro}");
+            }
+        }
+        finally { baixandoAta = false; }
     }
 
     private void CarregarArquivo(InputFileChangeEventArgs e)
@@ -217,12 +278,10 @@
 
             if (response.IsSuccessStatusCode)
             {
-                var mensagem = notaAprova
+                mensagemSucesso = notaAprova
                     ? "Nota e Ata registradas com sucesso! O TCC foi finalizado."
                     : "Resultado registrado. O TCC foi marcado como reprovado.";
-                await JSRuntime.InvokeVoidAsync("alert", mensagem);
-                FecharModal();
-                await CarregarListas();
+                resultadoRegistrado = true;
             }
             else
             {

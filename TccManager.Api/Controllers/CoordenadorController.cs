@@ -5,6 +5,7 @@ using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
+using TccManager.Api.Services.Pdf;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -21,14 +22,16 @@ public class CoordenadorController : ControllerBase
     private readonly ISanitizerService _sanitizerService;
     private readonly ITccNotificationService _notificationService;
     private readonly IStorageService _storageService;
+    private readonly IAtaPdfService _ataPdfService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
-    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService, IStorageService storageService)
+    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService, IStorageService storageService, IAtaPdfService ataPdfService)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _notificationService = notificationService;
         _storageService = storageService;
+        _ataPdfService = ataPdfService;
     }
 
     [HttpGet("dashboard-stats")]
@@ -136,6 +139,9 @@ public class CoordenadorController : ControllerBase
     [HttpPost("membros-externos")]
     public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExterno membro)
     {
+        membro.Nome = _sanitizerService.Sanitizar(membro.Nome)!;
+        membro.Instituicao = _sanitizerService.Sanitizar(membro.Instituicao)!;
+
         _context.MembrosExternos.Add(membro);
         await _context.SaveChangesAsync();
         return Ok(membro);
@@ -149,9 +155,9 @@ public class CoordenadorController : ControllerBase
         if (membro == null)
             return NotFound("Membro externo não encontrado");
 
-        membro.Nome = dto.Nome;
+        membro.Nome = _sanitizerService.Sanitizar(dto.Nome)!;
         membro.Email = dto.Email;
-        membro.Instituicao = dto.Instituicao;
+        membro.Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!;
 
         await _context.SaveChangesAsync();
 
@@ -296,5 +302,41 @@ public class CoordenadorController : ControllerBase
             : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
 
         return Ok(mensagem);
+    }
+
+    [HttpGet("banca/{idBanca}/ata-pdf")]
+    public async Task<IActionResult> GetAtaPdf(int idBanca)
+    {
+        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca);
+
+        return resultado.Status switch
+        {
+            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
+            AtaPdfResultadoStatus.ResultadoNaoRegistrado => Conflict("O resultado desta banca ainda não foi registrado. Gere a ata após registrar a nota final."),
+            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-defesa-{idBanca}.pdf")
+        };
+    }
+
+    [HttpGet("bancas-concluidas")]
+    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao)
+    {
+        var bancas = await _context.Banca
+            .Where(b => b.NotaFinal != null)
+            .OrderByDescending(b => b.DataHora)
+            .Select(b => new BancaConcluidaDto
+            {
+                BancaId = b.Id,
+                TccTitulo = b.Tcc!.Titulo,
+                NomeAluno = b.Tcc.Aluno!.Nome,
+                DataHora = b.DataHora,
+                NotaFinal = b.NotaFinal!.Value,
+                // Aprovado deriva do Status já persistido (fonte de verdade histórica da
+                // decisão tomada em RegistrarResultadoBanca), não recomputado a partir da
+                // nota — ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5.
+                Aprovado = b.Tcc.Status == StatusTcc.Finalizado
+            })
+            .ToPagedResultAsync(paginacao);
+
+        return Ok(bancas);
     }
 }

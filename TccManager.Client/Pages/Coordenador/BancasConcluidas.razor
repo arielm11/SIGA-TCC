@@ -1,0 +1,120 @@
+@page "/coordenador/bancas-concluidas"
+@using Microsoft.AspNetCore.Authorization
+@using TccManager.Shared.DTOs
+@attribute [Authorize(Roles = "Coordenador")]
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-journal-check me-2"></i> Bancas Concluídas</h2>
+
+    @if (carregando)
+    {
+        <div class="text-center py-5"><div class="spinner-border text-success"></div></div>
+    }
+    else if (resultado == null || !resultado.Items.Any())
+    {
+        <div class="alert alert-light text-center shadow-sm">
+            <i class="bi bi-info-circle me-2"></i> Nenhuma banca concluída até o momento.
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm border-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Aluno</th>
+                            <th>Título do TCC</th>
+                            <th>Data da Banca</th>
+                            <th>Nota</th>
+                            <th>Status</th>
+                            <th class="text-end">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var banca in resultado.Items)
+                        {
+                            <tr>
+                                <td class="fw-bold">@banca.NomeAluno</td>
+                                <td>@banca.TccTitulo</td>
+                                <td>@banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@banca.NotaFinal.ToString("0.0")</td>
+                                <td>
+                                    @if (banca.Aprovado)
+                                    {
+                                        <span class="badge bg-success">Aprovado</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-danger">Reprovado</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary" disabled="@(bancaIdBaixando == banca.BancaId)" @onclick="() => BaixarAtaPdf(banca.BancaId)">
+                                        @if (bancaIdBaixando == banca.BancaId)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-file-earmark-pdf me-1"></i>
+                                        }
+                                        Baixar PDF
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <Paginacao PaginaAtual="resultado.CurrentPage" TotalPaginas="resultado.TotalPages" OnMudarPagina="CarregarPagina" />
+    }
+</div>
+
+@code {
+    private bool carregando = true;
+    private PagedResult<BancaConcluidaDto>? resultado;
+    private int? bancaIdBaixando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarPagina(1);
+    }
+
+    private async Task CarregarPagina(int pagina)
+    {
+        carregando = true;
+        try
+        {
+            resultado = await Http.GetFromJsonAsync<PagedResult<BancaConcluidaDto>>(
+                $"api/coordenador/bancas-concluidas?page={pagina}&pageSize={PaginacaoQuery.DefaultPageSize}");
+        }
+        finally { carregando = false; }
+    }
+
+    private async Task BaixarAtaPdf(int bancaId)
+    {
+        bancaIdBaixando = bancaId;
+        try
+        {
+            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-pdf");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{bancaId}.pdf", "application/pdf", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar a ata: {erro}");
+            }
+        }
+        finally { bancaIdBaixando = null; }
+    }
+}

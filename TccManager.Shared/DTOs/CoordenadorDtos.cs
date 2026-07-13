@@ -44,3 +44,18 @@ public class BancaPendenteDto
     public string TccTitulo { get; set; } = string.Empty;
     public string NomeAluno { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Item da listagem de bancas já concluídas (resultado registrado). Usa "BancaId"
+/// (e não "TccId", como o já existente BancaPendenteDto faz de forma enganosa) para
+/// que o Client monte a rota banca/{BancaId}/ata-pdf sem ambiguidade.
+/// </summary>
+public class BancaConcluidaDto
+{
+    public int BancaId { get; set; }
+    public string TccTitulo { get; set; } = string.Empty;
+    public string NomeAluno { get; set; } = string.Empty;
+    public DateTime DataHora { get; set; }
+    public decimal NotaFinal { get; set; }
+    public bool Aprovado { get; set; }
+}

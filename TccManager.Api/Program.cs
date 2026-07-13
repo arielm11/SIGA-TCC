@@ -85,6 +85,7 @@ try
     builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();
 
     builder.Services.AddEmailNotifications(builder.Configuration);
+    builder.Services.AddAtaPdf(builder.Configuration);
 
     var app = builder.Build();
 
