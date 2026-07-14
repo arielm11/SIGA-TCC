@@ -1,8 +1,11 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Email;
+using TccManager.Api.Services.Pdf;
 using TccManager.Shared.Enums;
 
 namespace TccManager.Api.Services.Notifications;
@@ -20,17 +23,30 @@ public class TccNotificationService : ITccNotificationService
     private readonly IEmailTemplateRenderer _renderer;
     private readonly IEmailQueue _queue;
     private readonly ILogger<TccNotificationService> _logger;
+    private readonly IRascunhoAtaTokenService _rascunhoTokenService;
+    private readonly AppUrlsOptions _appUrls;
+
+    /// <summary>
+    /// Bloco de acesso ao rascunho renderizado quando não há link a oferecer (aluno e
+    /// orientador não têm acesso ao rascunho — decisão 6/Etapa 2): apenas informativo.
+    /// </summary>
+    private const string BlocoAcessoIndisponivel =
+        "<p style=\"color:#666; font-size: 13px;\">Esta mensagem é apenas informativa; o rascunho da ata fica disponível somente para o Coordenador e os avaliadores da banca.</p>";
 
     public TccNotificationService(
         AppDbContext context,
         IEmailTemplateRenderer renderer,
         IEmailQueue queue,
-        ILogger<TccNotificationService> logger)
+        ILogger<TccNotificationService> logger,
+        IRascunhoAtaTokenService rascunhoTokenService,
+        IOptions<AppUrlsOptions> appUrls)
     {
         _context = context;
         _renderer = renderer;
         _queue = queue;
         _logger = logger;
+        _rascunhoTokenService = rascunhoTokenService;
+        _appUrls = appUrls.Value;
     }
 
     public async Task NotificarPropostaAprovadaAsync(int tccId)
@@ -115,25 +131,59 @@ public class TccNotificationService : ITccNotificationService
                 return;
             }
 
-            var candidatos = new List<(string Papel, string? Email)>
-            {
-                ("Aluno", banca.Tcc.Aluno?.Email),
-                ("Orientador", banca.Tcc.Orientador?.Email)
-            };
-
             var nomesAvaliadores = new List<string>();
+
+            // Aluno e Orientador não têm acesso ao rascunho (decisão 6/Etapa 2) — recebem
+            // apenas o bloco informativo, sem link.
+            var envios = new List<(string Email, string BlocoAcesso)>();
+
+            void AdicionarSemAcesso(string? email)
+            {
+                if (!string.IsNullOrWhiteSpace(email))
+                    envios.Add((email, BlocoAcessoIndisponivel));
+            }
+
+            AdicionarSemAcesso(banca.Tcc.Aluno?.Email);
+            AdicionarSemAcesso(banca.Tcc.Orientador?.Email);
+
+            var linkAtalhoInterno = MontarLinkAtalhoInterno();
 
             foreach (var avaliador in banca.Avaliadores)
             {
                 if (avaliador.ProfessorId.HasValue && avaliador.Professor != null)
                 {
-                    candidatos.Add(($"Avaliador interno {avaliador.Professor.Nome}", avaliador.Professor.Email));
                     nomesAvaliadores.Add(avaliador.Professor.Nome);
+
+                    if (!string.IsNullOrWhiteSpace(avaliador.Professor.Email))
+                        envios.Add((avaliador.Professor.Email, BlocoAcessoInterno(linkAtalhoInterno)));
                 }
                 else if (avaliador.MembroExternoId.HasValue && avaliador.MembroExterno != null)
                 {
-                    candidatos.Add(($"Avaliador externo {avaliador.MembroExterno.Nome}", avaliador.MembroExterno.Email));
                     nomesAvaliadores.Add($"{avaliador.MembroExterno.Nome} ({avaliador.MembroExterno.Instituicao})");
+
+                    if (string.IsNullOrWhiteSpace(avaliador.MembroExterno.Email))
+                        continue;
+
+                    // Token gerado aqui dentro: o valor bruto nunca precisa cruzar
+                    // fronteiras de camada, vive só neste escopo até compor o link do
+                    // e-mail (ver docs/arquitetura/2026-07-13-pdf-ata-rascunho-etapa2.md, seção 7.1).
+                    try
+                    {
+                        var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(bancaId, avaliador.MembroExternoId.Value);
+                        var link = MontarLinkRascunhoExterno(tokenBruto);
+                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoExterno(link)));
+                    }
+                    catch (Exception exToken)
+                    {
+                        // Defesa em profundidade: falha ao gerar o token de um membro não
+                        // deve impedir o e-mail informativo de banca agendada para ele nem
+                        // para os demais destinatários.
+                        _logger.LogWarning(
+                            exToken,
+                            "Falha ao gerar token de rascunho para MembroExterno {MembroExternoId} na Banca {BancaId}; e-mail será enviado sem link de acesso.",
+                            avaliador.MembroExternoId, bancaId);
+                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoIndisponivel));
+                    }
                 }
                 else
                 {
@@ -146,24 +196,40 @@ public class TccNotificationService : ITccNotificationService
                 }
             }
 
-            var destinatarios = ColetarEmails(candidatos.ToArray());
-            if (destinatarios.Count == 0) return;
+            // Distinct por e-mail (mantendo a primeira ocorrência) — mesmo espírito do
+            // ColetarEmails().Distinct() já usado nos demais eventos: evita duas mensagens
+            // para o mesmo endereço quando ele acumula mais de um papel (ex.: aluno e
+            // orientador com o mesmo e-mail cadastrado).
+            var enviosUnicos = envios
+                .GroupBy(e => e.Email)
+                .Select(g => g.First())
+                .ToList();
+
+            if (enviosUnicos.Count == 0)
+            {
+                _logger.LogWarning("Notificação 'Banca de TCC agendada' sem destinatários válidos; e-mail não enviado. Banca {BancaId}.", bancaId);
+                return;
+            }
 
             var dataHoraBrasilia = BrasiliaTimeZoneService.ConverterDeUtcParaBrasilia(banca.DataHora);
             var listaMembrosHtml = nomesAvaliadores.Count > 0
                 ? string.Concat(nomesAvaliadores.Select(n => $"<li>{WebUtility.HtmlEncode(n)}</li>"))
                 : "<li>Nenhum avaliador registrado</li>";
 
-            var corpo = _renderer.Render("banca-agendada", new Dictionary<string, string>
+            foreach (var (email, blocoAcesso) in enviosUnicos)
             {
-                ["NomeAluno"] = Codificar(banca.Tcc.Aluno?.Nome),
-                ["TituloTcc"] = Codificar(banca.Tcc.Titulo),
-                ["DataHora"] = dataHoraBrasilia.ToString("dd/MM/yyyy HH:mm"),
-                ["Local"] = Codificar(banca.Local),
-                ["ListaMembrosBanca"] = listaMembrosHtml
-            });
+                var corpo = _renderer.Render("banca-agendada", new Dictionary<string, string>
+                {
+                    ["NomeAluno"] = Codificar(banca.Tcc.Aluno?.Nome),
+                    ["TituloTcc"] = Codificar(banca.Tcc.Titulo),
+                    ["DataHora"] = dataHoraBrasilia.ToString("dd/MM/yyyy HH:mm"),
+                    ["Local"] = Codificar(banca.Local),
+                    ["ListaMembrosBanca"] = listaMembrosHtml,
+                    ["BlocoAcessoRascunho"] = blocoAcesso
+                });
 
-            Enfileirar(destinatarios, "Banca de TCC agendada", corpo);
+                Enfileirar(new List<string> { email }, "Banca de TCC agendada", corpo);
+            }
         }
         catch (Exception ex)
         {
@@ -291,6 +357,36 @@ public class TccNotificationService : ITccNotificationService
         }
     }
 
+    public async Task NotificarReenvioRascunhoAsync(int bancaId, int membroExternoId, string tokenBruto)
+    {
+        try
+        {
+            var membro = await _context.MembrosExternos.FirstOrDefaultAsync(m => m.Id == membroExternoId);
+
+            if (membro == null || string.IsNullOrWhiteSpace(membro.Email))
+            {
+                _logger.LogWarning(
+                    "NotificarReenvioRascunhoAsync: MembroExterno {MembroExternoId} não encontrado ou sem e-mail válido (Banca {BancaId}).",
+                    membroExternoId, bancaId);
+                return;
+            }
+
+            var link = MontarLinkRascunhoExterno(tokenBruto);
+
+            var corpo = _renderer.Render("rascunho-reenviado", new Dictionary<string, string>
+            {
+                ["NomeMembro"] = Codificar(membro.Nome),
+                ["LinkRascunho"] = WebUtility.HtmlEncode(link)
+            });
+
+            Enfileirar(new List<string> { membro.Email }, "Novo link de acesso ao rascunho da ata", corpo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao preparar notificação de reenvio de rascunho para Banca {BancaId}, MembroExterno {MembroExternoId}.", bancaId, membroExternoId);
+        }
+    }
+
     private async Task<IEnumerable<(string Papel, string? Email)>> ObterCandidatosCoordenadoresAsync()
     {
         var coordenadores = await _context.Usuarios
@@ -300,6 +396,18 @@ public class TccNotificationService : ITccNotificationService
 
         return coordenadores.Select(c => ($"Coordenador {c.Nome}", (string?)c.Email));
     }
+
+    private string MontarLinkRascunhoExterno(string tokenBruto) =>
+        $"{_appUrls.PublicApiBaseUrl?.TrimEnd('/')}/api/rascunho-ata/{tokenBruto}";
+
+    private string MontarLinkAtalhoInterno() =>
+        $"{_appUrls.ClientBaseUrl?.TrimEnd('/')}/avaliador/convites";
+
+    private static string BlocoAcessoExterno(string link) =>
+        $"<p><a href=\"{WebUtility.HtmlEncode(link)}\">Acessar rascunho da ata</a></p>";
+
+    private static string BlocoAcessoInterno(string link) =>
+        $"<p><a href=\"{WebUtility.HtmlEncode(link)}\">Acessar no sistema</a> (é necessário estar logado).</p>";
 
     /// <summary>
     /// Filtra candidatos com e-mail vazio/nulo, logando um aviso individual por

@@ -85,6 +85,7 @@ try
     builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();
 
     builder.Services.AddEmailNotifications(builder.Configuration);
+    builder.Services.AddAtaPdf(builder.Configuration);
 
     var app = builder.Build();
 
@@ -100,7 +101,20 @@ try
 
     app.UseMiddleware<CorrelationIdMiddleware>();
 
-    app.UseSerilogRequestLogging();
+    // MessageTemplate customizado para não expor o token bruto do rascunho no path
+    // quando essa rota lançar exceção (nível Error, acima do MinimumLevel.Default).
+    app.UseSerilogRequestLogging(options =>
+    {
+        options.MessageTemplate = "HTTP {RequestMethod} {RequestPathRedacted} responded {StatusCode} in {Elapsed:0.0000} ms";
+        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+        {
+            var path = httpContext.Request.Path.Value ?? string.Empty;
+            var redigido = path.StartsWith("/api/rascunho-ata/", StringComparison.OrdinalIgnoreCase)
+                ? "/api/rascunho-ata/[REDACTED]"
+                : path;
+            diagnosticContext.Set("RequestPathRedacted", redigido);
+        };
+    });
 
     app.UseHttpsRedirection();
 

@@ -5,6 +5,7 @@ using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
+using TccManager.Api.Services.Pdf;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -21,14 +22,24 @@ public class CoordenadorController : ControllerBase
     private readonly ISanitizerService _sanitizerService;
     private readonly ITccNotificationService _notificationService;
     private readonly IStorageService _storageService;
+    private readonly IAtaPdfService _ataPdfService;
+    private readonly IRascunhoAtaTokenService _rascunhoTokenService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
-    public CoordenadorController(AppDbContext context, ISanitizerService sanitizerService, ITccNotificationService notificationService, IStorageService storageService)
+    public CoordenadorController(
+        AppDbContext context,
+        ISanitizerService sanitizerService,
+        ITccNotificationService notificationService,
+        IStorageService storageService,
+        IAtaPdfService ataPdfService,
+        IRascunhoAtaTokenService rascunhoTokenService)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _notificationService = notificationService;
         _storageService = storageService;
+        _ataPdfService = ataPdfService;
+        _rascunhoTokenService = rascunhoTokenService;
     }
 
     [HttpGet("dashboard-stats")]
@@ -136,6 +147,9 @@ public class CoordenadorController : ControllerBase
     [HttpPost("membros-externos")]
     public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExterno membro)
     {
+        membro.Nome = _sanitizerService.Sanitizar(membro.Nome)!;
+        membro.Instituicao = _sanitizerService.Sanitizar(membro.Instituicao)!;
+
         _context.MembrosExternos.Add(membro);
         await _context.SaveChangesAsync();
         return Ok(membro);
@@ -149,9 +163,9 @@ public class CoordenadorController : ControllerBase
         if (membro == null)
             return NotFound("Membro externo não encontrado");
 
-        membro.Nome = dto.Nome;
+        membro.Nome = _sanitizerService.Sanitizar(dto.Nome)!;
         membro.Email = dto.Email;
-        membro.Instituicao = dto.Instituicao;
+        membro.Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!;
 
         await _context.SaveChangesAsync();
 
@@ -233,6 +247,8 @@ public class CoordenadorController : ControllerBase
         var bancas = await _context.Banca
             .Include(b => b.Tcc)
                 .ThenInclude(t => t.Aluno)
+            .Include(b => b.Avaliadores)
+                .ThenInclude(a => a.MembroExterno)
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
             .Select(b => new BancaPendenteDto
             {
@@ -240,7 +256,17 @@ public class CoordenadorController : ControllerBase
                 DataHora = b.DataHora,
                 Local = b.Local,
                 TccTitulo = b.Tcc.Titulo,
-                NomeAluno = b.Tcc.Aluno!.Nome
+                NomeAluno = b.Tcc.Aluno!.Nome,
+                // Necessário para o botão de reenvio de token do rascunho (RF-06), um por
+                // membro externo — ver docs/arquitetura/2026-07-13-pdf-ata-rascunho-etapa2.md, seção 9.2.
+                MembrosExternos = b.Avaliadores
+                    .Where(a => a.MembroExternoId != null)
+                    .Select(a => new MembroExternoBancaDto
+                    {
+                        MembroExternoId = a.MembroExternoId!.Value,
+                        Nome = a.MembroExterno!.Nome
+                    })
+                    .ToList()
             })
             .ToListAsync();
         return Ok(bancas);
@@ -296,5 +322,78 @@ public class CoordenadorController : ControllerBase
             : "Resultado da banca registrado. O TCC foi reprovado conforme a nota informada.";
 
         return Ok(mensagem);
+    }
+
+    [HttpGet("banca/{idBanca}/ata-pdf")]
+    public async Task<IActionResult> GetAtaPdf(int idBanca)
+    {
+        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca);
+
+        return resultado.Status switch
+        {
+            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
+            AtaPdfResultadoStatus.ResultadoNaoRegistrado => Conflict("O resultado desta banca ainda não foi registrado. Gere a ata após registrar a nota final."),
+            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-defesa-{idBanca}.pdf")
+        };
+    }
+
+    [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
+    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
+    {
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);
+
+        return resultado.Status switch
+        {
+            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
+            AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
+            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf")
+        };
+    }
+
+    /// <summary>
+    /// RF-06: revoga o token vigente do membro externo para a banca e gera/envia um novo
+    /// (caso do e-mail perdido/não entregue — ver docs/requisitos, RF-06).
+    /// </summary>
+    [HttpPost("banca/{idBanca}/membro-externo/{idMembroExterno}/reenviar-rascunho")]
+    public async Task<IActionResult> ReenviarRascunhoAta(int idBanca, int idMembroExterno)
+    {
+        var vinculo = await _context.BancaAvaliadores
+            .Include(ba => ba.Banca)
+            .FirstOrDefaultAsync(ba => ba.BancaId == idBanca && ba.MembroExternoId == idMembroExterno);
+
+        if (vinculo?.Banca == null)
+            return NotFound("Este membro externo não é avaliador da banca informada.");
+
+        if (vinculo.Banca.NotaFinal != null)
+            return StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado; não é possível reenviar o rascunho.");
+
+        var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(idBanca, idMembroExterno);
+
+        await _notificationService.NotificarReenvioRascunhoAsync(idBanca, idMembroExterno, tokenBruto);
+
+        return Ok("Novo link de acesso ao rascunho enviado com sucesso.");
+    }
+
+    [HttpGet("bancas-concluidas")]
+    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao)
+    {
+        var bancas = await _context.Banca
+            .Where(b => b.NotaFinal != null)
+            .OrderByDescending(b => b.DataHora)
+            .Select(b => new BancaConcluidaDto
+            {
+                BancaId = b.Id,
+                TccTitulo = b.Tcc!.Titulo,
+                NomeAluno = b.Tcc.Aluno!.Nome,
+                DataHora = b.DataHora,
+                NotaFinal = b.NotaFinal!.Value,
+                // Aprovado deriva do Status já persistido (fonte de verdade histórica da
+                // decisão tomada em RegistrarResultadoBanca), não recomputado a partir da
+                // nota — ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5.
+                Aprovado = b.Tcc.Status == StatusTcc.Finalizado
+            })
+            .ToPagedResultAsync(paginacao);
+
+        return Ok(bancas);
     }
 }

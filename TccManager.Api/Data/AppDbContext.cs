@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<BancaAvaliador> BancaAvaliadores { get; set; }
     public DbSet<MembroExterno> MembrosExternos { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
+    public DbSet<RascunhoAtaToken> RascunhoAtaTokens { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,6 +49,34 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(rt => rt.UsuarioId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RascunhoAtaToken>(entity =>
+        {
+            entity.ToTable("rascunho_ata_tokens");
+
+            entity.Property(t => t.TokenHash)
+                .HasColumnType("char(64)")
+                .IsRequired();
+
+            entity.HasIndex(t => t.TokenHash).IsUnique();
+
+            // Reforça no banco a invariante "no máximo 1 token ativo por par" — ver
+            // docs/dados/2026-07-13-pdf-ata-rascunho-etapa2.md, seção 3.1.
+            entity.HasIndex(t => new { t.BancaId, t.MembroExternoId })
+                .IsUnique()
+                .HasFilter("[RevokedAtUtc] IS NULL")
+                .HasDatabaseName("UX_rascunho_ata_tokens_Banca_Membro_Ativo");
+
+            entity.HasOne(t => t.Banca)
+                .WithMany()
+                .HasForeignKey(t => t.BancaId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(t => t.MembroExterno)
+                .WithMany()
+                .HasForeignKey(t => t.MembroExternoId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Services.Email;
 using TccManager.Api.Services.Notifications;
+using TccManager.Api.Services.Pdf;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
 using TccManager.Tests.Services.Email;
@@ -32,7 +35,9 @@ public class TccNotificationServiceTests
             context,
             new FileEmailTemplateRenderer(),
             queue,
-            NullLogger<TccNotificationService>.Instance);
+            NullLogger<TccNotificationService>.Instance,
+            new RascunhoAtaTokenService(context),
+            Options.Create(new AppUrlsOptions()));
 
     private static Usuario NovoUsuario(int id, string nome, string email, TipoUsuario tipo, bool ativo = true)
         => new() { Id = id, Nome = nome, Email = email, SenhaHash = "x", Tipo = tipo, Ativo = ativo };
@@ -289,6 +294,109 @@ public class TccNotificationServiceTests
         await context.SaveChangesAsync();
 
         await CriarServico(context, queue).NotificarPropostaAprovadaAsync(1);
+
+        Assert.Empty(queue.Mensagens);
+    }
+
+    // ── BancaAgendada — geração de token por membro externo (Etapa 2) ──
+
+    [Fact]
+    public async Task NotificarBancaAgendadaAsync_GeraTokenPorMembroExterno_ComLinkNoEmailDele()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno", "aluno@teste.com", TipoUsuario.Aluno));
+        context.Usuarios.Add(NovoUsuario(20, "Orientador", "orient@teste.com", TipoUsuario.Professor));
+        context.Usuarios.Add(NovoUsuario(21, "Avaliador Interno", "interno@teste.com", TipoUsuario.Professor));
+        context.MembrosExternos.Add(new MembroExterno { Id = 5, Nome = "Externo", Email = "externo@empresa.com", Instituicao = "Empresa" });
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC A", Resumo = "r", AlunoId = 10, OrientadorId = 20, Status = StatusTcc.AguardandoDefesa });
+
+        var banca = new Banca { Id = 1, TccId = 1, DataHora = DateTime.UtcNow.AddDays(3), Local = "Sala 1" };
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 1, BancaId = 1, ProfessorId = 21 });
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 2, BancaId = 1, MembroExternoId = 5 });
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+
+        await CriarServico(context, queue).NotificarBancaAgendadaAsync(1);
+
+        // Exatamente um token ativo persistido para o par (Banca 1, MembroExterno 5).
+        var tokens = context.RascunhoAtaTokens.Where(t => t.BancaId == 1 && t.MembroExternoId == 5).ToList();
+        var tokenAtivo = Assert.Single(tokens);
+        Assert.Null(tokenAtivo.RevokedAtUtc);
+
+        // Só o e-mail do membro externo carrega o link com token; internos/aluno/orientador não.
+        var msgExterno = queue.Mensagens.Single(m => m.Destinatarios.Contains("externo@empresa.com"));
+        Assert.Matches("/api/rascunho-ata/[0-9a-f]{64}", msgExterno.CorpoHtml);
+
+        var msgInterno = queue.Mensagens.Single(m => m.Destinatarios.Contains("interno@teste.com"));
+        Assert.DoesNotContain("rascunho-ata", msgInterno.CorpoHtml);
+        Assert.Contains("/avaliador/convites", msgInterno.CorpoHtml);
+
+        var msgAluno = queue.Mensagens.Single(m => m.Destinatarios.Contains("aluno@teste.com"));
+        Assert.DoesNotContain("rascunho-ata", msgAluno.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarBancaAgendadaAsync_NaoVazaTokenDeUmMembroNoEmailDeOutro()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno", "aluno@teste.com", TipoUsuario.Aluno));
+        context.Usuarios.Add(NovoUsuario(20, "Orientador", "orient@teste.com", TipoUsuario.Professor));
+        context.MembrosExternos.Add(new MembroExterno { Id = 5, Nome = "Externo A", Email = "extA@empresa.com", Instituicao = "Empresa" });
+        context.MembrosExternos.Add(new MembroExterno { Id = 6, Nome = "Externo B", Email = "extB@empresa.com", Instituicao = "Empresa" });
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC A", Resumo = "r", AlunoId = 10, OrientadorId = 20, Status = StatusTcc.AguardandoDefesa });
+
+        var banca = new Banca { Id = 1, TccId = 1, DataHora = DateTime.UtcNow.AddDays(3), Local = "Sala 1" };
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 1, BancaId = 1, MembroExternoId = 5 });
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 2, BancaId = 1, MembroExternoId = 6 });
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+
+        await CriarServico(context, queue).NotificarBancaAgendadaAsync(1);
+
+        var msgA = queue.Mensagens.Single(m => m.Destinatarios.Contains("extA@empresa.com"));
+        var msgB = queue.Mensagens.Single(m => m.Destinatarios.Contains("extB@empresa.com"));
+
+        var tokenA = System.Text.RegularExpressions.Regex.Match(msgA.CorpoHtml, "/api/rascunho-ata/([0-9a-f]{64})").Groups[1].Value;
+        var tokenB = System.Text.RegularExpressions.Regex.Match(msgB.CorpoHtml, "/api/rascunho-ata/([0-9a-f]{64})").Groups[1].Value;
+
+        Assert.NotEqual(string.Empty, tokenA);
+        Assert.NotEqual(tokenA, tokenB);
+        // O token de A não aparece no e-mail de B e vice-versa (cada um recebe só o seu).
+        Assert.DoesNotContain(tokenA, msgB.CorpoHtml);
+        Assert.DoesNotContain(tokenB, msgA.CorpoHtml);
+    }
+
+    // ── ReenvioRascunho (Etapa 2) ─────────────────────────────────────
+
+    [Fact]
+    public async Task NotificarReenvioRascunhoAsync_EnfileiraEmailDedicadoParaOMembro_ComLink()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        context.MembrosExternos.Add(new MembroExterno { Id = 5, Nome = "Externo", Email = "externo@empresa.com", Instituicao = "Empresa" });
+        await context.SaveChangesAsync();
+
+        var tokenBruto = new string('a', 64);
+        await CriarServico(context, queue).NotificarReenvioRascunhoAsync(1, 5, tokenBruto);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Equal("Novo link de acesso ao rascunho da ata", msg.Assunto);
+        Assert.Equal(new[] { "externo@empresa.com" }, msg.Destinatarios);
+        Assert.Contains($"/api/rascunho-ata/{tokenBruto}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarReenvioRascunhoAsync_MembroInexistente_NaoEnfileiraNemLanca()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarReenvioRascunhoAsync(1, 999, new string('a', 64));
 
         Assert.Empty(queue.Mensagens);
     }

@@ -48,6 +48,18 @@
                         </div>
 
                         <div class="card-footer bg-light text-end">
+                            <button class="btn btn-outline-primary shadow-sm me-2" disabled="@(bancaIdBaixandoRascunho == convite.BancaId)" @onclick="() => BaixarAtaRascunho(convite.BancaId)">
+                                @if (bancaIdBaixandoRascunho == convite.BancaId)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-file-earmark-pdf me-1"></i>
+                                }
+                                Baixar Rascunho da Ata
+                            </button>
+
                             @if (!string.IsNullOrEmpty(convite.ArquivoFinalCaminho))
                             {
                                 <a href="@($"{Http.BaseAddress?.ToString().TrimEnd('/')}{convite.ArquivoFinalCaminho}")" target="_blank" class="btn btn-success shadow-sm">
@@ -71,6 +83,7 @@
 @code {
     private bool carregando = true;
     private List<ConviteBancaDto> convites = new();
+    private int? bancaIdBaixandoRascunho;
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,6 +104,33 @@
         finally
         {
             carregando = false;
+        }
+    }
+
+    // RF-03/Etapa 2: download do PDF rascunho pré-defesa. O backend valida (RNF-01) que o
+    // professor autenticado é de fato um avaliador desta banca; 403/404/410 exibem o erro.
+    private async Task BaixarAtaRascunho(int bancaId)
+    {
+        bancaIdBaixandoRascunho = bancaId;
+        try
+        {
+            var response = await Http.GetAsync($"api/avaliador/banca/{bancaId}/ata-rascunho-pdf");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-rascunho-{bancaId}.pdf", "application/pdf", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar o rascunho da ata: {erro}");
+            }
+        }
+        finally
+        {
+            bancaIdBaixandoRascunho = null;
         }
     }
 }
