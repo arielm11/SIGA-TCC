@@ -30,4 +30,12 @@ public interface ITccNotificationService
     /// o template (resultado-aprovado vs. resultado-reprovado).
     /// </summary>
     Task NotificarResultadoBancaAsync(int bancaId, bool aprovado);
+
+    /// <summary>
+    /// Reenvio de token de acesso ao rascunho (RF-06/Etapa 2) — dispara um e-mail
+    /// dedicado para o <c>MembroExterno</c> com o novo link (<paramref name="tokenBruto"/>
+    /// já gerado pelo chamador via <c>IRascunhoAtaTokenService.GerarTokenAsync</c>, que
+    /// já revogou o token anterior do par).
+    /// </summary>
+    Task NotificarReenvioRascunhoAsync(int bancaId, int membroExternoId, string tokenBruto);
 }

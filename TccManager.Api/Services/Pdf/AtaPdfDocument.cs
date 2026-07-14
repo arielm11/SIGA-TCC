@@ -52,6 +52,15 @@ public class AtaPdfDocument : IDocument
 
             column.Item().AlignCenter().Text("Ata de Defesa de Trabalho de Conclusão de Curso").Bold().FontSize(13);
 
+            if (_model.Rascunho)
+            {
+                // Identificação visual do rascunho (RNF-05): texto simples, sem marca
+                // d'água — decisão técnica fechada em docs/requisitos/2026-07-13-pdf-ata-rascunho-etapa2.md.
+                column.Item().PaddingTop(4).AlignCenter()
+                    .Text("RASCUNHO — documento preliminar, sujeito a alteração")
+                    .Bold().FontSize(10).FontColor(Colors.Red.Darken2);
+            }
+
             column.Item().PaddingTop(8).BorderBottom(1).BorderColor(Colors.Grey.Lighten1);
         });
     }
@@ -65,8 +74,14 @@ public class AtaPdfDocument : IDocument
             column.Item().Element(ComposeDadosTcc);
             column.Item().Element(ComposeComposicaoBanca);
             column.Item().Element(ComposeDefesa);
-            column.Item().Element(ComposeResultado);
-            column.Item().PaddingTop(30).Element(ComposeAssinaturas);
+
+            // Rascunho (Etapa 2): sem nota/motivo (RF-01) e sem seção de assinaturas
+            // (decisão 7 — omitida por completo, nem em branco).
+            if (!_model.Rascunho)
+            {
+                column.Item().Element(ComposeResultado);
+                column.Item().PaddingTop(30).Element(ComposeAssinaturas);
+            }
         });
     }
 
@@ -152,7 +167,9 @@ public class AtaPdfDocument : IDocument
             column.Item().Text(text =>
             {
                 text.Span("Nota Final: ").SemiBold();
-                text.Span(_model.NotaFinal.ToString("0.0"));
+                // ComposeResultado só é chamado quando !Rascunho (ver ComposeConteudo), e
+                // nesse caminho o AtaPdfService só chega a Sucesso com NotaFinal != null.
+                text.Span(_model.NotaFinal!.Value.ToString("0.0"));
             });
 
             if (!string.IsNullOrWhiteSpace(_model.MotivoReprovacao))

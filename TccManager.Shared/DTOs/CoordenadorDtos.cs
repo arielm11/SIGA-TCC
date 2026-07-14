@@ -43,6 +43,20 @@ public class BancaPendenteDto
     public string Local { get; set; } = string.Empty;
     public string TccTitulo { get; set; } = string.Empty;
     public string NomeAluno { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Membros externos avaliadores desta banca (N2 Etapa 2) — usado pelo Client para
+    /// renderizar o botão de reenvio de token do rascunho (RF-06) individualmente por
+    /// membro. Vazio se a banca só tiver avaliadores internos.
+    /// </summary>
+    public List<MembroExternoBancaDto> MembrosExternos { get; set; } = new();
+}
+
+/// <summary>Membro externo avaliador de uma banca, usado por BancaPendenteDto (RF-06/Etapa 2).</summary>
+public class MembroExternoBancaDto
+{
+    public int MembroExternoId { get; set; }
+    public string Nome { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -42,6 +42,37 @@
                                         <td>@banca.TccTitulo</td>
                                         <td>@banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                         <td class="text-end">
+                                            <button class="btn btn-sm btn-outline-secondary me-1" disabled="@(bancaIdBaixandoRascunho == banca.TccId)" @onclick="() => BaixarAtaRascunho(banca.TccId)">
+                                                @if (bancaIdBaixandoRascunho == banca.TccId)
+                                                {
+                                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-file-earmark-pdf me-1"></i>
+                                                }
+                                                Rascunho
+                                            </button>
+
+                                            @if (banca.MembrosExternos.Any())
+                                            {
+                                                <div class="dropdown d-inline-block me-1">
+                                                    <button class="btn btn-sm btn-outline-warning dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                        <i class="bi bi-envelope-arrow-up me-1"></i> Reenviar Rascunho
+                                                    </button>
+                                                    <ul class="dropdown-menu dropdown-menu-end">
+                                                        @foreach (var membro in banca.MembrosExternos)
+                                                        {
+                                                            <li>
+                                                                <button class="dropdown-item" disabled="@(membroExternoIdReenviando == membro.MembroExternoId)" @onclick="() => ReenviarRascunho(banca.TccId, membro.MembroExternoId, membro.Nome)">
+                                                                    @membro.Nome
+                                                                </button>
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            }
+
                                             <button class="btn btn-sm btn-primary" @onclick="() => AbrirModal(banca.TccId, banca.NomeAluno)">
                                                 <i class="bi bi-file-earmark-arrow-up"></i> Registrar Resultado
                                             </button>
@@ -171,6 +202,11 @@
     private decimal notaFinal = 0;
     private IBrowserFile? arquivoAta;
 
+    // Rascunho pré-defesa (N2 Etapa 2): download pelo Coordenador e reenvio de token por
+    // membro externo (RF-06).
+    private int? bancaIdBaixandoRascunho;
+    private int? membroExternoIdReenviando;
+
     protected override async Task OnInitializedAsync()
     {
         await CarregarListas();
@@ -234,6 +270,48 @@
             }
         }
         finally { baixandoAta = false; }
+    }
+
+    private async Task BaixarAtaRascunho(int bancaId)
+    {
+        bancaIdBaixandoRascunho = bancaId;
+        try
+        {
+            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-rascunho-pdf");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-rascunho-{bancaId}.pdf", "application/pdf", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar o rascunho da ata: {erro}");
+            }
+        }
+        finally { bancaIdBaixandoRascunho = null; }
+    }
+
+    private async Task ReenviarRascunho(int bancaId, int membroExternoId, string nomeMembro)
+    {
+        membroExternoIdReenviando = membroExternoId;
+        try
+        {
+            var response = await Http.PostAsync($"api/coordenador/banca/{bancaId}/membro-externo/{membroExternoId}/reenviar-rascunho", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Novo link de acesso ao rascunho enviado para {nomeMembro}.");
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao reenviar o rascunho: {erro}");
+            }
+        }
+        finally { membroExternoIdReenviando = null; }
     }
 
     private void CarregarArquivo(InputFileChangeEventArgs e)

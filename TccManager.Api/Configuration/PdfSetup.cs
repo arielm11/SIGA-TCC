@@ -17,8 +17,10 @@ public static class PdfSetup
         QuestPDF.Settings.License = LicenseType.Community;
 
         services.Configure<AtaInstitucionalOptions>(configuration.GetSection("Ata"));
+        services.Configure<AppUrlsOptions>(configuration.GetSection("App"));
 
         services.AddScoped<IAtaPdfService, AtaPdfService>();
+        services.AddScoped<IRascunhoAtaTokenService, RascunhoAtaTokenService>();
 
         return services;
     }
