@@ -1,0 +1,41 @@
+/* Ajustes pontuais para a convivência do shell Radzen (migração progressiva N3) com o
+   restante do app ainda em Bootstrap. Cada regra documenta o problema específico que resolve —
+   não é um reset genérico. */
+
+/* RadzenSidebar mantém fundo escuro por padrão do próprio tema Radzen "Standard", independente
+   do tema claro/escuro selecionado pelo usuário (é assim que o template do Radzen é desenhado).
+   Submenus que expandem dentro dela (ex.: RadzenProfileMenu) usam por padrão a cor de "superfície"
+   geral do tema (branca no tema claro) para o próprio fundo, mas mantêm texto branco (correto só
+   quando o fundo é escuro) — o resultado é uma caixa branca com texto branco, ilegível e destoante
+   da sidebar, no tema claro. Fazemos o fundo do submenu herdar o fundo real da sidebar (sempre
+   escuro), mantendo o texto branco que já era o comportamento correto.
+   Especificidade (.rz-sidebar .rz-navigation-menu, 2 classes) já supera a regra do tema
+   (.rz-navigation-menu, 1 classe) sem precisar de !important. */
+.rz-sidebar .rz-navigation-menu {
+    background-color: inherit;
+}
+
+/* RadzenProfileMenu fica no rodapé da sidebar; o submenu (Meus Dados / Sair) expande por padrão
+   para baixo — o próprio tema define isso via `ul.rz-profile-menu .rz-navigation-menu {
+   inset-block-start: calc(100% - 2px) }` (especificidade 0,2,1: elemento "ul" + 2 classes) —,
+   o que o empurra para fora da viewport e exige rolar a sidebar para ver as opções. Ancoramos
+   pela borda inferior do item-gatilho (bottom: 100%) para expandir para cima, já que não há
+   espaço abaixo dele. !important necessário porque a regra do tema Radzen já teria
+   especificidade igual ou maior à nossa mesmo aumentando as classes do seletor, e o <link> do
+   tema é injetado por JS ao final do <head> (ver index.html), podendo vir depois deste arquivo
+   na ordem do documento. Escopo restrito a .rz-profile-menu (não ao RadzenPanelMenu de
+   navegação principal, que fica no topo e não tem esse problema). */
+.rz-profile-menu .rz-navigation-menu {
+    top: auto !important;
+    bottom: 100% !important;
+}
+
+/* Efeito de transição suave ao alternar tema claro/escuro (troca do <link> de stylesheet em
+   wwwroot/js/theme.js). Sem isso, a troca de cores é abrupta. View Transitions API dá um
+   crossfade nativo e moderno; navegadores sem suporte simplesmente ignoram as regras abaixo e
+   a troca volta a ser instantânea (degradação graciosa, sem JS adicional necessário aqui). */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 0.35s;
+    animation-timing-function: ease;
+}

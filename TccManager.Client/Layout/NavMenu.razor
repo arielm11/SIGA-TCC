@@ -1,4 +1,4 @@
-﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
 @using TccManager.Shared.DTOs
@@ -8,109 +8,81 @@
 @inject NavigationManager Navigation
 @inject IHttpClientFactory HttpClientFactory
 
-<div class="d-flex flex-column flex-shrink-0 p-3 text-white bg-dark" style="width: 280px; height: 100vh;">
+<RadzenStack Gap="0" class="rz-p-3" style="height: 100%;">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-3">
+        <RadzenIcon Icon="school" />
+        <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">SIGA TCC</RadzenText>
+    </RadzenStack>
 
-    <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
-        <span class="fs-4 fw-bold">🎓 SIGA TCC</span>
-    </a>
-
-    <hr>
-
-    <ul class="nav nav-pills flex-column mb-auto">
-        <li class="nav-item">
-            <NavLink class="nav-link text-white" href="" Match="NavLinkMatch.All">
-                <i class="bi bi-house-door me-2"></i> Home
-            </NavLink>
-        </li>
+    <RadzenPanelMenu Multiple="false" DisplayStyle="MenuItemDisplayStyle.IconAndText">
+        <RadzenPanelMenuItem Text="Home" Path="" Match="NavLinkMatch.All" Icon="home" />
 
         <AuthorizeView Roles="Admin">
             <Authorized>
-                <li>
-                    <NavLink class="nav-link text-white" href="usuarios">
-                        <i class="bi bi-people me-2"></i> Usuários
-                    </NavLink>
-                </li>
+                @foreach (var atalho in AtalhosPerfil.Admin)
+                {
+                    <RadzenPanelMenuItem Text="@atalho.Rotulo" Path="@atalho.Rota" Icon="@atalho.Icone" />
+                }
             </Authorized>
         </AuthorizeView>
 
         <AuthorizeView Roles="Aluno">
             <Authorized>
-                <li>
-                    <NavLink class="nav-link text-white" href="meu-tcc">
-                        <i class="bi bi-book me-2"></i> Meu TCC
-                    </NavLink>
-                </li>
+                @foreach (var atalho in AtalhosPerfil.Aluno)
+                {
+                    <RadzenPanelMenuItem Text="@atalho.Rotulo" Path="@atalho.Rota" Icon="@atalho.Icone" />
+                }
             </Authorized>
         </AuthorizeView>
 
         <AuthorizeView Roles="Professor">
             <Authorized>
-                <li>
-                    <NavLink class="nav-link text-white" href="/professor/dashboard">
-                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
-                    </NavLink>
-                    <NavLink class="nav-link text-white" href="/avaliador/convites">
-                        <i class="bi bi-envelope-paper-fill me-2"></i> Convites de Banca
-                    </NavLink>
-                </li>
+                @foreach (var atalho in AtalhosPerfil.Professor)
+                {
+                    <RadzenPanelMenuItem Text="@atalho.Rotulo" Path="@atalho.Rota" Icon="@atalho.Icone" />
+                }
             </Authorized>
         </AuthorizeView>
 
         <AuthorizeView Roles="Coordenador">
             <Authorized>
-                <li>
-                    <NavLink class="nav-link text-white" href="/coordenador/dashboard">
-                        <i class="bi bi-speedometer2 me-2"></i> Dashboard
-                    </NavLink>
-                    <NavLink class="nav-link text-white" href="/coordenador/professores">
-                        <i class="bi bi-people me-2"></i> Gestão de Professores
-                    </NavLink>
-                    <NavLink class="nav-link text-white" href="/coordenador/agendar-banca">
-                        <i class="bi bi-calendar-plus me-2"></i> Agendar Banca
-                    </NavLink>
-                    <NavLink class="nav-link text-white" href="/coordenador/registrar-resultado">
-                        <i class="bi bi-award-fill me-2"></i> Registrar Resultado
-                    </NavLink>
-                    <NavLink class="nav-link text-white" href="/coordenador/bancas-concluidas">
-                        <i class="bi bi-journal-check me-2"></i> Bancas Concluídas
-                    </NavLink>
-                </li>
+                @foreach (var atalho in AtalhosPerfil.Coordenador)
+                {
+                    <RadzenPanelMenuItem Text="@atalho.Rotulo" Path="@atalho.Rota" Icon="@atalho.Icone" />
+                }
             </Authorized>
         </AuthorizeView>
-    </ul>
+    </RadzenPanelMenu>
 
-    <hr>
-
-    <AuthorizeView>
-        <Authorized>
-            <div class="dropdown">
-                <a href="javascript:void(0)" class="d-flex align-items-center text-white text-decoration-none dropdown-toggle" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
-                    <div class="rounded-circle bg-secondary d-flex justify-content-center align-items-center me-2" style="width: 32px; height: 32px;">
-                        <strong>@context.User.Identity?.Name?.Substring(0, 1).ToUpper()</strong>
-                    </div>
-                    <strong>@context.User.Identity?.Name</strong>
-                </a>
-                <ul class="dropdown-menu dropdown-menu-dark text-small shadow" aria-labelledby="dropdownUser1">
-                    <li>
-                        <NavLink class="dropdown-item" href="meus-dados">
-                            <i class="bi bi-person me-2"></i> Meus Dados
-                        </NavLink>
-                    </li>
-
-                    <li><hr class="dropdown-divider"></li>
-                    
-                    <li>
-                        <button class="dropdown-item text-danger" @onclick="Logout">
-                            <i class="bi bi-box-arrow-right me-2"></i> Sair
-                        </button>
-                    </li>
-                </ul>
-            </div>
-        </Authorized>
-    </AuthorizeView>
-</div>
+    <div style="margin-top: auto;">
+        <AuthorizeView>
+            <Authorized>
+                <RadzenProfileMenu Click="@OnMenuItemClick">
+                    <Template>
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                            <RadzenIcon Icon="account_circle" />
+                            <RadzenText TextStyle="TextStyle.Body1" class="rz-my-0">@context.User.Identity?.Name</RadzenText>
+                        </RadzenStack>
+                    </Template>
+                    <ChildContent>
+                        <RadzenProfileMenuItem Text="Meus Dados" Icon="person" Path="meus-dados" />
+                        <RadzenProfileMenuItem Text="Sair" Icon="logout" Value="sair" />
+                    </ChildContent>
+                </RadzenProfileMenu>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+</RadzenStack>
 
 @code {
+    private async Task OnMenuItemClick(RadzenProfileMenuItem args)
+    {
+        if (args.Value == "sair")
+        {
+            await Logout();
+        }
+    }
+
     private async Task Logout()
     {
         // RF05/§6.7: notifica o servidor para revogar o refresh token da sessão antes de

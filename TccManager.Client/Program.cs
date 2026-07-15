@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using TccManager.Client;
 using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.Extensions.DependencyInjection;
+using Radzen;
 using TccManager.Client.Providers;
 using TccManager.Client.Handlers;
 using TccManager.Client.Services;
@@ -25,6 +27,11 @@ builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
 builder.Services.AddScoped<ISessionEndedHandler, SessionEndedHandler>();
 builder.Services.AddScoped<ITokenRefreshCoordinator, TokenRefreshCoordinator>();
 
+// Registra DialogService, NotificationService, TooltipService e ContextMenuService de uma vez
+// (helper disponível no pacote Radzen.Blazor referenciado).
+builder.Services.AddRadzenComponents();
+builder.Services.AddScoped<TemaService>();
+
 builder.Services.AddTransient<AuthTokenHandler>();
 
 // Cliente "cru", sem o AuthTokenHandler — usado exclusivamente pelo handler/coordenador
@@ -40,4 +47,10 @@ builder.Services.AddHttpClient("Api", c => c.BaseAddress = new Uri(apiBaseUrl))
 // no pipeline por trás (nenhuma página precisa ser alterada).
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("Api"));
 
-await builder.Build().RunAsync();
+var host = builder.Build();
+
+// Sincroniza o estado em memória do TemaService com a preferência já aplicada visualmente pelo
+// script inline de wwwroot/index.html (anti-flash), antes de qualquer componente renderizar.
+await host.Services.GetRequiredService<TemaService>().InicializarAsync();
+
+await host.RunAsync();

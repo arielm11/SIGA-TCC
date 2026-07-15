@@ -1,4 +1,4 @@
-﻿@page "/login"
+@page "/login"
 @layout LoginLayout
 @using TccManager.Shared.DTOs
 @using TccManager.Client.Providers
@@ -7,48 +7,37 @@
 @inject NavigationManager Navigation
 @inject ILocalStorageService LocalStorage
 @inject CustomAuthStateProvider AuthStateProvider
+@inject NotificationService NotificationService
 
-<div class="d-flex justify-content-center align-items-center" style="height: 80vh;">
-    <div class="card shadow p-4" style="width: 100%; max-width: 400px;">
-        <div class="text-center mb-4">
-            <h3 class="fw-bold">Login TCC Manager</h3>
-            <p class="text-muted">Entre com suas credenciais</p>
-        </div>
+<PageTitle>Login</PageTitle>
 
-        @if (!string.IsNullOrEmpty(mensagemErro))
-        {
-            <div class="alert alert-danger text-center" role="alert">
-                @mensagemErro
-            </div>
-        }
+<RadzenCard Variant="Variant.Filled" class="rz-shadow-2" style="width: 100%; max-width: 400px;">
+    <RadzenStack Gap="0.25rem" AlignItems="AlignItems.Center" class="rz-mb-4">
+        <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">Login TCC Manager</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Entre com suas credenciais</RadzenText>
+    </RadzenStack>
 
-        <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
-            <DataAnnotationsValidator />
+    <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+        <DataAnnotationsValidator />
 
-            <div class="mb-3">
-                <label class="form-label">Email</label>
-                <InputText class="form-control" @bind-Value="loginModel.Email" placeholder="seu@email.com" />
-            </div>
+        <RadzenStack Gap="1rem">
+            <RadzenFormField Text="Email" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenTextBox Name="Email" @bind-Value="loginModel.Email" Placeholder="seu@email.com" style="width: 100%;" />
+            </RadzenFormField>
 
-            <div class="mb-3">
-                <label class="form-label">Senha</label>
-                <InputText type="password" class="form-control" @bind-Value="loginModel.Senha" placeholder="******" />
-            </div>
+            <RadzenFormField Text="Senha" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenPassword Name="Senha" @bind-Value="loginModel.Senha" Placeholder="******" style="width: 100%;" />
+            </RadzenFormField>
 
-            <button type="submit" class="btn btn-primary w-100 py-2">
-                @if (carregando)
-                {
-                    <span class="spinner-border spinner-border-sm me-2"></span>
-                    <span>Entrando...</span>
-                }
-                else
-                {
-                    <span>Entrar</span>
-                }
-            </button>
-        </EditForm>
-    </div>
-</div>
+            <RadzenButton ButtonType="ButtonType.Submit"
+                          Text="Entrar"
+                          IsBusy="carregando"
+                          BusyText="Entrando..."
+                          ButtonStyle="ButtonStyle.Primary"
+                          style="width: 100%;" />
+        </RadzenStack>
+    </EditForm>
+</RadzenCard>
 
 @code {
     [SupplyParameterFromQuery(Name = "expirado")]
@@ -56,21 +45,25 @@
     public string? Expirado { get; set; }
 
     private LoginDto loginModel = new();
-    private string mensagemErro = string.Empty;
     private bool carregando = false;
 
     protected override void OnInitialized()
     {
         if (Expirado == "1")
         {
-            mensagemErro = "Sua sessão expirou. Faça login novamente.";
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Warning,
+                Summary = "Sessão expirada",
+                Detail = "Sua sessão expirou. Faça login novamente.",
+                Duration = 6000
+            });
         }
     }
 
     private async Task HandleLogin()
     {
         carregando = true;
-        mensagemErro = string.Empty;
         try
         {
             var response = await Http.PostAsJsonAsync("api/auth/login", loginModel);
@@ -85,12 +78,39 @@
             }
             else
             {
-                mensagemErro = "Credenciais inválidas. Tente novamente.";
+                var mensagem = "Credenciais inválidas. Tente novamente.";
+                try
+                {
+                    // AuthController retorna Unauthorized(string): o formatter padrão do
+                    // ASP.NET Core serializa string como text/plain (sem aspas), não JSON —
+                    // por isso o corpo é lido como texto puro, não com ReadFromJsonAsync.
+                    var corpo = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(corpo))
+                        mensagem = corpo;
+                }
+                catch (Exception)
+                {
+                    // Corpo em formato inesperado — mantém a mensagem genérica de fallback.
+                }
+
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Falha no login",
+                    Detail = mensagem,
+                    Duration = 5000
+                });
             }
         }
         catch (Exception)
         {
-            mensagemErro = "Não foi possível entrar. Tente novamente em instantes.";
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Falha ao entrar",
+                Detail = "Não foi possível entrar. Tente novamente em instantes.",
+                Duration = 5000
+            });
         }
         finally
         {

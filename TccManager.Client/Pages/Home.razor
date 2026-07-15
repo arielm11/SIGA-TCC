@@ -1,7 +1,65 @@
-﻿@page "/"
+@page "/"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Security.Claims
 @using Microsoft.AspNetCore.Components.Authorization
+
 <PageTitle>Home</PageTitle>
 
+<AuthorizeView>
+    <Authorized>
+        <RadzenStack Gap="1.5rem">
+            <RadzenStack Gap="0.25rem">
+                <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Olá, @context.User.Identity?.Name!</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body1" class="rz-my-0">Perfil: @ObterPapel(context.User)</RadzenText>
+            </RadzenStack>
 
-<h1>Hello, world!</h1>
+            @{
+                var atalhos = ObterAtalhos(context.User);
+            }
+
+            @if (atalhos.Count > 0)
+            {
+                <RadzenRow Gap="1rem">
+                    @foreach (var atalho in atalhos)
+                    {
+                        <RadzenColumn SizeMD="4" SizeXS="12">
+                            <a href="@atalho.Rota" style="text-decoration: none; color: inherit; display: block; height: 100%;">
+                                <RadzenCard Variant="Variant.Outlined" class="rz-p-4" style="height: 100%;">
+                                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="1rem">
+                                        <RadzenIcon Icon="@atalho.Icone" style="font-size: 2rem;" />
+                                        <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-my-0">@atalho.Rotulo</RadzenText>
+                                    </RadzenStack>
+                                </RadzenCard>
+                            </a>
+                        </RadzenColumn>
+                    }
+                </RadzenRow>
+            }
+            else
+            {
+                <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" Shade="Shade.Lighter">
+                    Nenhum atalho disponível para o seu perfil no momento.
+                </RadzenAlert>
+            }
+        </RadzenStack>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private static string ObterPapel(ClaimsPrincipal user)
+    {
+        return user.FindFirst(ClaimTypes.Role)?.Value ?? "Usuário";
+    }
+
+    // Espelha exatamente os itens de NavMenu.razor por role, via a mesma fonte
+    // (Shared/Navegacao/AtalhosPerfil.cs) usada pela sidebar — evita as duas telas divergirem.
+    private static IReadOnlyList<AtalhoPerfil> ObterAtalhos(ClaimsPrincipal user)
+    {
+        if (user.IsInRole("Coordenador")) return AtalhosPerfil.Coordenador;
+        if (user.IsInRole("Professor")) return AtalhosPerfil.Professor;
+        if (user.IsInRole("Aluno")) return AtalhosPerfil.Aluno;
+        if (user.IsInRole("Admin")) return AtalhosPerfil.Admin;
+
+        return Array.Empty<AtalhoPerfil>();
+    }
+}

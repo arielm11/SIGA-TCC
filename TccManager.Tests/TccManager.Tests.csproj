@@ -29,6 +29,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\TccManager.Api\TccManager.Api.csproj" />
 		<ProjectReference Include="..\TccManager.Shared\TccManager.Shared.csproj" />
+		<ProjectReference Include="..\TccManager.Client\TccManager.Client.csproj" />
 	</ItemGroup>
 
 </Project>
