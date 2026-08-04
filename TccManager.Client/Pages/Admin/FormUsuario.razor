@@ -1,4 +1,4 @@
-﻿@page "/usuarios/novo"
+@page "/usuarios/novo"
 @page "/usuarios/editar/{id:int}"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
@@ -6,106 +6,87 @@
 @attribute [Authorize(Roles = "Admin")]
 @inject HttpClient Http
 @inject NavigationManager Navigation
+@inject NotificationService NotificationService
 
-<div class="container" style="max-width: 800px;">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>@(Id.HasValue ? "Editar Usuário" : "Novo Usuário")</h3>
+<PageTitle>@(Id.HasValue ? "Editar Usuário" : "Novo Usuário")</PageTitle>
 
-        <a href="usuarios" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-2"></i> Voltar
-        </a>
-    </div>
+<RadzenStack Gap="1.5rem" style="max-width: 800px; margin: 0 auto;">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">@(Id.HasValue ? "Editar Usuário" : "Novo Usuário")</RadzenText>
+        <RadzenButton Text="Voltar" Icon="arrow_back" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@(() => Navigation.NavigateTo("/usuarios"))" />
+    </RadzenStack>
 
-    <div class="card shadow-sm">
-        <div class="card-body p-4">
+    <RadzenCard Variant="Variant.Filled" class="rz-shadow-2">
+        <EditForm Model="usuario" OnValidSubmit="SalvarUsuario">
+            <DataAnnotationsValidator />
 
-            @if (!string.IsNullOrEmpty(mensagemErro))
-            {
-                <div class="alert alert-danger mb-3">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i> @mensagemErro
-                </div>
-            }
-
-            <EditForm Model="usuario" OnValidSubmit="SalvarUsuario">
-                <DataAnnotationsValidator />
-
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Nome Completo</label>
-                        <InputText class="form-control" @bind-Value="usuario.Nome" />
+            <RadzenStack Gap="1rem">
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn SizeMD="6" SizeXS="12">
+                        <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
+                            <RadzenTextBox Name="Nome" @bind-Value="usuario.Nome" style="width: 100%;" />
+                        </RadzenFormField>
                         <ValidationMessage For="@(() => usuario.Nome)" />
-                    </div>
+                    </RadzenColumn>
 
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">E-mail</label>
-                        <InputText class="form-control" @bind-Value="usuario.Email" />
+                    <RadzenColumn SizeMD="6" SizeXS="12">
+                        <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
+                            <RadzenTextBox Name="Email" @bind-Value="usuario.Email" style="width: 100%;" />
+                        </RadzenFormField>
                         <ValidationMessage For="@(() => usuario.Email)" />
-                    </div>
-                </div>
+                    </RadzenColumn>
+                </RadzenRow>
 
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Senha</label>
-                        <InputText type="password" class="form-control" @bind-Value="usuario.Senha" placeholder="@(Id.HasValue ? "Deixe em branco para manter a atual" : "******")" />
-
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn SizeMD="6" SizeXS="12">
+                        <RadzenFormField Text="Senha" Variant="Variant.Outlined" style="width: 100%;">
+                            <RadzenPassword Name="Senha" @bind-Value="usuario.Senha"
+                                            Placeholder="@(Id.HasValue ? "Deixe em branco para manter a atual" : "******")"
+                                            style="width: 100%;" />
+                        </RadzenFormField>
                         @if (Id.HasValue)
                         {
-                            <small class="text-muted">Preencha apenas se quiser alterar a senha.</small>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Preencha apenas se quiser alterar a senha.</RadzenText>
                         }
                         else
                         {
-                            <small class="text-muted">Senha inicial obrigatória.</small>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Senha inicial obrigatória.</RadzenText>
                         }
                         <ValidationMessage For="@(() => usuario.Senha)" />
-                    </div>
+                    </RadzenColumn>
 
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label">Nível de Acesso</label>
-                        <InputSelect class="form-select" @bind-Value="usuario.Tipo">
-                            @foreach (var tipo in Enum.GetValues(typeof(TipoUsuario)))
-                            {
-                                <option value="@tipo">@tipo</option>
-                            }
-                        </InputSelect>
-                    </div>
-                </div>
+                    <RadzenColumn SizeMD="6" SizeXS="12">
+                        <RadzenFormField Text="Nível de Acesso" Variant="Variant.Outlined" style="width: 100%;">
+                            <RadzenDropDown Name="Tipo" TValue="TipoUsuario" Data="@tiposDisponiveis" @bind-Value="usuario.Tipo" style="width: 100%;" />
+                        </RadzenFormField>
+                    </RadzenColumn>
+                </RadzenRow>
 
-                <div class="mb-4 form-check">
-                    <InputCheckbox class="form-check-input" @bind-Value="usuario.Ativo" id="chkAtivo" />
-                    <label class="form-check-label" for="chkAtivo">
-                        Usuário Ativo
-                    </label>
-                </div>
+                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                    <RadzenCheckBox Name="Ativo" @bind-Value="usuario.Ativo" />
+                    <RadzenLabel Component="Ativo" Text="Usuário Ativo" />
+                </RadzenStack>
 
-                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                    <button type="submit" class="btn btn-primary px-4" disabled="@carregando">
-                        @if (carregando)
-                        {
-                            <span class="spinner-border spinner-border-sm me-2"></span>
-                            <span>Salvando...</span>
-                        }
-                        else
-                        {
-                            <span>
-                                <i class="bi bi-check-lg me-2"></i>
-                                @(Id.HasValue ? "Atualizar" : "Cadastrar")
-                            </span>
-                        }
-                    </button>
-                </div>
-
-            </EditForm>
-        </div>
-    </div>
-</div>
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+                    <RadzenButton ButtonType="ButtonType.Submit"
+                                  Text="@(Id.HasValue ? "Atualizar" : "Cadastrar")"
+                                  Icon="check"
+                                  IsBusy="carregando"
+                                  BusyText="Salvando..."
+                                  ButtonStyle="ButtonStyle.Primary" />
+                </RadzenStack>
+            </RadzenStack>
+        </EditForm>
+    </RadzenCard>
+</RadzenStack>
 
 @code {
     [Parameter]
     public int? Id { get; set; }
 
     private UsuarioDto usuario = new() { Ativo = true, Tipo = TipoUsuario.Aluno };
-    private string mensagemErro = string.Empty;
     private bool carregando = false;
+    private readonly TipoUsuario[] tiposDisponiveis = Enum.GetValues<TipoUsuario>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -118,7 +99,13 @@
             }
             catch (Exception)
             {
-                mensagemErro = "Erro ao carregar usuário. Talvez ele não exista.";
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao carregar",
+                    Detail = "Erro ao carregar usuário. Talvez ele não exista.",
+                    Duration = 6000
+                });
             }
         }
     }
@@ -126,11 +113,16 @@
     private async Task SalvarUsuario()
     {
         carregando = true;
-        mensagemErro = string.Empty;
 
         if (!Id.HasValue && string.IsNullOrWhiteSpace(usuario.Senha))
         {
-            mensagemErro = "A senha é obrigatória para novos usuários.";
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Warning,
+                Summary = "Senha obrigatória",
+                Detail = "A senha é obrigatória para novos usuários.",
+                Duration = 5000
+            });
             carregando = false;
             return;
         }
@@ -155,12 +147,24 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                mensagemErro = $"Erro ao salvar: {erro}";
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao salvar",
+                    Detail = $"Erro ao salvar: {erro}",
+                    Duration = 6000
+                });
             }
         }
         catch (Exception ex)
         {
-            mensagemErro = "Erro de conexão com o servidor.";
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão com o servidor.",
+                Duration = 5000
+            });
             Console.WriteLine(ex.Message);
         }
         finally

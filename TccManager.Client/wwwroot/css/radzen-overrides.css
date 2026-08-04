@@ -3,16 +3,83 @@
    não é um reset genérico. */
 
 /* RadzenSidebar mantém fundo escuro por padrão do próprio tema Radzen "Standard", independente
-   do tema claro/escuro selecionado pelo usuário (é assim que o template do Radzen é desenhado).
-   Submenus que expandem dentro dela (ex.: RadzenProfileMenu) usam por padrão a cor de "superfície"
-   geral do tema (branca no tema claro) para o próprio fundo, mas mantêm texto branco (correto só
-   quando o fundo é escuro) — o resultado é uma caixa branca com texto branco, ilegível e destoante
-   da sidebar, no tema claro. Fazemos o fundo do submenu herdar o fundo real da sidebar (sempre
-   escuro), mantendo o texto branco que já era o comportamento correto.
-   Especificidade (.rz-sidebar .rz-navigation-menu, 2 classes) já supera a regra do tema
-   (.rz-navigation-menu, 1 classe) sem precisar de !important. */
+   do tema claro/escuro selecionado pelo usuário (é assim que o template do Radzen é desenhado) —
+   mas vários elementos DENTRO dela (RadzenProfileMenu e seu submenu, principalmente) usam
+   variáveis de "superfície"/texto que MUDAM entre os temas claro/escuro (pensadas para menus com
+   fundo claro por padrão), causando fundo branco e/ou texto escuro ilegível quando o tema geral
+   do site está claro. Tentamos corrigir elemento por elemento (background-color pontual em
+   .rz-profile-menu/.rz-navigation-menu), mas cada correção revelava outro elemento com o mesmo
+   problema (texto de item, ícone, etc.) — sintoma de que várias partes da sidebar dependem de
+   variáveis sensíveis ao tema.
+   Decisão: fixar a sidebar inteira nas cores do tema escuro, sempre, independente do tema
+   selecionado pelo usuário no restante do site (decisão explícita do usuário — a sidebar já era
+   visualmente escura em ambos os temas por design do Radzen, então isso não muda nada para quem
+   já via a sidebar dessa forma, só elimina as inconsistências pontuais). Redefinindo as
+   variáveis CSS aqui (não propriedades individuais), qualquer regra do tema que use
+   var(--rz-text-color), var(--rz-menu-item-color) etc. dentro da sidebar passa a resolver para
+   o valor fixo do tema escuro automaticamente, sem precisar mapear elemento por elemento nem
+   usar !important em cada propriedade. Valores capturados de standard-dark-base.css. */
+.rz-sidebar {
+    --rz-text-color: #eaebec;
+    --rz-base-800: #242527;
+    --rz-base-700: #3b3c3f;
+    --rz-base-900: #19191a;
+    --rz-primary-lighter: rgba(56, 113, 255, 0.2);
+    --rz-on-primary-lighter: #88aaff;
+    --rz-base-background-color: #242527;
+    --rz-sidebar-background-color: #242527;
+    --rz-sidebar-color: #ffffff;
+    --rz-menu-item-color: #eaebec;
+    --rz-menu-item-icon-color: #eaebec;
+    --rz-profile-menu-background-color: #242527;
+    --rz-panel-menu-item-background-color: #242527;
+    --rz-panel-menu-item-active-background-color: #3b3c3f;
+    --rz-panel-menu-item-hover-background-color: #3b3c3f;
+}
+
+/* Reforço pontual: os dois elementos que efetivamente ficavam com fundo branco (o container do
+   RadzenProfileMenu e o submenu que ele abre) — mesmo com as variáveis acima redefinidas, mantido
+   como rede de segurança caso alguma regra do tema use um valor literal em vez da variável. */
+.rz-sidebar .rz-profile-menu,
 .rz-sidebar .rz-navigation-menu {
-    background-color: inherit;
+    background-color: var(--rz-sidebar-background-color) !important;
+    color: var(--rz-sidebar-color) !important;
+}
+
+/* .rz-profile-menu tem `border-inline-start: var(--rz-profile-menu-border)`. No tema claro essa
+   variável resolve para --rz-border-base-200 (um valor de borda completo, ex.: "1px solid
+   <cor-clara>"), renderizando uma linha fina clara à esquerda do componente e empurrando-o para
+   a direita (a borda ocupa espaço). No tema escuro a mesma variável resolve para --rz-base-800
+   (só uma cor, sem width/style) — sem style, o navegador trata a borda como "none" e ela não
+   ocupa espaço nem aparece. Removemos a borda sempre, replicando o comportamento do tema escuro
+   nos dois casos. */
+.rz-sidebar .rz-profile-menu {
+    border-inline-start: none !important;
+}
+
+/* RadzenText usado em NavMenu.razor ("SIGA TCC", TextStyle.H6, e o nome do usuário no
+   RadzenProfileMenu, TextStyle.Body1) NÃO lê --rz-text-color. Cada TextStyle tem sua própria
+   variável de cor (--rz-text-h6-color, --rz-text-body1-color, ...) que, apesar de referenciar
+   var(--rz-text-color)/var(--rz-text-title-color) na definição do tema, na prática não
+   respeitava a redefinição feita em .rz-sidebar acima (a redefinição de variável não bastou —
+   diagnosticado lendo o CSS de standard-base.css/standard-dark-base.css e comparando o valor
+   computado real nos dois temas via DevTools). Por isso aqui a cor é fixada de forma direta e
+   literal (não via variável), com os valores exatos que o tema escuro usa: */
+.rz-sidebar .rz-text-h6 {
+    color: #f6f6f7 !important;
+}
+
+.rz-sidebar .rz-text-body1 {
+    color: #eaebec !important;
+}
+
+/* Seta (chevron) do RadzenProfileMenu que indica expandido/recolhido — mesma causa: usa
+   --rz-profile-menu-toggle-button-color, que referencia var(--rz-text-color) na definição do
+   tema, mas na prática não respeita a redefinição de variável feita em .rz-sidebar acima (mesmo
+   sintoma já visto em .rz-text-h6/.rz-text-body1). Cor literal fixa, mesmo valor de
+   --rz-text-color no tema escuro. */
+.rz-sidebar .rz-navigation-item-icon-children {
+    color: #eaebec !important;
 }
 
 /* RadzenProfileMenu fica no rodapé da sidebar; o submenu (Meus Dados / Sair) expande por padrão
