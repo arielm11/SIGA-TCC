@@ -1,140 +1,116 @@
-﻿@page "/coordenador/dashboard"
+@page "/coordenador/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-bar-chart-fill me-2"></i> Painel da Coordenação</h2>
+<PageTitle>Painel da Coordenação</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="dashboard" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Painel da Coordenação</RadzenText>
+    </RadzenStack>
 
     @if (carregando)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p>Calculando estatísticas...</p>
-        </div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Calculando estatísticas...</RadzenText>
+        </RadzenStack>
     }
     else
     {
         @if (stats != null)
         {
-            <div class="row mb-4 g-3">
-                <div class="col-md-3">
-                    <div class="card bg-primary text-white h-100 shadow-sm border-0">
-                        <div class="card-body text-center">
-                            <h1 class="display-5 fw-bold">@stats.TotalAtivos</h1>
-                            <p class="mb-0">TCCs Ativos</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card bg-warning text-dark h-100 shadow-sm border-0">
-                        <div class="card-body text-center">
-                            <h1 class="display-5 fw-bold">@stats.PropostasPendentes</h1>
-                            <p class="mb-0">Propostas Pendentes</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card bg-info text-dark h-100 shadow-sm border-0">
-                        <div class="card-body text-center">
-                            <h1 class="display-5 fw-bold">@stats.AguardandoBanca</h1>
-                            <p class="mb-0">Aguardando Banca</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card bg-success text-white h-100 shadow-sm border-0">
-                        <div class="card-body text-center">
-                            <h1 class="display-5 fw-bold">@stats.TccsConcluidos</h1>
-                            <p class="mb-0">Concluídos</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <RadzenRow Gap="1rem">
+                <RadzenColumn SizeMD="3" SizeSM="6" SizeXS="12">
+                    <RadzenCard Variant="Variant.Filled" class="rz-shadow-2 rz-text-align-center">
+                        <RadzenIcon Icon="assignment" IconColor="var(--rz-primary)" style="font-size: 2rem;" />
+                        <RadzenText TextStyle="TextStyle.H3" class="rz-my-0">@stats.TotalAtivos</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">TCCs Ativos</RadzenText>
+                    </RadzenCard>
+                </RadzenColumn>
+                <RadzenColumn SizeMD="3" SizeSM="6" SizeXS="12">
+                    <RadzenCard Variant="Variant.Filled" class="rz-shadow-2 rz-text-align-center">
+                        <RadzenIcon Icon="inbox" IconColor="var(--rz-warning)" style="font-size: 2rem;" />
+                        <RadzenText TextStyle="TextStyle.H3" class="rz-my-0">@stats.PropostasPendentes</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Propostas Pendentes</RadzenText>
+                    </RadzenCard>
+                </RadzenColumn>
+                <RadzenColumn SizeMD="3" SizeSM="6" SizeXS="12">
+                    <RadzenCard Variant="Variant.Filled" class="rz-shadow-2 rz-text-align-center">
+                        <RadzenIcon Icon="event" IconColor="var(--rz-info)" style="font-size: 2rem;" />
+                        <RadzenText TextStyle="TextStyle.H3" class="rz-my-0">@stats.AguardandoBanca</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Aguardando Banca</RadzenText>
+                    </RadzenCard>
+                </RadzenColumn>
+                <RadzenColumn SizeMD="3" SizeSM="6" SizeXS="12">
+                    <RadzenCard Variant="Variant.Filled" class="rz-shadow-2 rz-text-align-center">
+                        <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" style="font-size: 2rem;" />
+                        <RadzenText TextStyle="TextStyle.H3" class="rz-my-0">@stats.TccsConcluidos</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Concluídos</RadzenText>
+                    </RadzenCard>
+                </RadzenColumn>
+            </RadzenRow>
         }
 
-        <h4 class="mb-3"><i class="bi bi-inbox me-2"></i> Atribuir Orientadores</h4>
-        <div class="card shadow-sm mb-5">
-            <div class="card-body">
-                @if (pendentes == null || !pendentes.Any())
-                {
-                    <div class="alert alert-light text-center mb-0">Não há novas propostas pendentes no momento.</div>
-                }
-                else
-                {
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Aluno</th>
-                                    <th>Título da Proposta</th>
-                                    <th>Data de Submissão</th>
-                                    <th>Ação</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var tcc in pendentes)
-                                {
-                                    <tr>
-                                        <td class="fw-bold">@tcc.NomeAluno</td>
-                                        <td>@tcc.Titulo</td>
-                                        <td>@tcc.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy")</td>
-                                        <td>
-                                            <button class="btn btn-sm btn-primary" @onclick="() => AbrirModalDesignacao(tcc)">
-                                                <i class="bi bi-person-plus-fill me-1"></i> Designar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            </div>
-        </div>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenIcon Icon="move_to_inbox" />
+            <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Atribuir Orientadores</RadzenText>
+        </RadzenStack>
+
+        <RadzenDataGrid Data="@pendentes" TItem="TccResumoDto"
+                        AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
+                        AllowSorting="true"
+                        EmptyText="Não há novas propostas pendentes no momento."
+                        PageSizeText="Itens por página">
+            <Columns>
+                <RadzenDataGridColumn TItem="TccResumoDto" Property="NomeAluno" Title="Aluno" />
+                <RadzenDataGridColumn TItem="TccResumoDto" Property="Titulo" Title="Título da Proposta" />
+                <RadzenDataGridColumn TItem="TccResumoDto" Property="DataCriacao" Title="Data de Submissão" Width="180px">
+                    <Template Context="tcc">
+                        @tcc.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy")
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TccResumoDto" Title="Ação" Sortable="false" Filterable="false" Width="160px">
+                    <Template Context="tcc">
+                        <RadzenButton Text="Designar" Icon="person_add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
+                                      Click="@(() => AbrirDesignacao(tcc))" />
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
 
         @if (tccSelecionado != null)
         {
-            <div class="card border-primary shadow animate__animated animate__fadeIn mb-4">
-                <div class="card-header bg-primary text-white fw-bold">
-                    Designar Orientador para: @tccSelecionado.NomeAluno
-                </div>
-                <div class="card-body">
-                    <p class="text-muted small mb-3">Selecione um professor da lista abaixo. O sistema mostra a carga atual de orientandos de cada um para ajudar na distribuição.</p>
-                    
-                    <div class="row align-items-center">
-                        <div class="col-md-8 mb-3 mb-md-0">
-                            <select class="form-select" @bind="professorSelecionadoId">
-                                <option value="0">-- Selecione o Professor --</option>
-                                @if (professores != null)
-                                {
-                                    @foreach (var prof in professores)
-                                    {
-                                        <option value="@prof.Id">
-                                            @prof.Nome (Carga: @prof.CargaAtual orientandos)
-                                        </option>
-                                    }
-                                }
-                            </select>
-                        </div>
-                        <div class="col-md-4 text-end">
-                            <button class="btn btn-secondary me-2" @onclick="FecharModal">Cancelar</button>
-                            <button class="btn btn-success" disabled="@(professorSelecionadoId == 0 || enviando)" @onclick="SalvarDesignacao">
-                                @if (enviando)
-                                {
-                                    <span class="spinner-border spinner-border-sm"></span>
-                                }
-                                Confirmar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Designar Orientador para: @tccSelecionado.NomeAluno</RadzenText>
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-mt-2">
+                    Selecione um professor da lista abaixo. O sistema mostra a carga atual de orientandos de cada um para ajudar na distribuição.
+                </RadzenText>
+
+                <RadzenRow AlignItems="AlignItems.Center" Gap="1rem" class="rz-mt-3">
+                    <RadzenColumn SizeMD="8" SizeXS="12">
+                        <RadzenDropDown TValue="int" Data="@professoresOptions" TextProperty="Display" ValueProperty="Id"
+                                        @bind-Value="professorSelecionadoId" Placeholder="-- Selecione o Professor --"
+                                        style="width: 100%;" />
+                    </RadzenColumn>
+                    <RadzenColumn SizeMD="4" SizeXS="12">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                            <RadzenButton Text="Cancelar" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@FecharDesignacao" />
+                            <RadzenButton Text="Confirmar" ButtonStyle="ButtonStyle.Success"
+                                          Disabled="@(professorSelecionadoId == 0 || enviando)"
+                                          IsBusy="enviando" BusyText="Salvando..."
+                                          Click="@SalvarDesignacao" />
+                        </RadzenStack>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenCard>
         }
     }
-</div>
+</RadzenStack>
 
 @code {
     private bool carregando = true;
@@ -143,8 +119,8 @@
     private DashboardCoordenadorDto? stats;
     private List<TccResumoDto>? pendentes;
     private List<ProfessorResumoDto>? professores;
+    private List<ProfessorOpcao> professoresOptions = new();
 
-    // Controles do Modal
     private TccResumoDto? tccSelecionado;
     private int professorSelecionadoId = 0;
 
@@ -162,19 +138,32 @@
             pendentes = await Http.GetFromJsonAsync<List<TccResumoDto>>("api/coordenador/propostas-pendentes");
             var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
             professores = professoresPaginado?.Items;
+            professoresOptions = (professores ?? new()).Select(p => new ProfessorOpcao
+            {
+                Id = p.Id,
+                Display = $"{p.Nome} (Carga: {p.CargaAtual} orientandos)"
+            }).ToList();
         }
-        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar dados do painel."); }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao carregar dados do painel.",
+                Duration = 5000
+            });
+        }
         finally { carregando = false; }
     }
 
-    private async Task AbrirModalDesignacao(TccResumoDto tcc)
+    private void AbrirDesignacao(TccResumoDto tcc)
     {
         tccSelecionado = tcc;
         professorSelecionadoId = 0;
-        await JSRuntime.InvokeVoidAsync("eval", "window.scrollTo(0, document.body.scrollHeight)");
     }
 
-    private void FecharModal()
+    private void FecharDesignacao()
     {
         tccSelecionado = null;
         professorSelecionadoId = 0;
@@ -192,15 +181,33 @@
 
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Orientador designado! A proposta foi aprovada e o aluno será notificado.");
-                FecharModal();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Orientador designado",
+                    Detail = "Orientador designado! A proposta foi aprovada e o aluno será notificado.",
+                    Duration = 5000
+                });
+                FecharDesignacao();
                 await CarregarDados(); // Recarrega KPIs e a lista
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro ao designar orientador.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao designar orientador.",
+                    Duration = 5000
+                });
             }
         }
         finally { enviando = false; }
+    }
+
+    private class ProfessorOpcao
+    {
+        public int Id { get; set; }
+        public string Display { get; set; } = string.Empty;
     }
 }

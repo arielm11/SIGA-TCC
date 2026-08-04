@@ -1,242 +1,169 @@
-﻿@page "/coordenador/professores"
+@page "/coordenador/professores"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-people-fill me-2"></i> Gestão do Corpo Docente e Avaliadores</h2>
+<PageTitle>Gestão de Professores</PageTitle>
 
-    <ul class="nav nav-tabs mb-4">
-        <li class="nav-item">
-            <button class="nav-link @(abaAtiva == "internos" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "internos"'>
-                <i class="bi bi-person-badge me-2"></i> Professores Internos (Orientadores)
-            </button>
-        </li>
-        <li class="nav-item">
-            <button class="nav-link @(abaAtiva == "externos" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "externos"'>
-                <i class="bi bi-person-workspace me-2"></i> Avaliadores Externos (Banca)
-            </button>
-        </li>
-    </ul>
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="group" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Gestão do Corpo Docente e Avaliadores</RadzenText>
+    </RadzenStack>
 
-    @if (carregando)
-    {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p>Carregando lista...</p>
-        </div>
-    }
-    else
-    {
-        @if (abaAtiva == "internos" && professores != null)
-        {
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <p class="text-muted mb-4">Gerencie a carga de orientandos de cada professor. Professores marcados como indisponíveis não aparecerão na lista de designação.</p>
+    <RadzenTabs RenderMode="TabRenderMode.Client">
+        <Tabs>
+            <RadzenTabsItem Text="Professores Internos (Orientadores)" Icon="badge">
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-3">
+                    Gerencie a carga de orientandos de cada professor. Professores marcados como indisponíveis não aparecerão na lista de designação.
+                </RadzenText>
 
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Nome do Professor</th>
-                                    <th class="text-center">Carga Atual</th>
-                                    <th class="text-center">Limite de Alunos</th>
-                                    <th class="text-center">Status</th>
-                                    <th class="text-end">Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var prof in professores.Items)
-                                {
-                                    <tr>
-                                        <td class="fw-bold">@prof.Nome</td>
-                                        <td class="text-center">
-                                            <span class="badge @(prof.CargaAtual >= prof.LimiteOrientandos ? "bg-danger" : "bg-primary") fs-6">
-                                                @prof.CargaAtual / @prof.LimiteOrientandos
-                                            </span>
-                                        </td>
-                                        <td class="text-center" style="width: 150px;">
-                                            <input type="number" class="form-control form-control-sm text-center" @bind="prof.LimiteOrientandos" min="1" max="20" />
-                                        </td>
-                                        <td class="text-center">
-                                            <div class="form-check form-switch d-flex justify-content-center">
-                                                <input class="form-check-input" type="checkbox" role="switch" @bind="prof.AceitandoOrientandos">
-                                            </div>
-                                        </td>
-                                        <td class="text-end">
-                                            <button class="btn btn-sm btn-success" @onclick="() => SalvarCapacidade(prof)">
-                                                <i class="bi bi-save"></i> Salvar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                <RadzenDataGrid @ref="gridProfessores" TItem="ProfessorResumoDto" Data="@professores" Count="@countProfessores"
+                                LoadData="@LoadDataProfessores" AllowPaging="true" PageSize="20"
+                                EmptyText="Nenhum professor cadastrado." PageSizeText="Itens por página">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="ProfessorResumoDto" Property="Nome" Title="Nome do Professor" />
+                        <RadzenDataGridColumn TItem="ProfessorResumoDto" Title="Carga Atual" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
+                            <Template Context="prof">
+                                <RadzenBadge BadgeStyle="@(prof.CargaAtual >= prof.LimiteOrientandos ? BadgeStyle.Danger : BadgeStyle.Primary)"
+                                             Text="@($"{prof.CargaAtual} / {prof.LimiteOrientandos}")" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ProfessorResumoDto" Title="Limite de Alunos" Sortable="false" Width="160px" TextAlign="TextAlign.Center">
+                            <Template Context="prof">
+                                <RadzenNumeric TValue="int" @bind-Value="prof.LimiteOrientandos" Min="1" Max="20" style="width: 100px;" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ProfessorResumoDto" Title="Status" Sortable="false" Width="120px" TextAlign="TextAlign.Center">
+                            <Template Context="prof">
+                                <RadzenSwitch @bind-Value="prof.AceitandoOrientandos" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="ProfessorResumoDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
+                            <Template Context="prof">
+                                <RadzenButton Text="Salvar" Icon="save" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Small"
+                                              Click="@(() => SalvarCapacidade(prof))" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenTabsItem>
 
-                    <Paginacao PaginaAtual="professores.CurrentPage" TotalPaginas="professores.TotalPages" OnMudarPagina="MudarPaginaProfessores" />
-                </div>
-            </div>
-        }
-
-        @if (abaAtiva == "externos" && externos != null)
-        {
-            <div class="row">
-                <div class="col-md-4 mb-4">
-                    <div class="card shadow-sm border-primary">
-                        <div class="card-header bg-primary text-white fw-bold">Novo Avaliador Externo</div>
-                        <div class="card-body">
+            <RadzenTabsItem Text="Avaliadores Externos (Banca)" Icon="groups">
+                <RadzenRow Gap="1rem">
+                    <RadzenColumn SizeMD="4" SizeXS="12">
+                        <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
+                            <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Novo Avaliador Externo</RadzenText>
                             <EditForm Model="novoExterno" OnValidSubmit="SalvarMembroExterno">
                                 <DataAnnotationsValidator />
-                                <div class="mb-3">
-                                    <label class="form-label">Nome Completo</label>
-                                    <InputText class="form-control" @bind-Value="novoExterno.Nome" />
-                                    <ValidationMessage For="@(() => novoExterno.Nome)" />
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">E-mail</label>
-                                    <InputText type="email" class="form-control" @bind-Value="novoExterno.Email" />
-                                    <ValidationMessage For="@(() => novoExterno.Email)" />
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Instituição / Empresa</label>
-                                    <InputText class="form-control" @bind-Value="novoExterno.Instituicao" />
-                                    <ValidationMessage For="@(() => novoExterno.Instituicao)" />
-                                </div>
-                                <button type="submit" class="btn btn-primary w-100">
-                                    <i class="bi bi-plus-circle"></i> Adicionar Avaliador
-                                </button>
+                                <RadzenStack Gap="1rem" class="rz-mt-3">
+                                    <div>
+                                        <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
+                                            <RadzenTextBox Name="Nome" @bind-Value="novoExterno.Nome" style="width: 100%;" />
+                                        </RadzenFormField>
+                                        <ValidationMessage For="@(() => novoExterno.Nome)" />
+                                    </div>
+                                    <div>
+                                        <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
+                                            <RadzenTextBox Name="Email" @bind-Value="novoExterno.Email" style="width: 100%;" />
+                                        </RadzenFormField>
+                                        <ValidationMessage For="@(() => novoExterno.Email)" />
+                                    </div>
+                                    <div>
+                                        <RadzenFormField Text="Instituição / Empresa" Variant="Variant.Outlined" style="width: 100%;">
+                                            <RadzenTextBox Name="Instituicao" @bind-Value="novoExterno.Instituicao" style="width: 100%;" />
+                                        </RadzenFormField>
+                                        <ValidationMessage For="@(() => novoExterno.Instituicao)" />
+                                    </div>
+                                    <RadzenButton ButtonType="ButtonType.Submit" Text="Adicionar Avaliador" Icon="add_circle"
+                                                  ButtonStyle="ButtonStyle.Primary" style="width: 100%;" />
+                                </RadzenStack>
                             </EditForm>
-                        </div>
-                    </div>
-                </div>
+                        </RadzenCard>
+                    </RadzenColumn>
 
-                <div class="col-md-8">
-                    <div class="card shadow-sm">
-                        <div class="card-body">
-                            @if (!externos.Items.Any())
-                            {
-                                <div class="alert alert-light text-center mb-0">Nenhum avaliador externo cadastrado.</div>
-                            }
-                            else
-                            {
-                                <ul class="list-group list-group-flush">
-                                    @foreach (var membro in externos.Items)
-                                    {
-                                        <li class="list-group-item d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <h6 class="mb-0 fw-bold">@membro.Nome</h6>
-                                                <small class="text-muted">
-                                                    <i class="bi bi-building me-1"></i> @membro.Instituicao |
-                                                    <i class="bi bi-envelope me-1"></i> @membro.Email
-                                                </small>
-                                            </div>
-                                            <div>
-                                                <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => AbrirModalEdicao(membro)">
-                                                    <i class="bi bi-pencil"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirMembroExterno(membro.Id)">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </div>
-                                        </li>
-                                    }
-                                </ul>
-
-                                <Paginacao PaginaAtual="externos.CurrentPage" TotalPaginas="externos.TotalPages" OnMudarPagina="MudarPaginaExternos" />
-                            }
-                        </div>
-                    </div>
-                </div>
-            </div>
-        }
-    }
-</div>
-
-@if (exibirModalEdicao)
-{
-    <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Editar Avaliador Externo</h5>
-                    <button type="button" class="btn-close" @onclick="FecharModalEdicao"></button>
-                </div>
-                <div class="modal-body">
-                    <EditForm Model="membroParaEdicao" OnValidSubmit="ConfirmarEdicao">
-                        <DataAnnotationsValidator />
-                        <div class="mb-3">
-                            <label class="form-label">Nome Completo</label>
-                            <InputText class="form-control" @bind-Value="membroParaEdicao.Nome" />
-                            <ValidationMessage For="@(() => membroParaEdicao.Nome)" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">E-mail</label>
-                            <InputText type="email" class="form-control" @bind-Value="membroParaEdicao.Email" />
-                            <ValidationMessage For="@(() => membroParaEdicao.Email)" />
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Instituição / Empresa</label>
-                            <InputText class="form-control" @bind-Value="membroParaEdicao.Instituicao" />
-                            <ValidationMessage For="@(() => membroParaEdicao.Instituicao)" />
-                        </div>
-                        <div class="text-end">
-                            <button type="button" class="btn btn-secondary me-2" @onclick="FecharModalEdicao">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Salvar Alterações</button>
-                        </div>
-                    </EditForm>
-                </div>
-            </div>
-        </div>
-    </div>
-}
+                    <RadzenColumn SizeMD="8" SizeXS="12">
+                        <RadzenDataGrid @ref="gridExternos" TItem="MembroExternoDto" Data="@externos" Count="@countExternos"
+                                        LoadData="@LoadDataExternos" AllowPaging="true" PageSize="20"
+                                        EmptyText="Nenhum avaliador externo cadastrado." PageSizeText="Itens por página">
+                            <Columns>
+                                <RadzenDataGridColumn TItem="MembroExternoDto" Property="Nome" Title="Nome" />
+                                <RadzenDataGridColumn TItem="MembroExternoDto" Property="Instituicao" Title="Instituição" />
+                                <RadzenDataGridColumn TItem="MembroExternoDto" Property="Email" Title="E-mail" />
+                                <RadzenDataGridColumn TItem="MembroExternoDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
+                                    <Template Context="membro">
+                                        <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                      Click="@(() => AbrirModalEdicao(membro))" class="rz-me-1" title="Editar" />
+                                        <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                      Click="@(() => ExcluirMembroExterno(membro.Id))" title="Excluir" />
+                                    </Template>
+                                </RadzenDataGridColumn>
+                            </Columns>
+                        </RadzenDataGrid>
+                    </RadzenColumn>
+                </RadzenRow>
+            </RadzenTabsItem>
+        </Tabs>
+    </RadzenTabs>
+</RadzenStack>
 
 @code {
-    private string abaAtiva = "internos";
-    private bool carregando = true;
+    private RadzenDataGrid<ProfessorResumoDto>? gridProfessores;
+    private RadzenDataGrid<MembroExternoDto>? gridExternos;
 
-    private PagedResult<ProfessorResumoDto>? professores;
-    private PagedResult<MembroExternoDto>? externos;
+    private List<ProfessorResumoDto> professores = new();
+    private int countProfessores;
 
-    private int paginaProfessores = 1;
-    private int paginaExternos = 1;
+    private List<MembroExternoDto> externos = new();
+    private int countExternos;
 
     private MembroExterno novoExterno = new();
+    private bool professoresCarregados;
+    private bool externosCarregados;
 
-    // Variáveis para o Modal
-    private bool exibirModalEdicao = false;
-    private MembroExternoDto membroParaEdicao = new();
-
-    protected override async Task OnInitializedAsync()
+    // RadzenDataGrid (nesta versão do Radzen.Blazor) não dispara LoadData automaticamente no
+    // primeiro render — precisa de Reload() explícito. Com RadzenTabs RenderMode="TabRenderMode.Server",
+    // o conteúdo de uma aba só é montado (e a referência @ref só deixa de ser null) quando ela
+    // é selecionada, então cada grid é carregada assim que sua referência aparecer disponível,
+    // verificado a cada OnAfterRenderAsync (não só no primeiro), não por um evento de troca de aba
+    // (cuja ordem de disparo relativa à montagem do conteúdo não é garantida).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await CarregarDados();
-    }
-
-    private async Task CarregarDados()
-    {
-        carregando = true;
-        try
+        if (!professoresCarregados && gridProfessores != null)
         {
-            professores = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={paginaProfessores}");
-            externos = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={paginaExternos}");
+            professoresCarregados = true;
+            await gridProfessores.Reload();
         }
-        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar os dados."); }
-        finally { carregando = false; }
+
+        if (!externosCarregados && gridExternos != null)
+        {
+            externosCarregados = true;
+            await gridExternos.Reload();
+        }
     }
 
-    private async Task MudarPaginaProfessores(int novaPagina)
+    private async Task LoadDataProfessores(LoadDataArgs args)
     {
-        paginaProfessores = novaPagina;
-        professores = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={paginaProfessores}");
+        var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
+        var page = (args.Skip ?? 0) / pageSize + 1;
+
+        var resultado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={page}&pageSize={pageSize}");
+        professores = resultado?.Items ?? new();
+        countProfessores = resultado?.TotalCount ?? 0;
     }
 
-    private async Task MudarPaginaExternos(int novaPagina)
+    private async Task LoadDataExternos(LoadDataArgs args)
     {
-        paginaExternos = novaPagina;
-        externos = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={paginaExternos}");
+        var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
+        var page = (args.Skip ?? 0) / pageSize + 1;
+
+        var resultado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={page}&pageSize={pageSize}");
+        externos = resultado?.Items ?? new();
+        countExternos = resultado?.TotalCount ?? 0;
     }
 
     private async Task SalvarCapacidade(ProfessorResumoDto prof)
@@ -249,9 +176,25 @@
 
         var response = await Http.PutAsJsonAsync($"api/coordenador/professores/{prof.Id}/capacidade", payload);
         if (response.IsSuccessStatusCode)
-            await JSRuntime.InvokeVoidAsync("alert", "Capacidade salva com sucesso!");
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Capacidade salva",
+                Detail = "Capacidade salva com sucesso!",
+                Duration = 4000
+            });
+        }
         else
-            await JSRuntime.InvokeVoidAsync("alert", "Erro ao salvar capacidade.");
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao salvar capacidade.",
+                Duration = 5000
+            });
+        }
     }
 
     private async Task SalvarMembroExterno()
@@ -260,52 +203,52 @@
         if (response.IsSuccessStatusCode)
         {
             novoExterno = new();
-            await CarregarDados();
+            if (gridExternos != null)
+            {
+                await gridExternos.Reload();
+            }
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao adicionar avaliador externo.",
+                Duration = 5000
+            });
         }
     }
 
     private async Task ExcluirMembroExterno(int id)
     {
-        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja excluir este avaliador externo?");
-        if (!confirm) return;
+        var confirmado = await DialogService.Confirm(
+            "Deseja excluir este avaliador externo?",
+            "Excluir avaliador externo",
+            new ConfirmOptions { OkButtonText = "Excluir", CancelButtonText = "Cancelar" });
 
-        var response = await Http.DeleteAsync($"api/coordenador/membros-externos/{id}");
-        if (response.IsSuccessStatusCode)
-            await CarregarDados();
-    }
-
-    // --- LÓGICA DO MODAL DE EDIÇÃO ---
-
-    private void AbrirModalEdicao(MembroExternoDto membro)
-    {
-        membroParaEdicao = new MembroExternoDto
+        if (confirmado == true)
         {
-            Id = membro.Id,
-            Nome = membro.Nome,
-            Email = membro.Email,
-            Instituicao = membro.Instituicao
-        };
-        exibirModalEdicao = true;
-    }
-
-    private void FecharModalEdicao()
-    {
-        exibirModalEdicao = false;
-        membroParaEdicao = new();
-    }
-
-    private async Task ConfirmarEdicao()
-    {
-        var response = await Http.PutAsJsonAsync($"api/coordenador/membros-externos/{membroParaEdicao.Id}", membroParaEdicao);
-        if (response.IsSuccessStatusCode)
-        {
-            await JSRuntime.InvokeVoidAsync("alert", "Avaliador atualizado com sucesso!");
-            FecharModalEdicao();
-            await CarregarDados();
+            var response = await Http.DeleteAsync($"api/coordenador/membros-externos/{id}");
+            if (response.IsSuccessStatusCode && gridExternos != null)
+            {
+                await gridExternos.Reload();
+            }
         }
-        else
+    }
+
+    // --- MODAL DE EDIÇÃO (DialogService.OpenAsync) ---
+
+    private async Task AbrirModalEdicao(MembroExternoDto membro)
+    {
+        var resultado = await DialogService.OpenAsync<EditarMembroExternoDialog>(
+            "Editar Avaliador Externo",
+            new Dictionary<string, object?> { { "Membro", membro } },
+            new DialogOptions { Width = "500px" });
+
+        if (resultado is true && gridExternos != null)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Erro ao atualizar avaliador.");
+            await gridExternos.Reload();
         }
     }
 }

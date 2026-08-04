@@ -1,113 +1,127 @@
-﻿@page "/coordenador/agendar-banca"
+@page "/coordenador/agendar-banca"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-calendar-plus me-2"></i> Agendamento de Bancas</h2>
+<PageTitle>Agendamento de Bancas</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="event" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Agendamento de Bancas</RadzenText>
+    </RadzenStack>
 
     @if (carregando)
     {
-        <div class="text-center py-5"><div class="spinner-border text-primary"></div></div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+        </RadzenStack>
     }
     else
     {
-        <div class="row">
-            <div class="col-md-5">
-                <h5 class="fw-bold mb-3">TCCs Aguardando Defesa</h5>
-                <div class="list-group shadow-sm">
-                    @foreach (var item in tccsProntos)
-                    {
-                        <button class="list-group-item list-group-item-action @(tccSelecionadoId == item.Id ? "active" : "")"
-                                @onclick="() => SelecionarTcc(item.Id, item.NomeOrientador)">
-                            <div class="fw-bold">@item.NomeAluno</div>
-                            <small>@item.Titulo</small>
-                        </button>
-                    }
-                </div>
-            </div>
+        <RadzenRow Gap="1rem">
+            <RadzenColumn SizeMD="5" SizeXS="12">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">TCCs Aguardando Defesa</RadzenText>
+                <RadzenListBox TValue="int" Data="@tccsProntos" ValueProperty="Id"
+                                Value="@tccSelecionadoId" ValueChanged="@SelecionarTcc"
+                                Multiple="false" AllowFiltering="false"
+                                EmptyText="Nenhum TCC aguardando defesa no momento."
+                                style="width: 100%; height: 420px;">
+                    <Template Context="item">
+                        @{ var tcc = (TccAguardandoBancaDto)item; }
+                        <div>
+                            <div style="font-weight: 600;">@tcc.NomeAluno</div>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">@tcc.Titulo</RadzenText>
+                        </div>
+                    </Template>
+                </RadzenListBox>
+            </RadzenColumn>
 
-            <div class="col-md-7">
+            <RadzenColumn SizeMD="7" SizeXS="12">
                 @if (tccSelecionadoId > 0)
                 {
-                    <div class="card shadow-sm border-primary animate__animated animate__fadeIn">
-                        <div class="card-body">
-                            <EditForm Model="agendamento" OnValidSubmit="GravarBanca">
-                                <DataAnnotationsValidator />
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">Data e Hora</label>
-                                        <input type="datetime-local" class="form-control" @bind="agendamento.DataHora" />
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label fw-bold">Local / Link Teams</label>
-                                        <InputText class="form-control" @bind-Value="agendamento.Local" placeholder="Sala ou URL" />
-                                    </div>
-                                </div>
+                    <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
+                        <EditForm Model="agendamento" OnValidSubmit="GravarBanca">
+                            <DataAnnotationsValidator />
+                            <RadzenStack Gap="1rem">
+                                <RadzenRow Gap="1rem">
+                                    <RadzenColumn SizeMD="6" SizeXS="12">
+                                        <RadzenFormField Text="Data e Hora" Variant="Variant.Outlined" style="width: 100%;">
+                                            <RadzenDatePicker TValue="DateTime" @bind-Value="agendamento.DataHora" ShowTime="true"
+                                                              DateFormat="dd/MM/yyyy HH:mm" style="width: 100%;" />
+                                        </RadzenFormField>
+                                    </RadzenColumn>
+                                    <RadzenColumn SizeMD="6" SizeXS="12">
+                                        <RadzenFormField Text="Local / Link Teams" Variant="Variant.Outlined" style="width: 100%;">
+                                            <RadzenTextBox @bind-Value="agendamento.Local" Placeholder="Sala ou URL" style="width: 100%;" />
+                                        </RadzenFormField>
+                                    </RadzenColumn>
+                                </RadzenRow>
 
-                                <h6 class="fw-bold border-bottom pb-2">Composição da Banca (RN05)</h6>
-                                <p class="text-muted small">Selecione pelo menos 2 membros. O Orientador (<strong>@orientadorNome</strong>) já faz parte automaticamente.</p>
+                                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-mb-0">Composição da Banca (RN05)</RadzenText>
+                                <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">
+                                    Selecione pelo menos 2 membros. O Orientador (<strong>@orientadorNome</strong>) já faz parte automaticamente.
+                                </RadzenText>
 
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <label class="form-label small fw-bold text-primary">Professores Internos</label>
-                                        <div style="max-height: 200px; overflow-y: auto;" class="border rounded p-2 bg-light">
-                                            @foreach (var prof in todosProfessores)
-                                            {
-                                                <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           @onchange='(e) => ToggleMembro(prof.Id, (bool)e.Value, true)'>
-                                                    <label class="form-check-label small">@prof.Nome</label>
-                                                </div>
-                                            }
+                                <RadzenRow Gap="1rem">
+                                    <RadzenColumn SizeMD="6" SizeXS="12">
+                                        <RadzenText TextStyle="TextStyle.Body2" class="rz-color-primary rz-mb-1">Professores Internos</RadzenText>
+                                        <div style="max-height: 200px; overflow-y: auto;" class="rz-border-base-200 rz-border-radius-2 rz-p-2">
+                                            <RadzenCheckBoxList TValue="int" Data="@todosProfessores" TextProperty="Nome" ValueProperty="Id"
+                                                                Value="@professoresSelecionados"
+                                                                Change="@((IEnumerable<int> v) => professoresSelecionados = v)"
+                                                                Orientation="Orientation.Vertical" />
                                         </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small fw-bold text-success">Membros Externos</label>
-                                        <div style="max-height: 200px; overflow-y: auto;" class="border rounded p-2 bg-light">
-                                            @foreach (var ext in todosExternos)
-                                            {
-                                                <div class="form-check">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           @onchange='(e) => ToggleMembro(ext.Id, (bool)e.Value, false)'>
-                                                    <label class="form-check-label small">@ext.Nome (@ext.Instituicao)</label>
-                                                </div>
-                                            }
+                                    </RadzenColumn>
+                                    <RadzenColumn SizeMD="6" SizeXS="12">
+                                        <RadzenText TextStyle="TextStyle.Body2" class="rz-color-success rz-mb-1">Membros Externos</RadzenText>
+                                        <div style="max-height: 200px; overflow-y: auto;" class="rz-border-base-200 rz-border-radius-2 rz-p-2">
+                                            <RadzenCheckBoxList TValue="int" Data="@externosOpcoes" TextProperty="Display" ValueProperty="Id"
+                                                                Value="@externosSelecionados"
+                                                                Change="@((IEnumerable<int> v) => externosSelecionados = v)"
+                                                                Orientation="Orientation.Vertical" />
                                         </div>
-                                    </div>
-                                </div>
+                                    </RadzenColumn>
+                                </RadzenRow>
 
-                                <div class="text-end mt-4">
-                                    <button type="submit" class="btn btn-primary btn-lg"
-                                            disabled="@(agendamento.ProfessoresIds.Count + agendamento.MembrosExternosIds.Count < 2)">
-                                        <i class="bi bi-calendar-check me-2"></i> Confirmar Agendamento
-                                    </button>
-                                </div>
-                            </EditForm>
-                        </div>
-                    </div>
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+                                    <RadzenButton ButtonType="ButtonType.Submit" Text="Confirmar Agendamento" Icon="event_available"
+                                                  ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Large"
+                                                  Disabled="@(TotalMembrosSelecionados < 2)" />
+                                </RadzenStack>
+                            </RadzenStack>
+                        </EditForm>
+                    </RadzenCard>
                 }
                 else
                 {
-                    <div class="alert alert-info text-center mt-5">Selecione um aluno na lista à esquerda para agendar a banca.</div>
+                    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true">
+                        Selecione um aluno na lista à esquerda para agendar a banca.
+                    </RadzenAlert>
                 }
-            </div>
-        </div>
+            </RadzenColumn>
+        </RadzenRow>
     }
-</div>
+</RadzenStack>
 
 @code {
     private bool carregando = true;
     private List<TccAguardandoBancaDto> tccsProntos = new();
     private List<ProfessorResumoDto> todosProfessores = new();
     private List<MembroExternoDto> todosExternos = new();
+    private List<MembroExternoOpcao> externosOpcoes = new();
 
     private int tccSelecionadoId = 0;
     private string orientadorNome = "";
     private AgendarBancaDto agendamento = new();
+
+    private IEnumerable<int> professoresSelecionados = new List<int>();
+    private IEnumerable<int> externosSelecionados = new List<int>();
+
+    private int TotalMembrosSelecionados => (professoresSelecionados?.Count() ?? 0) + (externosSelecionados?.Count() ?? 0);
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,50 +133,65 @@
         carregando = true;
         try
         {
-            tccsProntos = await Http.GetFromJsonAsync<List<TccAguardandoBancaDto>>("api/coordenador/aguardando-banca");
+            tccsProntos = await Http.GetFromJsonAsync<List<TccAguardandoBancaDto>>("api/coordenador/aguardando-banca") ?? new();
 
             var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
             todosProfessores = professoresPaginado?.Items ?? new();
 
             var externosPaginado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?pageSize={PaginacaoQuery.MaxPageSize}");
             todosExternos = externosPaginado?.Items ?? new();
+            externosOpcoes = todosExternos.Select(e => new MembroExternoOpcao
+            {
+                Id = e.Id,
+                Display = $"{e.Nome} ({e.Instituicao})"
+            }).ToList();
         }
         finally { carregando = false; }
     }
 
-    private void SelecionarTcc(int id, string orientador)
+    private void SelecionarTcc(int id)
     {
         tccSelecionadoId = id;
-        orientadorNome = orientador;
+        orientadorNome = tccsProntos.FirstOrDefault(t => t.Id == id)?.NomeOrientador ?? "";
         agendamento = new AgendarBancaDto();
-    }
-
-    private void ToggleMembro(int id, bool selecionado, bool interno)
-    {
-        if (interno)
-        {
-            if (selecionado) agendamento.ProfessoresIds.Add(id);
-            else agendamento.ProfessoresIds.Remove(id);
-        }
-        else
-        {
-            if (selecionado) agendamento.MembrosExternosIds.Add(id);
-            else agendamento.MembrosExternosIds.Remove(id);
-        }
+        professoresSelecionados = new List<int>();
+        externosSelecionados = new List<int>();
     }
 
     private async Task GravarBanca()
     {
+        agendamento.ProfessoresIds = professoresSelecionados?.ToList() ?? new();
+        agendamento.MembrosExternosIds = externosSelecionados?.ToList() ?? new();
+
         var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
         if (resp.IsSuccessStatusCode)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Banca agendada com sucesso!");
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Banca agendada",
+                Detail = "Banca agendada com sucesso!",
+                Duration = 5000
+            });
             tccSelecionadoId = 0;
             await CarregarListas();
         }
         else
         {
-            await JSRuntime.InvokeVoidAsync("alert", await resp.Content.ReadAsStringAsync());
+            var erro = await resp.Content.ReadAsStringAsync();
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro ao agendar",
+                Detail = erro,
+                Duration = 6000
+            });
         }
+    }
+
+    private class MembroExternoOpcao
+    {
+        public int Id { get; set; }
+        public string Display { get; set; } = string.Empty;
     }
 }
