@@ -29,8 +29,15 @@ public class AuthController : ControllerBase
         var usuario = await _context.Usuarios
             .FirstOrDefaultAsync(u => u.Email == dto.Email);
 
-        if (usuario == null || !BCrypt.Net.BCrypt.Verify(dto.Senha, usuario.SenhaHash))
-            return Unauthorized("Credenciais inválidas.");
+        // Decisão de produto (2026-07-14): mensagens diferenciadas por campo, aceitando o risco
+        // de enumeração de usuários (um atacante pode descobrir quais e-mails têm conta testando
+        // o login) em troca de um erro mais claro para o usuário legítimo. Reverte a postura
+        // anti-enumeração anterior deliberadamente — não é uma regressão não avaliada.
+        if (usuario == null)
+            return Unauthorized("Usuário não encontrado.");
+
+        if (!BCrypt.Net.BCrypt.Verify(dto.Senha, usuario.SenhaHash))
+            return Unauthorized("Senha incorreta.");
 
         if (!usuario.Ativo)
             return Unauthorized("Usuário inativo.");

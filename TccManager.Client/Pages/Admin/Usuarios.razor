@@ -1,4 +1,4 @@
-﻿@page "/usuarios"
+@page "/usuarios"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Shared.DTOs
@@ -8,82 +8,69 @@
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject NavigationManager Navigation
-@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+@inject NotificationService NotificationService
 
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>Gerenciar Usuários</h3>
-        <button class="btn btn-primary" @onclick="IrParaNovoUsuario">
-            <i class="bi bi-plus-lg me-2"></i> Novo Usuário
-        </button>
-    </div>
+<PageTitle>Usuários</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Gerenciar Usuários</RadzenText>
+        <RadzenButton Text="Novo Usuário" Icon="add" ButtonStyle="ButtonStyle.Primary" Click="@IrParaNovoUsuario" />
+    </RadzenStack>
 
     @if (usuarios == null)
     {
-        <div class="text-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Carregando...</span>
-            </div>
-            <p class="mt-2 text-muted">Buscando usuários...</p>
-        </div>
-    }
-    else if (!usuarios.Any())
-    {
-        <div class="alert alert-info">
-            Nenhum usuário encontrado além de você.
-        </div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Buscando usuários...</RadzenText>
+        </RadzenStack>
     }
     else
     {
-        <div class="card shadow-sm">
-            <div class="card-body p-0">
-                <table class="table table-hover table-striped mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Nome</th>
-                            <th>Email</th>
-                            <th>Tipo</th>
-                            <th>Status</th>
-                            <th class="text-end">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var user in usuarios)
+        <RadzenDataGrid Data="@usuarios" TItem="UsuarioDto"
+                        AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
+                        AllowSorting="true"
+                        EmptyText="Nenhum usuário encontrado além de você."
+                        PageSizeText="Itens por página">
+            <Columns>
+                <RadzenDataGridColumn TItem="UsuarioDto" Property="Nome" Title="Nome" />
+                <RadzenDataGridColumn TItem="UsuarioDto" Property="Email" Title="Email" />
+                <RadzenDataGridColumn TItem="UsuarioDto" Property="Tipo" Title="Tipo" Width="140px" TextAlign="TextAlign.Center">
+                    <Template Context="user">
+                        <RadzenBadge BadgeStyle="@ObterEstiloBadge(user.Tipo)" Text="@user.Tipo.ToString()" />
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="UsuarioDto" Property="Ativo" Title="Status" Width="140px" TextAlign="TextAlign.Center">
+                    <Template Context="user">
+                        @if (user.Ativo)
                         {
-                            <tr>
-                                <td>@user.Nome</td>
-                                <td>@user.Email</td>
-                                <td>
-                                    <span class="badge @GetBadgeClass(user.Tipo)">
-                                        @user.Tipo.ToString()
-                                    </span>
-                                </td>
-                                <td>
-                                    @if (user.Ativo)
-                                    {
-                                        <span class="text-success fw-bold"><i class="bi bi-check-circle"></i> Ativo</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-danger fw-bold"><i class="bi bi-x-circle"></i> Inativo</span>
-                                    }
-                                </td>
-                                <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-primary me-2" @onclick="() => Editar(user.Id)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Excluir(user.Id)">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
+                                <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" />
+                                <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Ativo</RadzenText>
+                            </RadzenStack>
                         }
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                        else
+                        {
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
+                                <RadzenIcon Icon="cancel" IconColor="var(--rz-danger)" />
+                                <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Inativo</RadzenText>
+                            </RadzenStack>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="UsuarioDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
+                    <Template Context="user">
+                        <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => Editar(user.Id))" class="rz-me-1" title="Editar" />
+                        <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => Excluir(user.Id))" title="Excluir" />
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
     }
-</div>
+</RadzenStack>
 
 @code {
     private List<UsuarioDto>? usuarios;
@@ -113,14 +100,14 @@
         }
     }
 
-    private string GetBadgeClass(TipoUsuario tipo)
+    private static BadgeStyle ObterEstiloBadge(TipoUsuario tipo)
     {
         return tipo switch
         {
-            TipoUsuario.Admin => "bg-danger",
-            TipoUsuario.Coordenador => "bg-warning text-dark",
-            TipoUsuario.Professor => "bg-info text-dark",
-            _ => "bg-secondary"
+            TipoUsuario.Admin => BadgeStyle.Danger,
+            TipoUsuario.Coordenador => BadgeStyle.Warning,
+            TipoUsuario.Professor => BadgeStyle.Info,
+            _ => BadgeStyle.Secondary
         };
     }
 
@@ -136,9 +123,12 @@
 
     private async Task Excluir(int id)
     {
-        bool confirmado = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja excluir este usuário? Essa ação não pode ser desfeita.");
+        var confirmado = await DialogService.Confirm(
+            "Tem certeza que deseja excluir este usuário? Essa ação não pode ser desfeita.",
+            "Excluir usuário",
+            new ConfirmOptions { OkButtonText = "Excluir", CancelButtonText = "Cancelar" });
 
-        if (confirmado)
+        if (confirmado == true)
         {
             try
             {
@@ -150,12 +140,24 @@
                 }
                 else
                 {
-                    await JSRuntime.InvokeVoidAsync("alert", "Erro ao excluir usuário.");
+                    NotificationService.Notify(new NotificationMessage
+                    {
+                        Severity = NotificationSeverity.Error,
+                        Summary = "Erro ao excluir",
+                        Detail = "Erro ao excluir usuário.",
+                        Duration = 5000
+                    });
                 }
             }
             catch (Exception)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão com o servidor.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro de conexão",
+                    Detail = "Erro de conexão com o servidor.",
+                    Duration = 5000
+                });
             }
         }
     }

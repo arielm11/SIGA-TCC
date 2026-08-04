@@ -1,11 +1,37 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject TemaService TemaService
 
-<div class="d-flex" style="height: 100vh; overflow: hidden;">
-    <NavMenu />
+<RadzenLayout>
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.SpaceBetween" Gap="0" class="rz-px-2" style="height: 100%;">
+            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0">
+                <RadzenSidebarToggle Click="@(() => sidebarExpandida = !sidebarExpandida)" />
+            </RadzenStack>
 
-    <div class="flex-grow-1" style="overflow-y: auto; background-color: #f8f9fa;">
-        <main class="p-4">
+            <RadzenButton Icon="@(TemaService.EhEscuro ? "light_mode" : "dark_mode")"
+                          Variant="Variant.Text"
+                          ButtonStyle="ButtonStyle.Base"
+                          Click="@AlternarTemaAsync"
+                          aria-label="Alternar tema claro/escuro" />
+        </RadzenStack>
+    </RadzenHeader>
+
+    <RadzenSidebar @bind-Expanded="sidebarExpandida" Responsive="true">
+        <NavMenu />
+    </RadzenSidebar>
+
+    <RadzenBody>
+        <div class="rz-p-4">
             @Body
-        </main>
-    </div>
-</div>
+        </div>
+    </RadzenBody>
+</RadzenLayout>
+
+@code {
+    private bool sidebarExpandida = true;
+
+    private async Task AlternarTemaAsync()
+    {
+        await TemaService.AlternarTemaAsync();
+    }
+}
