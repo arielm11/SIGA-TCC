@@ -1,84 +1,91 @@
-﻿@page "/avaliador/convites"
+@page "/avaliador/convites"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-envelope-paper-fill me-2"></i> Meus Convites de Banca</h2>
-    <p class="text-muted mb-4">Acompanhe aqui as defesas de TCC para as quais você foi convocado como avaliador e baixe os arquivos para leitura prévia.</p>
+<PageTitle>Meus Convites de Banca</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Gap="0.25rem">
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+            <RadzenIcon Icon="mail" />
+            <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Meus Convites de Banca</RadzenText>
+        </RadzenStack>
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">
+            Acompanhe aqui as defesas de TCC para as quais você foi convocado como avaliador e baixe os arquivos para leitura prévia.
+        </RadzenText>
+    </RadzenStack>
 
     @if (carregando)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2">Buscando convites...</p>
-        </div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Buscando convites...</RadzenText>
+        </RadzenStack>
     }
     else if (!convites.Any())
     {
-        <div class="alert alert-info text-center shadow-sm py-4">
-            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
-            <h5 class="fw-bold">Nenhum convite encontrado</h5>
-            <p class="mb-0">Você não possui alocações em bancas de TCC ativas no momento.</p>
-        </div>
+        <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true" class="rz-text-align-center rz-p-4">
+            <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Nenhum convite encontrado</RadzenText>
+            <RadzenText class="rz-my-0">Você não possui alocações em bancas de TCC ativas no momento.</RadzenText>
+        </RadzenAlert>
     }
     else
     {
-        <div class="row">
+        <RadzenRow Gap="1rem">
             @foreach (var convite in convites)
             {
-                <div class="col-md-6 mb-4">
-                    <div class="card shadow-sm h-100 border-primary animate__animated animate__fadeInUp">
-                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                            <span class="fw-bold">
-                                <i class="bi bi-calendar-event me-2"></i> @convite.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                            </span>
-                            <span class="badge bg-light text-primary">
-                                <i class="bi bi-geo-alt-fill me-1"></i> @convite.Local
-                            </span>
-                        </div>
+                <RadzenColumn SizeMD="6" SizeXS="12">
+                    <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2 rz-h-100">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.4rem">
+                                <RadzenIcon Icon="event" />
+                                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">@convite.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</RadzenText>
+                            </RadzenStack>
+                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.3rem">
+                                <RadzenIcon Icon="location_on" />
+                                <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="@convite.Local" />
+                            </RadzenStack>
+                        </RadzenStack>
 
-                        <div class="card-body">
-                            <h5 class="card-title fw-bold text-dark">@convite.TccTitulo</h5>
-                            <hr />
-                            <p class="mb-1"><strong><i class="bi bi-person me-2"></i> Aluno(a):</strong> @convite.NomeAluno</p>
-                            <p class="mb-3"><strong><i class="bi bi-person-badge me-2"></i> Orientador(a):</strong> @convite.NomeOrientador</p>
-                        </div>
+                        <RadzenText TextStyle="TextStyle.H6" class="rz-mb-3">@convite.TccTitulo</RadzenText>
 
-                        <div class="card-footer bg-light text-end">
-                            <button class="btn btn-outline-primary shadow-sm me-2" disabled="@(bancaIdBaixandoRascunho == convite.BancaId)" @onclick="() => BaixarAtaRascunho(convite.BancaId)">
-                                @if (bancaIdBaixandoRascunho == convite.BancaId)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-1"></span>
-                                }
-                                else
-                                {
-                                    <i class="bi bi-file-earmark-pdf me-1"></i>
-                                }
-                                Baixar Rascunho da Ata
-                            </button>
+                        <RadzenText class="rz-mb-1">
+                            <RadzenIcon Icon="person" /> <strong>Aluno(a):</strong> @convite.NomeAluno
+                        </RadzenText>
+                        <RadzenText class="rz-mb-4">
+                            <RadzenIcon Icon="badge" /> <strong>Orientador(a):</strong> @convite.NomeOrientador
+                        </RadzenText>
+
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                            <RadzenButton Text="Baixar Rascunho da Ata" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
+                                          IsBusy="@(bancaIdBaixandoRascunho == convite.BancaId)" BusyText="Baixando..."
+                                          Disabled="@(bancaIdBaixandoRascunho == convite.BancaId)"
+                                          Click="@(() => BaixarAtaRascunho(convite.BancaId))" />
 
                             @if (!string.IsNullOrEmpty(convite.ArquivoFinalCaminho))
                             {
-                                <a href="@($"{Http.BaseAddress?.ToString().TrimEnd('/')}{convite.ArquivoFinalCaminho}")" target="_blank" class="btn btn-success shadow-sm">
-                                    <i class="bi bi-file-earmark-pdf-fill me-2"></i> Baixar Versão Final (TCC)
+                                <a href="@UrlArquivo(convite.ArquivoFinalCaminho)" target="_blank" rel="noopener"
+                                   style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.5rem 1rem; border-radius: 4px; background-color: var(--rz-success); color: var(--rz-on-success, #fff); text-decoration:none; font-weight:500; white-space:nowrap;">
+                                    <RadzenIcon Icon="picture_as_pdf" IconColor="inherit" />
+                                    Baixar Versão Final (TCC)
                                 </a>
                             }
                             else
                             {
-                                <button class="btn btn-secondary" disabled title="O aluno não enviou a versão final corretamente.">
-                                    <i class="bi bi-file-earmark-x me-2"></i> Arquivo Indisponível
-                                </button>
+                                <RadzenButton Text="Arquivo Indisponível" Icon="disabled_by_default" ButtonStyle="ButtonStyle.Secondary" Disabled="true"
+                                              title="O aluno não enviou a versão final corretamente." />
                             }
-                        </div>
-                    </div>
-                </div>
+                        </RadzenStack>
+                    </RadzenCard>
+                </RadzenColumn>
             }
-        </div>
+        </RadzenRow>
     }
-</div>
+</RadzenStack>
 
 @code {
     private bool carregando = true;
@@ -90,6 +97,8 @@
         await CarregarConvites();
     }
 
+    private string UrlArquivo(string caminho) => $"{Http.BaseAddress?.ToString().TrimEnd('/')}{caminho}";
+
     private async Task CarregarConvites()
     {
         carregando = true;
@@ -99,7 +108,13 @@
         }
         catch
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao buscar seus convites de banca.");
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao buscar seus convites de banca.",
+                Duration = 5000
+            });
         }
         finally
         {
@@ -125,7 +140,13 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar o rascunho da ata: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao baixar o rascunho da ata: {erro}",
+                    Duration = 6000
+                });
             }
         }
         finally

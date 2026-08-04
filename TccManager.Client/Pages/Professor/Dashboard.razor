@@ -1,164 +1,246 @@
-﻿@page "/professor/dashboard"
+@page "/professor/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
-@using TccManager.Shared.Enums
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
 @inject NavigationManager Navigation
-@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-speedometer2 me-2"></i> Dashboard do Orientador</h2>
+<PageTitle>Dashboard do Orientador</PageTitle>
 
-    @if (carregando)
-    {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p>Carregando seu painel...</p>
-        </div>
-    }
-    else if (dashboard != null)
-    {
-        <div class="row">
-            <div class="col-md-6 mb-4">
-                <div class="card shadow-sm border-warning h-100">
-                    <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-inbox-fill me-2"></i> Propostas Pendentes</span>
-                        <span class="badge bg-dark rounded-pill">@dashboard.PropostasPendentes.TotalCount</span>
-                    </div>
-                    <div class="card-body bg-light">
-                        @if (!dashboard.PropostasPendentes.Items.Any())
-                        {
-                            <p class="text-muted text-center mt-3">Não há propostas aguardando aprovação.</p>
-                        }
-                        else
-                        {
-                            <div class="accordion" id="accordionPendentes">
-                                @foreach (var tcc in dashboard.PropostasPendentes.Items)
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="space_dashboard" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Dashboard do Orientador</RadzenText>
+    </RadzenStack>
+
+    <RadzenRow Gap="1rem">
+        <RadzenColumn SizeMD="6" SizeXS="12">
+            <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2 rz-h-100">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="inbox" />
+                        <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Propostas Pendentes</RadzenText>
+                    </RadzenStack>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="@(dadosCarregados ? countPropostas.ToString() : "...")" />
+                </RadzenStack>
+
+                <RadzenDataGrid @ref="gridPropostas" Data="@propostasPendentes" Count="@countPropostas" LoadData="@LoadDataPropostas"
+                                TItem="TccResumoDto" AllowPaging="true" PageSize="@PaginacaoQuery.DefaultPageSize"
+                                EmptyText="Não há propostas aguardando aprovação." PageSizeText="Itens por página">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="TccResumoDto" Property="NomeAluno" Title="Aluno" />
+                        <RadzenDataGridColumn TItem="TccResumoDto" Property="Titulo" Title="Título" />
+                        <RadzenDataGridColumn TItem="TccResumoDto" Title="Resumo" Sortable="false" Filterable="false" Width="170px">
+                            <Template Context="tcc">
+                                <RadzenButton Text="@(propostaResumoExpandidoId == tcc.Id ? "Ocultar" : "Ver Resumo")" Icon="visibility"
+                                              ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                              Click="@(() => AlternarResumo(tcc.Id))" />
+                                @if (propostaResumoExpandidoId == tcc.Id)
                                 {
-                                    <div class="accordion-item mb-2 border">
-                                        <h2 class="accordion-header" id="heading_@tcc.Id">
-                                            <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_@tcc.Id">
-                                                <strong>@tcc.NomeAluno</strong> <span class="ms-2 text-muted truncate-text">- @tcc.Titulo</span>
-                                            </button>
-                                        </h2>
-                                        <div id="collapse_@tcc.Id" class="accordion-collapse collapse" data-bs-parent="#accordionPendentes">
-                                            <div class="accordion-body">
-                                                <h6 class="fw-bold">Resumo:</h6>
-                                                <p class="small text-muted" style="white-space: pre-line;">@tcc.Resumo</p>
-                                                
-                                                <div class="d-flex justify-content-end gap-2 mt-3">
-                                                    <button class="btn btn-sm btn-danger" @onclick="() => AbrirModalRejeicao(tcc.Id)">
-                                                        <i class="bi bi-x-circle me-1"></i> Rejeitar
-                                                    </button>
-                                                    <button class="btn btn-sm btn-success" @onclick="() => AprovarProposta(tcc.Id)">
-                                                        <i class="bi bi-check-circle me-1"></i> Aprovar e Orientar
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <RadzenText TextStyle="TextStyle.Body2" style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">@tcc.Resumo</RadzenText>
                                 }
-                            </div>
+                            </Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="TccResumoDto" Title="Ações" Sortable="false" Filterable="false" Width="210px" TextAlign="TextAlign.Center">
+                            <Template Context="tcc">
+                                <RadzenButton Text="Rejeitar" Icon="cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                              class="rz-me-1" Click="@(() => AbrirRejeicao(tcc.Id))" />
+                                <RadzenButton Text="Aprovar" Icon="check_circle" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Small"
+                                              Click="@(() => AprovarProposta(tcc.Id))" />
+                            </Template>
+                        </RadzenDataGridColumn>
+                    </Columns>
+                </RadzenDataGrid>
+            </RadzenCard>
+        </RadzenColumn>
 
-                            <Paginacao PaginaAtual="dashboard.PropostasPendentes.CurrentPage" TotalPaginas="dashboard.PropostasPendentes.TotalPages" OnMudarPagina="MudarPaginaPropostasPendentes" />
-                        }
-                    </div>
-                </div>
-            </div>
+        <RadzenColumn SizeMD="6" SizeXS="12">
+            <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2 rz-h-100">
+                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenIcon Icon="groups" />
+                        <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Meus Orientandos</RadzenText>
+                    </RadzenStack>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Primary" Text="@(dadosCarregados ? orientandosAtivos.Count.ToString() : "...")" />
+                </RadzenStack>
 
-            <div class="col-md-6 mb-4">
-                <div class="card shadow-sm border-primary h-100">
-                    <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-people-fill me-2"></i> Meus Orientandos</span>
-                        <span class="badge bg-light text-primary rounded-pill">@dashboard.OrientandosAtivos.Count</span>
-                    </div>
-                    <div class="card-body">
-                        @if (!dashboard.OrientandosAtivos.Any())
+                @if (!dadosCarregados)
+                {
+                    <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+                        <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" style="width: 32px; height: 32px;" />
+                    </RadzenStack>
+                }
+                else if (!orientandosAtivos.Any())
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Secondary" Variant="Variant.Flat" ShowIcon="true">
+                        Você ainda não possui orientandos ativos.
+                    </RadzenAlert>
+                }
+                else
+                {
+                    <RadzenStack Gap="0.75rem">
+                        @foreach (var tcc in orientandosAtivos)
                         {
-                            <p class="text-muted text-center mt-3">Você ainda não possui orientandos ativos.</p>
+                            <RadzenCard Variant="Variant.Flat">
+                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                    <RadzenStack Gap="0.1rem">
+                                        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">@tcc.NomeAluno</RadzenText>
+                                        <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">@tcc.Titulo</RadzenText>
+                                    </RadzenStack>
+                                    <RadzenButton Text="Acessar TCC" Icon="arrow_forward"
+                                                  ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                  Click="@(() => Navigation.NavigateTo($"/professor/tcc/{tcc.Id}"))" />
+                                </RadzenStack>
+                            </RadzenCard>
                         }
-                        else
-                        {
-                            <ul class="list-group list-group-flush">
-                                @foreach (var tcc in dashboard.OrientandosAtivos)
-                                {
-                                    <li class="list-group-item px-0 py-3 border-bottom">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <h6 class="mb-0 fw-bold text-primary">@tcc.NomeAluno</h6>
-                                                <small class="text-muted">@tcc.Titulo</small>
-                                            </div>
-                                            <button class="btn btn-outline-primary btn-sm" @onclick="@(() => Navigation.NavigateTo($"/professor/tcc/{tcc.Id}"))">
-                                                Acessar TCC <i class="bi bi-arrow-right ms-1"></i>
-                                            </button>
-                                        </div>
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
-</div>
+                    </RadzenStack>
+                }
+            </RadzenCard>
+        </RadzenColumn>
+    </RadzenRow>
+</RadzenStack>
 
 @code {
-    private bool carregando = true;
-    private DashboardOrientadorDto? dashboard;
-    private int paginaPropostasPendentes = 1;
+    private RadzenDataGrid<TccResumoDto>? gridPropostas;
+    private bool gridReloadFeito;
 
-    protected override async Task OnInitializedAsync()
+    private List<TccResumoDto> propostasPendentes = new();
+    private int countPropostas;
+    private List<TccResumoDto> orientandosAtivos = new();
+
+    // true assim que o primeiro LoadData completar (sucesso ou falha) — cobre o estado de
+    // carregamento inicial dos orientandos/contadores, já que o LoadData do grid de propostas
+    // é a fonte única de busca de todo o DTO composto (seção 5.1 da arquitetura).
+    private bool dadosCarregados;
+    private int? propostaResumoExpandidoId;
+
+    // RadzenDataGrid (nesta versão do Radzen.Blazor) não dispara LoadData automaticamente no
+    // primeiro render — precisa de Reload() explícito, mesmo padrão de BancasConcluidas.razor
+    // e GestaoProfessores.razor (Etapa 5).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await CarregarDashboard();
+        if (!gridReloadFeito && gridPropostas != null)
+        {
+            gridReloadFeito = true;
+            await gridPropostas.Reload();
+        }
     }
 
-    private async Task CarregarDashboard()
+    // Fonte única de busca do dashboard: o mesmo GET api/orientador/dashboard?page={n} alimenta,
+    // numa só chamada, o grid de propostas pendentes (paginado) e a lista de orientandos ativos
+    // + contadores (coleção completa), replicando o comportamento de hoje onde MudarPagina
+    // recarregava o dashboard inteiro.
+    private async Task LoadDataPropostas(LoadDataArgs args)
     {
-        carregando = true;
+        var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
+        var page = (args.Skip ?? 0) / pageSize + 1;
+
         try
         {
-            dashboard = await Http.GetFromJsonAsync<DashboardOrientadorDto>($"api/orientador/dashboard?page={paginaPropostasPendentes}");
+            var dashboard = await Http.GetFromJsonAsync<DashboardOrientadorDto>($"api/orientador/dashboard?page={page}&pageSize={pageSize}");
+            propostasPendentes = dashboard?.PropostasPendentes.Items ?? new();
+            countPropostas = dashboard?.PropostasPendentes.TotalCount ?? 0;
+            orientandosAtivos = dashboard?.OrientandosAtivos ?? new();
         }
-        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar o dashboard."); }
-        finally { carregando = false; }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao carregar o dashboard.",
+                Duration = 5000
+            });
+        }
+        finally
+        {
+            dadosCarregados = true;
+        }
     }
 
-    private async Task MudarPaginaPropostasPendentes(int novaPagina)
+    private void AlternarResumo(int tccId)
     {
-        paginaPropostasPendentes = novaPagina;
-        await CarregarDashboard();
+        propostaResumoExpandidoId = propostaResumoExpandidoId == tccId ? null : tccId;
     }
 
     // RF011: Aprovar Proposta
     private async Task AprovarProposta(int tccId)
     {
-        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Deseja aprovar esta proposta e tornar-se o orientador deste aluno?");
-        if (!confirm) return;
+        var confirmado = await DialogService.Confirm(
+            "Deseja aprovar esta proposta e tornar-se o orientador deste aluno?",
+            "Aprovar proposta",
+            new ConfirmOptions { OkButtonText = "Aprovar", CancelButtonText = "Cancelar" });
+
+        if (confirmado != true) return;
 
         var response = await Http.PostAsync($"api/orientador/propostas/{tccId}/aprovar", null);
         if (response.IsSuccessStatusCode)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Proposta Aprovada! O aluno agora é seu orientando.");
-            await CarregarDashboard(); // Atualiza as listas
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Proposta aprovada",
+                Detail = "Proposta aprovada! O aluno agora é seu orientando.",
+                Duration = 5000
+            });
+            await RecarregarDashboard();
+        }
+        else
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao aprovar a proposta.",
+                Duration = 5000
+            });
         }
     }
 
-    // RF011: Rejeitar Proposta
-    private async Task AbrirModalRejeicao(int tccId)
+    // RF011: Rejeitar Proposta — prompt() substituído por RejeitarPropostaDialog (OpenAsync<T>).
+    private async Task AbrirRejeicao(int tccId)
     {
-        string? motivo = await JSRuntime.InvokeAsync<string>("prompt", "Digite o motivo da rejeição:");
-        
-        if (string.IsNullOrWhiteSpace(motivo)) return; // Cancela se deixou em branco
+        var resultado = await DialogService.OpenAsync<RejeitarPropostaDialog>(
+            "Rejeitar Proposta",
+            new Dictionary<string, object?>(),
+            new DialogOptions { Width = "500px" });
 
-        var payload = new RejeicaoDto { Motivo = motivo };
-        var response = await Http.PostAsJsonAsync($"api/orientador/propostas/{tccId}/rejeitar", payload);
-        
-        if (response.IsSuccessStatusCode)
+        if (resultado is string motivo && !string.IsNullOrWhiteSpace(motivo))
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Proposta rejeitada com sucesso.");
-            await CarregarDashboard(); // Atualiza as listas
+            var payload = new RejeicaoDto { Motivo = motivo };
+            var response = await Http.PostAsJsonAsync($"api/orientador/propostas/{tccId}/rejeitar", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Proposta rejeitada",
+                    Detail = "Proposta rejeitada com sucesso.",
+                    Duration = 5000
+                });
+                await RecarregarDashboard();
+            }
+            else
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao rejeitar a proposta.",
+                    Duration = 5000
+                });
+            }
+        }
+    }
+
+    private async Task RecarregarDashboard()
+    {
+        if (gridPropostas != null)
+        {
+            await gridPropostas.Reload();
         }
     }
 }
