@@ -7,84 +7,85 @@
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject AuthenticationStateProvider AuthStateProvider
-@inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
 @inject NavigationManager Navigation
 
-<div class="container mt-4" style="max-width: 800px;">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h3>Meus Dados</h3>
-        <span class="badge bg-secondary">@usuario?.Tipo.ToString()</span>
-    </div>
+<PageTitle>Meus Dados</PageTitle>
+
+<RadzenStack Gap="1.5rem" style="max-width: 800px; margin: 0 auto;">
+    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Meus Dados</RadzenText>
+        @if (usuario != null)
+        {
+            <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@usuario.Tipo.ToString()" />
+        }
+    </RadzenStack>
 
     @if (carregando)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2 text-muted">Carregando suas informações...</p>
-        </div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Carregando suas informações...</RadzenText>
+        </RadzenStack>
     }
     else if (usuario != null)
     {
-        <div class="card shadow-sm">
-            <div class="card-body p-4">
-                <EditForm Model="usuario" OnValidSubmit="SalvarAlteracoes">
-                    <DataAnnotationsValidator />
+        <RadzenCard Variant="Variant.Filled" class="rz-shadow-2">
+            <EditForm Model="usuario" OnValidSubmit="SalvarAlteracoes">
+                <DataAnnotationsValidator />
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Nome Completo</label>
-                            <InputText class="form-control" @bind-Value="usuario.Nome" />
+                <RadzenStack Gap="1rem">
+                    <RadzenRow Gap="1rem">
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenTextBox Name="Nome" @bind-Value="usuario.Nome" style="width: 100%;" />
+                            </RadzenFormField>
                             <ValidationMessage For="@(() => usuario.Nome)" />
-                        </div>
+                        </RadzenColumn>
 
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">E-mail</label>
-                            <InputText class="form-control" @bind-Value="usuario.Email" />
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenTextBox Name="Email" @bind-Value="usuario.Email" style="width: 100%;" />
+                            </RadzenFormField>
                             <ValidationMessage For="@(() => usuario.Email)" />
-                        </div>
-                    </div>
+                        </RadzenColumn>
+                    </RadzenRow>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Tipo de Conta</label>
-                            <input type="text" class="form-control bg-light" value="@usuario.Tipo" disabled />
-                            <small class="text-muted">Você não pode alterar seu próprio nível de acesso.</small>
-                        </div>
+                    <RadzenRow Gap="1rem">
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="Tipo de Conta" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenTextBox Value="@usuario.Tipo.ToString()" Disabled="true" style="width: 100%;" />
+                            </RadzenFormField>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Você não pode alterar seu próprio nível de acesso.</RadzenText>
+                        </RadzenColumn>
 
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Alterar Senha</label>
-                            <InputText type="password" class="form-control" @bind-Value="usuario.Senha" placeholder="Deixe em branco para manter a atual" />
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="Alterar Senha" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenPassword Name="Senha" @bind-Value="usuario.Senha" Placeholder="Deixe em branco para manter a atual" style="width: 100%;" />
+                            </RadzenFormField>
                             <ValidationMessage For="@(() => usuario.Senha)" />
-                        </div>
-                    </div>
+                        </RadzenColumn>
+                    </RadzenRow>
 
-                    <hr class="my-4">
-
-                    <div class="d-flex justify-content-end">
-                        <button type="submit" class="btn btn-primary px-4" disabled="@salvando">
-                            @if (salvando)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                                <span>Salvando...</span>
-                            }
-                            else
-                            {
-                                <span><i class="bi bi-save me-2"></i> Salvar Alterações</span>
-                            }
-                        </button>
-                    </div>
-
-                </EditForm>
-            </div>
-        </div>
+                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
+                        <RadzenButton ButtonType="ButtonType.Submit"
+                                      Text="Salvar Alterações"
+                                      Icon="save"
+                                      IsBusy="salvando"
+                                      BusyText="Salvando..."
+                                      ButtonStyle="ButtonStyle.Primary" />
+                    </RadzenStack>
+                </RadzenStack>
+            </EditForm>
+        </RadzenCard>
     }
     else
     {
-        <div class="alert alert-warning">
+        <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" Shade="Shade.Lighter">
             Não foi possível carregar os dados do perfil. Tente fazer login novamente.
-        </div>
+        </RadzenAlert>
     }
-</div>
+</RadzenStack>
 
 @code {
     private UsuarioDto? usuario;
@@ -114,7 +115,13 @@
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro: ID do usuário não encontrado no token.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro: ID do usuário não encontrado no token.",
+                    Duration = 6000
+                });
             }
         }
         catch (Exception ex)
@@ -143,7 +150,13 @@
         }
         catch (Exception)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Falha ao comunicar com o servidor.");
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Falha ao carregar",
+                Detail = "Falha ao comunicar com o servidor.",
+                Duration = 6000
+            });
         }
     }
 
@@ -156,19 +169,41 @@
 
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Dados atualizados com sucesso!");
+                // Em vez de Navigation.NavigateTo(Uri, forceLoad: true) (comportamento antigo),
+                // recarrega os dados do perfil in-place via GET api/usuario/me, para que o toast
+                // de sucesso permaneça visível (um forceLoad imediato descartaria a notificação
+                // antes do usuário conseguir vê-la) — decisão registrada na arquitetura (seção 7.2/11, P3).
+                await CarregarDados();
 
-                 Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Sucesso",
+                    Detail = "Dados atualizados com sucesso!",
+                    Duration = 5000
+                });
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao salvar: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao salvar",
+                    Detail = $"Erro ao salvar: {erro}",
+                    Duration = 6000
+                });
             }
         }
         catch (Exception)
         {
-            await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao tentar salvar.");
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao tentar salvar.",
+                Duration = 5000
+            });
         }
         finally
         {

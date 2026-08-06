@@ -1,0 +1,97 @@
+@* Modal de edição de avaliador externo (N3 Etapa 5 — GestaoProfessores).
+   Substitui o <div class="modal"> controlado por flag booleana; aberto via
+   DialogService.OpenAsync<EditarMembroExternoDialog>. Fecha com bool (editado?). *@
+@using TccManager.Shared.DTOs
+@inject HttpClient Http
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+<RadzenStack Gap="1rem" class="rz-p-4" style="min-width: 320px;">
+    <EditForm Model="membro" OnValidSubmit="Salvar">
+        <DataAnnotationsValidator />
+        <RadzenStack Gap="1rem">
+            <div>
+                <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
+                    <RadzenTextBox Name="Nome" @bind-Value="membro.Nome" style="width: 100%;" />
+                </RadzenFormField>
+                <ValidationMessage For="@(() => membro.Nome)" />
+            </div>
+
+            <div>
+                <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
+                    <RadzenTextBox Name="Email" @bind-Value="membro.Email" style="width: 100%;" />
+                </RadzenFormField>
+                <ValidationMessage For="@(() => membro.Email)" />
+            </div>
+
+            <div>
+                <RadzenFormField Text="Instituição / Empresa" Variant="Variant.Outlined" style="width: 100%;">
+                    <RadzenTextBox Name="Instituicao" @bind-Value="membro.Instituicao" style="width: 100%;" />
+                </RadzenFormField>
+                <ValidationMessage For="@(() => membro.Instituicao)" />
+            </div>
+
+            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+                <RadzenButton Text="Cancelar" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@Cancelar" />
+                <RadzenButton ButtonType="ButtonType.Submit" Text="Salvar Alterações" Icon="save"
+                              ButtonStyle="ButtonStyle.Primary" IsBusy="salvando" BusyText="Salvando..." />
+            </RadzenStack>
+        </RadzenStack>
+    </EditForm>
+</RadzenStack>
+
+@code {
+    [Parameter]
+    public MembroExternoDto Membro { get; set; } = new();
+
+    private MembroExternoDto membro = new();
+    private bool salvando;
+
+    protected override void OnInitialized()
+    {
+        membro = new MembroExternoDto
+        {
+            Id = Membro.Id,
+            Nome = Membro.Nome,
+            Email = Membro.Email,
+            Instituicao = Membro.Instituicao
+        };
+    }
+
+    private async Task Salvar()
+    {
+        salvando = true;
+        try
+        {
+            var response = await Http.PutAsJsonAsync($"api/coordenador/membros-externos/{membro.Id}", membro);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Avaliador atualizado",
+                    Detail = "Avaliador atualizado com sucesso!",
+                    Duration = 4000
+                });
+                DialogService.Close(true);
+            }
+            else
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao atualizar",
+                    Detail = "Erro ao atualizar avaliador.",
+                    Duration = 5000
+                });
+            }
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+
+    private void Cancelar() => DialogService.Close(false);
+}

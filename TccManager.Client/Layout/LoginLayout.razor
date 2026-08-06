@@ -1,17 +1,19 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
-<div class="login-layout-container">
-    <main>
-        @Body
-    </main>
-</div>
+<RadzenStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0" class="login-layout-container">
+    @Body
+</RadzenStack>
 
 <style>
+    /* Fundo e cor de texto vêm de variáveis de tema (--rz-body-background-color/--rz-text-color),
+       não de valores fixos, para respeitar o modo escuro (Standard Dark). Esta tela não usa
+       RadzenLayout/RadzenBody (não faz parte do shell autenticado), por isso precisa declarar
+       ambos explicitamente — sem isso, o elemento body herda o color fixo do Bootstrap
+       (#212529), invisível sobre fundo escuro. É o que deixava o rótulo/placeholder dos campos
+       de Email/Senha ilegível no tema escuro. */
     .login-layout-container {
         min-height: 100vh;
-        background-color: #f0f2f5;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        background-color: var(--rz-body-background-color);
+        color: var(--rz-text-color);
     }
 </style>

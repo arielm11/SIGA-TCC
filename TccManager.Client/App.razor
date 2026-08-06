@@ -2,6 +2,10 @@
 @using TccManager.Client.Layout
 
 <CascadingAuthenticationState>
+    @* Host único de diálogos/notificações/tooltips/context menu (DialogService, NotificationService,
+       TooltipService, ContextMenuService). Fica aqui, acima do Router, para servir tanto o
+       LoginLayout (sem MainLayout) quanto o MainLayout. *@
+    <RadzenComponents />
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">

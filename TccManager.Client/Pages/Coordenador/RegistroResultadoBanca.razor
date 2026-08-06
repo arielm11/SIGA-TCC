@@ -1,209 +1,79 @@
-﻿@page "/coordenador/registrar-resultado"
+@page "/coordenador/registrar-resultado"
 @using Microsoft.AspNetCore.Authorization
-@using System.Net.Http.Headers
-@using TccManager.Shared.DTOs;
+@using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-award-fill me-2"></i> Lançamento de Nota Final e Ata</h2>
+<PageTitle>Lançamento de Nota Final e Ata</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="workspace_premium" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Lançamento de Nota Final e Ata</RadzenText>
+    </RadzenStack>
 
     @if (carregando)
     {
-        <div class="text-center py-5"><div class="spinner-border text-success"></div></div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+        </RadzenStack>
     }
     else if (!bancasPendentes.Any())
     {
-        <div class="alert alert-success text-center shadow-sm">
-            <i class="bi bi-check-circle-fill me-2"></i> Não há nenhuma banca aguardando lançamento de nota no momento.
-        </div>
+        <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true">
+            Não há nenhuma banca aguardando lançamento de nota no momento.
+        </RadzenAlert>
     }
     else
     {
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card shadow-sm border-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Aluno</th>
-                                    <th>Título do TCC</th>
-                                    <th>Data da Banca</th>
-                                    <th class="text-end">Ação</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var banca in bancasPendentes)
-                                {
-                                    <tr>
-                                        <td class="fw-bold">@banca.NomeAluno</td>
-                                        <td>@banca.TccTitulo</td>
-                                        <td>@banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                        <td class="text-end">
-                                            <button class="btn btn-sm btn-outline-secondary me-1" disabled="@(bancaIdBaixandoRascunho == banca.TccId)" @onclick="() => BaixarAtaRascunho(banca.TccId)">
-                                                @if (bancaIdBaixandoRascunho == banca.TccId)
-                                                {
-                                                    <span class="spinner-border spinner-border-sm me-1"></span>
-                                                }
-                                                else
-                                                {
-                                                    <i class="bi bi-file-earmark-pdf me-1"></i>
-                                                }
-                                                Rascunho
-                                            </button>
+        <RadzenDataGrid Data="@bancasPendentes" TItem="BancaPendenteDto" AllowPaging="true" PageSize="10"
+                        PageSizeOptions="@(new[] { 10, 20, 50 })" AllowSorting="true" PageSizeText="Itens por página">
+            <Columns>
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Property="NomeAluno" Title="Aluno" />
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Property="TccTitulo" Title="Título do TCC" />
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Property="DataHora" Title="Data da Banca" Width="180px">
+                    <Template Context="banca">
+                        @banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Title="Ação" Sortable="false" Filterable="false" Width="420px" TextAlign="TextAlign.End">
+                    <Template Context="banca">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center">
+                            <RadzenButton Text="Rascunho" Icon="description" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                          IsBusy="@(bancaIdBaixandoRascunho == banca.TccId)" BusyText="Baixando..."
+                                          Disabled="@(bancaIdBaixandoRascunho == banca.TccId)"
+                                          Click="@(() => BaixarAtaRascunho(banca.TccId))" />
 
-                                            @if (banca.MembrosExternos.Any())
-                                            {
-                                                <div class="dropdown d-inline-block me-1">
-                                                    <button class="btn btn-sm btn-outline-warning dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                                        <i class="bi bi-envelope-arrow-up me-1"></i> Reenviar Rascunho
-                                                    </button>
-                                                    <ul class="dropdown-menu dropdown-menu-end">
-                                                        @foreach (var membro in banca.MembrosExternos)
-                                                        {
-                                                            <li>
-                                                                <button class="dropdown-item" disabled="@(membroExternoIdReenviando == membro.MembroExternoId)" @onclick="() => ReenviarRascunho(banca.TccId, membro.MembroExternoId, membro.Nome)">
-                                                                    @membro.Nome
-                                                                </button>
-                                                            </li>
-                                                        }
-                                                    </ul>
-                                                </div>
-                                            }
+                            @if (banca.MembrosExternos.Any())
+                            {
+                                <RadzenSplitButton Text="Reenviar Rascunho" Icon="forward_to_inbox" ButtonStyle="ButtonStyle.Warning"
+                                                    Variant="Variant.Outlined" Size="ButtonSize.Small" AlwaysOpenPopup="true"
+                                                    Click="@(args => ReenviarRascunho(banca.TccId, args))">
+                                    @foreach (var membro in banca.MembrosExternos)
+                                    {
+                                        <RadzenSplitButtonItem Text="@membro.Nome" Value="@membro.MembroExternoId.ToString()"
+                                                               Disabled="@(membroExternoIdReenviando == membro.MembroExternoId)" />
+                                    }
+                                </RadzenSplitButton>
+                            }
 
-                                            <button class="btn btn-sm btn-primary" @onclick="() => AbrirModal(banca.TccId, banca.NomeAluno)">
-                                                <i class="bi bi-file-earmark-arrow-up"></i> Registrar Resultado
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+                            <RadzenButton Text="Registrar Resultado" Icon="upload_file" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
+                                          Click="@(() => AbrirModal(banca.TccId, banca.NomeAluno))" />
+                        </RadzenStack>
+                    </Template>
+                </RadzenDataGridColumn>
+            </Columns>
+        </RadzenDataGrid>
     }
-</div>
-
-@if (exibirModal)
-{
-    <div class="modal fade show" style="display:block; background-color: rgba(0,0,0,0.5);" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content border-primary">
-                @if (resultadoRegistrado)
-                {
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title"><i class="bi bi-check-circle-fill me-2"></i>Resultado Registrado</h5>
-                    </div>
-                    <div class="modal-body text-center py-4">
-                        <p>@mensagemSucesso</p>
-                        <button type="button" class="btn btn-outline-primary" disabled="@baixandoAta" @onclick="() => BaixarAtaPdf(bancaIdSelecionada)">
-                            @if (baixandoAta)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                            }
-                            <i class="bi bi-file-earmark-pdf me-1"></i> Baixar Ata (PDF)
-                        </button>
-                    </div>
-                    <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" @onclick="FecharModal">Fechar</button>
-                    </div>
-                }
-                else
-                {
-                    <div class="modal-header bg-primary text-white">
-                        <h5 class="modal-title">Registrar Resultado: @nomeAlunoSelecionado</h5>
-                        <button type="button" class="btn-close btn-close-white" @onclick="FecharModal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Nota Final</label>
-                            <input type="number" step="0.1" min="0" max="100" class="form-control form-control-lg text-center"
-                                   @bind="notaFinal" @bind:after="AtualizarStatusAprovacao" placeholder="Ex: 85,0" />
-
-                            @if (notaFinal > 0)
-                            {
-                                @if (notaAprova)
-                                {
-                                    <div class="alert alert-success mt-2 py-2 mb-0 text-center">
-                                        <i class="bi bi-check-circle-fill me-2"></i> Nota aprova o TCC (mínimo: @notaMinimaExibicao)
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="alert alert-danger mt-2 py-2 mb-0 text-center">
-                                        <i class="bi bi-x-circle-fill me-2"></i> Nota reprova o TCC (mínimo: @notaMinimaExibicao)
-                                    </div>
-                                }
-                            }
-                        </div>
-
-                        @if (notaFinal > 0 && !notaAprova)
-                        {
-                            <div class="mb-4">
-                                <label class="form-label fw-bold text-danger">Motivo da Reprovação</label>
-                                <textarea class="form-control" rows="3" @bind="motivoReprovacao"
-                                          placeholder="Descreva o motivo da reprovação na banca..."></textarea>
-                                <small class="text-muted">Obrigatório quando a nota é inferior ao mínimo de aprovação.</small>
-                            </div>
-                        }
-
-                        <div class="mb-4">
-                            <label class="form-label fw-bold">Arquivo da Ata Assinada (PDF)</label>
-                            <InputFile OnChange="CarregarArquivo" class="form-control" accept=".pdf" />
-                            @if (arquivoAta != null)
-                            {
-                                <small class="text-success mt-1 d-block"><i class="bi bi-check-circle me-1"></i> Arquivo selecionado: @arquivoAta.Name</small>
-                            }
-                        </div>
-                    </div>
-                    <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" @onclick="FecharModal">Cancelar</button>
-                        <button type="button" class="btn @(notaAprova ? "btn-success" : "btn-danger")"
-                                disabled="@(arquivoAta == null || enviando || notaFinal <= 0 || (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao)))"
-                                @onclick="SalvarResultado">
-                            @if (enviando)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                            }
-                            <i class="bi bi-save me-1"></i> @(notaAprova ? "Confirmar Aprovação" : "Confirmar Reprovação")
-                        </button>
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-}
+</RadzenStack>
 
 @code {
     private bool carregando = true;
-    private bool enviando = false;
     private List<BancaPendenteDto> bancasPendentes = new();
 
-    // Controles do Modal
-    private bool exibirModal = false;
-    private int bancaIdSelecionada = 0;
-    private string nomeAlunoSelecionado = "";
-    private const decimal notaMinimaAprovacao = 60.0m;
-    private const string notaMinimaExibicao = "60,0";
-    private bool notaAprova = true;
-    private string motivoReprovacao = string.Empty;
-
-    // Estado de sucesso pós-registro (RF-05): mantém o modal aberto mostrando o botão
-    // de download do PDF da ata, em vez de fechar direto após o alert.
-    private bool resultadoRegistrado = false;
-    private string mensagemSucesso = string.Empty;
-    private bool baixandoAta = false;
-
-    // Dados do Formulário
-    private decimal notaFinal = 0;
-    private IBrowserFile? arquivoAta;
-
-    // Rascunho pré-defesa (N2 Etapa 2): download pelo Coordenador e reenvio de token por
-    // membro externo (RF-06).
     private int? bancaIdBaixandoRascunho;
     private int? membroExternoIdReenviando;
 
@@ -222,54 +92,17 @@
         finally { carregando = false; }
     }
 
-    private void AbrirModal(int id, string nome)
+    private async Task AbrirModal(int bancaId, string nomeAluno)
     {
-        bancaIdSelecionada = id;
-        nomeAlunoSelecionado = nome;
-        notaFinal = 0;
-        arquivoAta = null;
-        motivoReprovacao = string.Empty;
-        notaAprova = true;
-        resultadoRegistrado = false;
-        mensagemSucesso = string.Empty;
-        exibirModal = true;
-    }
+        var resultado = await DialogService.OpenAsync<RegistrarResultadoDialog>(
+            $"Registrar Resultado: {nomeAluno}",
+            new Dictionary<string, object?> { { "BancaId", bancaId }, { "NomeAluno", nomeAluno } },
+            new DialogOptions { Width = "500px", CloseDialogOnOverlayClick = false });
 
-    private async Task FecharModal()
-    {
-        var precisaRecarregar = resultadoRegistrado;
-
-        exibirModal = false;
-        arquivoAta = null;
-        resultadoRegistrado = false;
-        mensagemSucesso = string.Empty;
-
-        if (precisaRecarregar)
+        if (resultado is true)
         {
             await CarregarListas();
         }
-    }
-
-    private async Task BaixarAtaPdf(int bancaId)
-    {
-        baixandoAta = true;
-        try
-        {
-            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-pdf");
-
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{bancaId}.pdf", "application/pdf", base64);
-            }
-            else
-            {
-                var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar a ata: {erro}");
-            }
-        }
-        finally { baixandoAta = false; }
     }
 
     private async Task BaixarAtaRascunho(int bancaId)
@@ -288,14 +121,23 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar o rascunho da ata: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao baixar o rascunho da ata: {erro}",
+                    Duration = 6000
+                });
             }
         }
         finally { bancaIdBaixandoRascunho = null; }
     }
 
-    private async Task ReenviarRascunho(int bancaId, int membroExternoId, string nomeMembro)
+    private async Task ReenviarRascunho(int bancaId, RadzenSplitButtonItem item)
     {
+        if (!int.TryParse(item.Value, out var membroExternoId)) return;
+
+        var nomeMembro = item.Text;
         membroExternoIdReenviando = membroExternoId;
         try
         {
@@ -303,70 +145,26 @@
 
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Novo link de acesso ao rascunho enviado para {nomeMembro}.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Rascunho reenviado",
+                    Detail = $"Novo link de acesso ao rascunho enviado para {nomeMembro}.",
+                    Duration = 5000
+                });
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao reenviar o rascunho: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao reenviar o rascunho: {erro}",
+                    Duration = 6000
+                });
             }
         }
         finally { membroExternoIdReenviando = null; }
-    }
-
-    private void CarregarArquivo(InputFileChangeEventArgs e)
-    {
-        arquivoAta = e.File;
-    }
-
-    private void AtualizarStatusAprovacao()
-    {
-        notaAprova = notaFinal >= notaMinimaAprovacao;
-        if (notaAprova) motivoReprovacao = string.Empty;
-    }
-
-    private async Task SalvarResultado()
-    {
-        if (arquivoAta == null) return;
-
-        if (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao))
-        {
-            await JSRuntime.InvokeVoidAsync("alert", "Informe o motivo da reprovação.");
-            return;
-        }
-
-        enviando = true;
-        try
-        {
-            using var content = new MultipartFormDataContent();
-
-            content.Add(new StringContent(notaFinal.ToString(System.Globalization.CultureInfo.InvariantCulture)), "notaFinal");
-
-            if (!notaAprova)
-            {
-                content.Add(new StringContent(motivoReprovacao), "motivoReprovacao");
-            }
-
-            var stream = arquivoAta.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            var streamContent = new StreamContent(stream);
-            streamContent.Headers.ContentType = new MediaTypeHeaderValue(arquivoAta.ContentType);
-            content.Add(streamContent, "arquivoAta", arquivoAta.Name);
-
-            var response = await Http.PostAsync($"api/coordenador/banca/{bancaIdSelecionada}/registrar-resultado", content);
-
-            if (response.IsSuccessStatusCode)
-            {
-                mensagemSucesso = notaAprova
-                    ? "Nota e Ata registradas com sucesso! O TCC foi finalizado."
-                    : "Resultado registrado. O TCC foi marcado como reprovado.";
-                resultadoRegistrado = true;
-            }
-            else
-            {
-                var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro: {erro}");
-            }
-        }
-        finally { enviando = false; }
     }
 }

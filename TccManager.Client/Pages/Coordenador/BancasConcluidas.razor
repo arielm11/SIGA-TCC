@@ -4,96 +4,74 @@
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <h2 class="mb-4"><i class="bi bi-journal-check me-2"></i> Bancas Concluídas</h2>
+<PageTitle>Bancas Concluídas</PageTitle>
 
-    @if (carregando)
-    {
-        <div class="text-center py-5"><div class="spinner-border text-success"></div></div>
-    }
-    else if (resultado == null || !resultado.Items.Any())
-    {
-        <div class="alert alert-light text-center shadow-sm">
-            <i class="bi bi-info-circle me-2"></i> Nenhuma banca concluída até o momento.
-        </div>
-    }
-    else
-    {
-        <div class="card shadow-sm border-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Aluno</th>
-                            <th>Título do TCC</th>
-                            <th>Data da Banca</th>
-                            <th>Nota</th>
-                            <th>Status</th>
-                            <th class="text-end">Ação</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var banca in resultado.Items)
-                        {
-                            <tr>
-                                <td class="fw-bold">@banca.NomeAluno</td>
-                                <td>@banca.TccTitulo</td>
-                                <td>@banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                <td>@banca.NotaFinal.ToString("0.0")</td>
-                                <td>
-                                    @if (banca.Aprovado)
-                                    {
-                                        <span class="badge bg-success">Aprovado</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge bg-danger">Reprovado</span>
-                                    }
-                                </td>
-                                <td class="text-end">
-                                    <button class="btn btn-sm btn-outline-primary" disabled="@(bancaIdBaixando == banca.BancaId)" @onclick="() => BaixarAtaPdf(banca.BancaId)">
-                                        @if (bancaIdBaixando == banca.BancaId)
-                                        {
-                                            <span class="spinner-border spinner-border-sm me-1"></span>
-                                        }
-                                        else
-                                        {
-                                            <i class="bi bi-file-earmark-pdf me-1"></i>
-                                        }
-                                        Baixar PDF
-                                    </button>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
+<RadzenStack Gap="1.5rem">
+    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+        <RadzenIcon Icon="fact_check" />
+        <RadzenText TextStyle="TextStyle.H4" class="rz-my-0">Bancas Concluídas</RadzenText>
+    </RadzenStack>
 
-        <Paginacao PaginaAtual="resultado.CurrentPage" TotalPaginas="resultado.TotalPages" OnMudarPagina="CarregarPagina" />
-    }
-</div>
+    <RadzenDataGrid @ref="grid" Data="@bancas" Count="@count" LoadData="@LoadData" TItem="BancaConcluidaDto"
+                    AllowPaging="true" PageSize="@PaginacaoQuery.DefaultPageSize"
+                    EmptyText="Nenhuma banca concluída até o momento." PageSizeText="Itens por página">
+        <Columns>
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NomeAluno" Title="Aluno" />
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="TccTitulo" Title="Título do TCC" />
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="DataHora" Title="Data da Banca" Width="180px">
+                <Template Context="banca">
+                    @banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NotaFinal" Title="Nota" Width="100px">
+                <Template Context="banca">
+                    @banca.NotaFinal.ToString("0.0")
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Status" Width="130px">
+                <Template Context="banca">
+                    <RadzenBadge BadgeStyle="@(banca.Aprovado ? BadgeStyle.Success : BadgeStyle.Danger)"
+                                 Text="@(banca.Aprovado ? "Aprovado" : "Reprovado")" />
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Ação" Sortable="false" Filterable="false" Width="160px" TextAlign="TextAlign.End">
+                <Template Context="banca">
+                    <RadzenButton Text="Baixar PDF" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                  IsBusy="@(bancaIdBaixando == banca.BancaId)" BusyText="Baixando..."
+                                  Disabled="@(bancaIdBaixando == banca.BancaId)"
+                                  Click="@(() => BaixarAtaPdf(banca.BancaId))" />
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
+</RadzenStack>
 
 @code {
-    private bool carregando = true;
-    private PagedResult<BancaConcluidaDto>? resultado;
+    private RadzenDataGrid<BancaConcluidaDto>? grid;
+    private List<BancaConcluidaDto> bancas = new();
+    private int count;
     private int? bancaIdBaixando;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await CarregarPagina(1);
+        if (firstRender && grid != null)
+        {
+            await grid.Reload();
+        }
     }
 
-    private async Task CarregarPagina(int pagina)
+    private async Task LoadData(LoadDataArgs args)
     {
-        carregando = true;
-        try
-        {
-            resultado = await Http.GetFromJsonAsync<PagedResult<BancaConcluidaDto>>(
-                $"api/coordenador/bancas-concluidas?page={pagina}&pageSize={PaginacaoQuery.DefaultPageSize}");
-        }
-        finally { carregando = false; }
+        var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
+        var page = (args.Skip ?? 0) / pageSize + 1;
+
+        var resultado = await Http.GetFromJsonAsync<PagedResult<BancaConcluidaDto>>(
+            $"api/coordenador/bancas-concluidas?page={page}&pageSize={pageSize}");
+
+        bancas = resultado?.Items ?? new();
+        count = resultado?.TotalCount ?? 0;
     }
 
     private async Task BaixarAtaPdf(int bancaId)
@@ -112,7 +90,13 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro ao baixar a ata: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao baixar a ata: {erro}",
+                    Duration = 6000
+                });
             }
         }
         finally { bancaIdBaixando = null; }

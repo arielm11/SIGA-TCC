@@ -1,0 +1,208 @@
+@* Modal bifásico de registro de nota/ata da banca (N3 Etapa 5 — RegistroResultadoBanca).
+   Substitui o <div class="modal"> com flags exibirModal/resultadoRegistrado; aberto via
+   DialogService.OpenAsync<RegistrarResultadoDialog>. O estado bifásico (form -> sucesso)
+   fica encapsulado aqui dentro, conforme decisão da arquitetura (seção 8.2). Fecha com
+   bool (houve registro?) para a página só recarregar a lista quando necessário. *@
+@using System.Net.Http.Headers
+@using TccManager.Shared.DTOs
+@inject HttpClient Http
+@inject IJSRuntime JSRuntime
+@inject DialogService DialogService
+@inject NotificationService NotificationService
+
+@if (!resultadoRegistrado)
+{
+    <RadzenStack Gap="1rem" class="rz-p-4" style="min-width: 380px;">
+        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Aluno: @NomeAluno</RadzenText>
+
+        <div>
+            <RadzenFormField Text="Nota Final" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenNumeric TValue="decimal" Value="@notaFinal" Change="@AtualizarStatusAprovacao"
+                               Min="0" Max="100" Step="0.1" style="width: 100%;" />
+            </RadzenFormField>
+
+            @if (notaFinal > 0)
+            {
+                <RadzenAlert AlertStyle="@(notaAprova ? AlertStyle.Success : AlertStyle.Danger)"
+                             Variant="Variant.Flat" ShowIcon="true" class="rz-mt-2">
+                    @(notaAprova
+                        ? $"Nota aprova o TCC (mínimo: {NotaMinimaExibicao})"
+                        : $"Nota reprova o TCC (mínimo: {NotaMinimaExibicao})")
+                </RadzenAlert>
+            }
+        </div>
+
+        @if (notaFinal > 0 && !notaAprova)
+        {
+            <div>
+                <RadzenFormField Text="Motivo da Reprovação" Variant="Variant.Outlined" style="width: 100%;">
+                    <RadzenTextArea @bind-Value="motivoReprovacao" Rows="3" style="width: 100%;"
+                                    Placeholder="Descreva o motivo da reprovação na banca..." />
+                </RadzenFormField>
+                <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Obrigatório quando a nota é inferior ao mínimo de aprovação.</RadzenText>
+            </div>
+        }
+
+        <div>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-2">Arquivo da Ata Assinada (PDF)</RadzenText>
+            <RadzenUpload Auto="false" Multiple="false" Accept=".pdf" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
+            @if (arquivoAta != null)
+            {
+                <RadzenText TextStyle="TextStyle.Body2" class="rz-mt-2 rz-my-0">
+                    <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" /> Arquivo selecionado: @arquivoAta.Name
+                </RadzenText>
+            }
+        </div>
+
+        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
+            <RadzenButton Text="Cancelar" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@Cancelar" />
+            <RadzenButton Text="@(notaAprova ? "Confirmar Aprovação" : "Confirmar Reprovação")"
+                          Icon="save"
+                          ButtonStyle="@(notaAprova ? ButtonStyle.Success : ButtonStyle.Danger)"
+                          IsBusy="enviando" BusyText="Enviando..."
+                          Disabled="@(arquivoAta == null || enviando || notaFinal <= 0 || (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao)))"
+                          Click="@SalvarResultado" />
+        </RadzenStack>
+    </RadzenStack>
+}
+else
+{
+    <RadzenStack Gap="1rem" AlignItems="AlignItems.Center" class="rz-p-4" style="min-width: 380px;">
+        <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" style="font-size: 3rem;" />
+        <RadzenText TextAlign="TextAlign.Center" class="rz-my-0">@mensagemSucesso</RadzenText>
+        <RadzenButton Text="Baixar Ata (PDF)" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
+                      IsBusy="baixandoAta" BusyText="Baixando..." Click="@BaixarAtaPdf" />
+        <RadzenButton Text="Fechar" ButtonStyle="ButtonStyle.Base" Click="@Fechar" />
+    </RadzenStack>
+}
+
+@code {
+    [Parameter]
+    public int BancaId { get; set; }
+
+    [Parameter]
+    public string NomeAluno { get; set; } = string.Empty;
+
+    private const decimal NotaMinimaAprovacao = 60.0m;
+    private const string NotaMinimaExibicao = "60,0";
+
+    private decimal notaFinal = 0;
+    private bool notaAprova = true;
+    private string motivoReprovacao = string.Empty;
+    private Radzen.FileInfo? arquivoAta;
+    private bool enviando;
+
+    private bool resultadoRegistrado;
+    private string mensagemSucesso = string.Empty;
+    private bool baixandoAta;
+
+    private void AtualizarStatusAprovacao(decimal novaNota)
+    {
+        notaFinal = novaNota;
+        notaAprova = notaFinal >= NotaMinimaAprovacao;
+        if (notaAprova)
+        {
+            motivoReprovacao = string.Empty;
+        }
+    }
+
+    private void CarregarArquivo(Radzen.UploadChangeEventArgs args)
+    {
+        arquivoAta = args.Files?.FirstOrDefault();
+    }
+
+    private async Task SalvarResultado()
+    {
+        if (arquivoAta == null) return;
+
+        if (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao))
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Warning,
+                Summary = "Motivo obrigatório",
+                Detail = "Informe o motivo da reprovação.",
+                Duration = 5000
+            });
+            return;
+        }
+
+        enviando = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+
+            content.Add(new StringContent(notaFinal.ToString(System.Globalization.CultureInfo.InvariantCulture)), "notaFinal");
+
+            if (!notaAprova)
+            {
+                content.Add(new StringContent(motivoReprovacao), "motivoReprovacao");
+            }
+
+            var stream = arquivoAta.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var streamContent = new StreamContent(stream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(arquivoAta.ContentType);
+            content.Add(streamContent, "arquivoAta", arquivoAta.Name);
+
+            var response = await Http.PostAsync($"api/coordenador/banca/{BancaId}/registrar-resultado", content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                mensagemSucesso = notaAprova
+                    ? "Nota e Ata registradas com sucesso! O TCC foi finalizado."
+                    : "Resultado registrado. O TCC foi marcado como reprovado.";
+                resultadoRegistrado = true;
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro: {erro}",
+                    Duration = 6000
+                });
+            }
+        }
+        finally
+        {
+            enviando = false;
+        }
+    }
+
+    private async Task BaixarAtaPdf()
+    {
+        baixandoAta = true;
+        try
+        {
+            var response = await Http.GetAsync($"api/coordenador/banca/{BancaId}/ata-pdf");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{BancaId}.pdf", "application/pdf", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao baixar a ata: {erro}",
+                    Duration = 6000
+                });
+            }
+        }
+        finally
+        {
+            baixandoAta = false;
+        }
+    }
+
+    private void Cancelar() => DialogService.Close(false);
+
+    private void Fechar() => DialogService.Close(true);
+}
