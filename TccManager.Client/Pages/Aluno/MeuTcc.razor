@@ -78,7 +78,7 @@
                                         </RadzenColumn>
                                         <RadzenColumn SizeMD="6" SizeXS="12">
                                             <RadzenFormField Text="Tipo de Entrega" Variant="Variant.Outlined" style="width: 100%;">
-                                                <RadzenDropDown TValue="TipoEntrega" Data="@tiposEntregaDisponiveis" @bind-Value="novaEntregaTipo" style="width: 100%;" />
+                                                <RadzenDropDown TValue="TipoEntrega" Data="@tiposEntregaDisponiveis" TextProperty="Value" ValueProperty="Key" @bind-Value="novaEntregaTipo" style="width: 100%;" />
                                             </RadzenFormField>
                                         </RadzenColumn>
                                         <RadzenColumn Size="12">
@@ -311,7 +311,9 @@
     private PropostaTccDto proposta = new();
     private string novaEntregaTitulo = "";
     private TipoEntrega novaEntregaTipo = TipoEntrega.Parcial;
-    private readonly TipoEntrega[] tiposEntregaDisponiveis = Enum.GetValues<TipoEntrega>();
+    private readonly List<KeyValuePair<TipoEntrega, string>> tiposEntregaDisponiveis = Enum.GetValues<TipoEntrega>()
+        .Select(t => new KeyValuePair<TipoEntrega, string>(t, t.ToString()))
+        .ToList();
     private Radzen.FileInfo? arquivoSelecionado;
     private List<Entrega>? entregasFeitas;
     private int? entregaSelecionadaParaFeedback;
