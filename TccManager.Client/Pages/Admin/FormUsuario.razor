@@ -57,7 +57,7 @@
 
                     <RadzenColumn SizeMD="6" SizeXS="12">
                         <RadzenFormField Text="Nível de Acesso" Variant="Variant.Outlined" style="width: 100%;">
-                            <RadzenDropDown Name="Tipo" TValue="TipoUsuario" Data="@tiposDisponiveis" @bind-Value="usuario.Tipo" style="width: 100%;" />
+                            <RadzenDropDown Name="Tipo" TValue="TipoUsuario" Data="@tiposDisponiveis" TextProperty="Value" ValueProperty="Key" @bind-Value="usuario.Tipo" style="width: 100%;" />
                         </RadzenFormField>
                     </RadzenColumn>
                 </RadzenRow>
@@ -86,7 +86,9 @@
 
     private UsuarioDto usuario = new() { Ativo = true, Tipo = TipoUsuario.Aluno };
     private bool carregando = false;
-    private readonly TipoUsuario[] tiposDisponiveis = Enum.GetValues<TipoUsuario>();
+    private readonly List<KeyValuePair<TipoUsuario, string>> tiposDisponiveis = Enum.GetValues<TipoUsuario>()
+        .Select(t => new KeyValuePair<TipoUsuario, string>(t, t.ToString()))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
