@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 using TccManager.Api.Data;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
@@ -50,7 +51,7 @@ public class UsuarioController : ControllerBase
         var usuario = await _context.Usuarios.FindAsync(int.Parse(userIdClaim));
 
         if (usuario == null)
-            return NotFound("Usu·rio n„o encontrado.");
+            return NotFound("Usu√°rio n√£o encontrado.");
 
         var usuarioDto = new UsuarioDto
         {
@@ -67,10 +68,13 @@ public class UsuarioController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetUsuarioById(int id)
     {
+        if (!PodeAcessarOuEditar(id))
+            return Forbid();
+
         var usuario = await _context.Usuarios.FindAsync(id);
 
         if (usuario == null)
-            return NotFound("Usu·rio n„o encontrado");
+            return NotFound("Usu√°rio n√£o encontrado");
 
         var usuarioDto = new UsuarioDto
         {
@@ -81,15 +85,15 @@ public class UsuarioController : ControllerBase
             Ativo = usuario.Ativo
         };
 
-        return Ok(usuario);
+        return Ok(usuarioDto);
     }
 
     [HttpPost]
-    [AllowAnonymous]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateUsuario([FromBody] UsuarioDto dto)
     {
         if(await _context.Usuarios.AnyAsync(u => u.Email == dto.Email))
-            return BadRequest("Email j· cadastrado");
+            return BadRequest("Email j√° cadastrado");
 
         string passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Senha);
 
@@ -105,28 +109,56 @@ public class UsuarioController : ControllerBase
         _context.Usuarios.Add(newUsuario);
         await _context.SaveChangesAsync();
 
-        return Ok(newUsuario);
+        var novoUsuarioDto = new UsuarioDto
+        {
+            Id = newUsuario.Id,
+            Nome = newUsuario.Nome,
+            Email = newUsuario.Email,
+            Tipo = newUsuario.Tipo,
+            Ativo = newUsuario.Ativo
+        };
+
+        return Ok(novoUsuarioDto);
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUsuario(int id, [FromBody] UsuarioDto dto)
     {
+        if (!PodeAcessarOuEditar(id))
+            return Forbid();
+
         var usuario = await _context.Usuarios.FindAsync(id);
-        
+
         if (usuario == null)
-            return NotFound("Usu·rio n„o encontrado");
-        
+            return NotFound("Usu√°rio n√£o encontrado");
+
         usuario.Nome = dto.Nome;
         usuario.Email = dto.Email;
-        usuario.Tipo = dto.Tipo;
-        usuario.Ativo = dto.Ativo;
-        
+
+        // Tipo e Ativo sao campos sensiveis (escalacao de privilegio) e so podem
+        // ser alterados por um Admin. Em autoedicao, o valor enviado pelo cliente
+        // e ignorado e o valor atual do servidor e preservado.
+        if (User.IsInRole("Admin"))
+        {
+            usuario.Tipo = dto.Tipo;
+            usuario.Ativo = dto.Ativo;
+        }
+
         if (!string.IsNullOrEmpty(dto.Senha))
             usuario.SenhaHash = BCrypt.Net.BCrypt.HashPassword(dto.Senha);
 
         await _context.SaveChangesAsync();
-        
-        return Ok(usuario);
+
+        var usuarioDto = new UsuarioDto
+        {
+            Id = usuario.Id,
+            Nome = usuario.Nome,
+            Email = usuario.Email,
+            Tipo = usuario.Tipo,
+            Ativo = usuario.Ativo
+        };
+
+        return Ok(usuarioDto);
     }
 
     [HttpDelete("{id}")]
@@ -136,12 +168,12 @@ public class UsuarioController : ControllerBase
         var usuario = await _context.Usuarios.FindAsync(id);
         
         if (usuario == null)
-            return NotFound("Usu·rio n„o encontrado");
-        
+            return NotFound("Usu√°rio n√£o encontrado");
+
         _context.Usuarios.Remove(usuario);
         await _context.SaveChangesAsync();
-        
-        return Ok("Usu·rio deletado com sucesso");
+
+        return Ok("Usu√°rio deletado com sucesso");
     }
 
     [HttpGet("professores")]
@@ -161,5 +193,19 @@ public class UsuarioController : ControllerBase
             .ToListAsync();
 
         return Ok(professores);
+    }
+
+    // Autoriza a operacao se o usuario autenticado for Admin ou se estiver
+    // acessando/editando o proprio registro (id da rota == id do proprio claim).
+    private bool PodeAcessarOuEditar(int id)
+    {
+        if (User.IsInRole("Admin"))
+            return true;
+
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                   ?? User.FindFirst("nameid")?.Value;
+
+        return int.TryParse(userIdClaim, out var usuarioIdAutenticado)
+            && usuarioIdAutenticado == id;
     }
 }
