@@ -42,16 +42,18 @@
                     {
                         var temEntregaFinal = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
 
-                        <RadzenButton Text="Dar Aceite Final" Icon="workspace_premium" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Large"
-                                      Disabled="@(!temEntregaFinal || processandoAceite)" IsBusy="processandoAceite" BusyText="Processando..."
-                                      Click="@DarAceiteFinal" />
+                        <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.End" Gap="0.5rem">
+                            <RadzenButton Text="Dar Aceite Final" Icon="workspace_premium" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Large"
+                                          Disabled="@(!temEntregaFinal || processandoAceite)" IsBusy="processandoAceite" BusyText="Processando..."
+                                          Click="@DarAceiteFinal" />
 
-                        @if (!temEntregaFinal)
-                        {
-                            <RadzenText TextStyle="TextStyle.Caption" class="rz-mt-2 rz-mb-0">
-                                Aguardando envio da Versão Final pelo aluno.
-                            </RadzenText>
-                        }
+                            @if (!temEntregaFinal)
+                            {
+                                <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">
+                                    Aguardando envio da Versão Final pelo aluno.
+                                </RadzenText>
+                            }
+                        </RadzenStack>
                     }
                     else if (tcc.Status == StatusTcc.AguardandoDefesa)
                     {
