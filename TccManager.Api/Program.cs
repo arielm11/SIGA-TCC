@@ -68,12 +68,27 @@ try
         };
     });
 
+    // Origens permitidas configuráveis via "Cors:AllowedOrigins" (appsettings.json), com
+    // fallback para os dois valores de dev atuais caso a seção não exista — mantém o
+    // ambiente de dev funcionando sem exigir edição de appsettings.Development.json.
+    // O appsettings.json versionado deliberadamente NÃO fixa esses dois valores na seção
+    // "Cors" (fica só {}): arrays de configuração no .NET fazem merge por índice entre
+    // camadas (appsettings.json -> appsettings.{Environment}.json -> env vars), não
+    // substituição — um appsettings.Production.json sobrescrevendo só o índice 0 deixaria o
+    // índice 1 (localhost:5075) vazando para produção. Achado do security-reviewer,
+    // 2026-08-17 (docs/seguranca/2026-08-17-fix-config-hardening.md).
+    var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+    if (corsAllowedOrigins is null || corsAllowedOrigins.Length == 0)
+    {
+        corsAllowedOrigins = ["https://localhost:7249", "http://localhost:5075"];
+    }
+
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowBlazorClient",
             policy =>
             {
-                policy.WithOrigins("https://localhost:7249", "http://localhost:5075")
+                policy.WithOrigins(corsAllowedOrigins)
                       .AllowAnyHeader()
                       .AllowAnyMethod();
             });
@@ -91,6 +106,26 @@ try
     builder.Services.AddAtaPdf(builder.Configuration);
 
     var app = builder.Build();
+
+    // App:PublicApiBaseUrl / App:ClientBaseUrl não têm valor padrão sensato e, se vazios,
+    // não derrubam o resto do sistema (login, propostas, entregas, bancas seguem
+    // funcionando) — só quebram o link montado no corpo do e-mail de acesso ao rascunho
+    // da ata (TccNotificationService), que sempre engole a exceção internamente
+    // (try/catch + log, nunca propaga). Por isso: warning visível no startup, não fail-fast.
+    var publicApiBaseUrl = app.Configuration["App:PublicApiBaseUrl"];
+    var clientBaseUrl = app.Configuration["App:ClientBaseUrl"];
+    if (string.IsNullOrWhiteSpace(publicApiBaseUrl))
+    {
+        app.Logger.LogWarning(
+            "App:PublicApiBaseUrl não configurada — o link do rascunho da ata enviado por " +
+            "e-mail ao avaliador externo será montado com URL inválida.");
+    }
+    if (string.IsNullOrWhiteSpace(clientBaseUrl))
+    {
+        app.Logger.LogWarning(
+            "App:ClientBaseUrl não configurada — o link de atalho para login enviado por " +
+            "e-mail aos avaliadores internos será montado com URL inválida.");
+    }
 
     if (app.Environment.IsDevelopment())
     {
@@ -137,6 +172,7 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "Aplicação encerrada inesperadamente durante a inicialização");
+    throw;
 }
 finally
 {
