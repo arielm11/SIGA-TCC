@@ -30,8 +30,8 @@
                                 TItem="TccResumoDto" AllowPaging="true" PageSize="@PaginacaoQuery.DefaultPageSize"
                                 EmptyText="Não há propostas aguardando aprovação." PageSizeText="Itens por página">
                     <Columns>
-                        <RadzenDataGridColumn TItem="TccResumoDto" Property="NomeAluno" Title="Aluno" />
-                        <RadzenDataGridColumn TItem="TccResumoDto" Property="Titulo" Title="Título" />
+                        <RadzenDataGridColumn TItem="TccResumoDto" Property="NomeAluno" Title="Aluno" Width="160px" />
+                        <RadzenDataGridColumn TItem="TccResumoDto" Property="Titulo" Title="Título" Width="220px" />
                         <RadzenDataGridColumn TItem="TccResumoDto" Title="Resumo" Sortable="false" Filterable="false" Width="170px">
                             <Template Context="tcc">
                                 <RadzenButton Text="@(propostaResumoExpandidoId == tcc.Id ? "Ocultar" : "Ver Resumo")" Icon="visibility"

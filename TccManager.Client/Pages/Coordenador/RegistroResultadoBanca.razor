@@ -39,9 +39,10 @@
                         @banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BancaPendenteDto" Title="Ação" Sortable="false" Filterable="false" Width="420px" TextAlign="TextAlign.End">
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Title="Ação" Sortable="false" Filterable="false" Width="440px" TextAlign="TextAlign.End">
                     <Template Context="banca">
-                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center"
+                                     Wrap="FlexWrap.Wrap" style="width: 100%;">
                             <RadzenButton Text="Rascunho" Icon="description" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Outlined" Size="ButtonSize.Small"
                                           IsBusy="@(bancaIdBaixandoRascunho == banca.TccId)" BusyText="Baixando..."
                                           Disabled="@(bancaIdBaixandoRascunho == banca.TccId)"

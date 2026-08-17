@@ -1,5 +1,6 @@
 ﻿using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -211,8 +212,10 @@ public class CoordenadorController_AgendarBanca_Tests
         var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
         var client = factory.CreateClientAutenticado(idCoordenador , "Coordenador");
 
-        // 15/08/2026, 14:30 — horário "de Brasília" como o coordenador digitou na tela
-        var dataHoraEmBrasilia = new DateTime(2026, 8, 15, 14, 30, 0, DateTimeKind.Unspecified);
+        // 14:30 daqui a 30 dias — horário "de Brasília" como o coordenador digitou na tela.
+        // Precisa ser relativo a "agora" (não uma data fixa): o validator exige data futura.
+        var dataFutura = DateTime.Now.AddDays(30);
+        var dataHoraEmBrasilia = new DateTime(dataFutura.Year, dataFutura.Month, dataFutura.Day, 14, 30, 0, DateTimeKind.Unspecified);
 
         var dto = new AgendarBancaDto
         {
@@ -229,7 +232,7 @@ public class CoordenadorController_AgendarBanca_Tests
         using var context = factory.CriarContextoDireto();
         var banca = await context.Banca.FirstAsync(b => b.TccId == tccId);
 
-        var utcEsperado = new DateTime(2026, 8, 15, 17, 30, 0, DateTimeKind.Utc);
+        var utcEsperado = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dataHoraEmBrasilia);
 
         Assert.Equal(utcEsperado, banca.DataHora);
     }

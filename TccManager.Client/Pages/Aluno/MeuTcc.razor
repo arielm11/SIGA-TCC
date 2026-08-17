@@ -83,7 +83,7 @@
                                         </RadzenColumn>
                                         <RadzenColumn Size="12">
                                             <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-2">Arquivo (.pdf, .doc, .zip)</RadzenText>
-                                            <RadzenUpload Auto="false" Multiple="false" Accept=".pdf,.doc,.docx,.zip" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
+                                            <RadzenUpload @ref="uploadEntregaRef" Auto="false" Multiple="false" Accept=".pdf,.doc,.docx,.zip" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
                                             @if (arquivoSelecionado != null)
                                             {
                                                 <RadzenText TextStyle="TextStyle.Body2" class="rz-mt-2 rz-my-0">
@@ -315,6 +315,7 @@
         .Select(t => new KeyValuePair<TipoEntrega, string>(t, t.ToString()))
         .ToList();
     private Radzen.FileInfo? arquivoSelecionado;
+    private RadzenUpload? uploadEntregaRef;
     private List<Entrega>? entregasFeitas;
     private int? entregaSelecionadaParaFeedback;
     private List<Acompanhamento>? meusAcompanhamentos;
@@ -438,6 +439,10 @@
                 });
                 novaEntregaTitulo = "";
                 arquivoSelecionado = null;
+                if (uploadEntregaRef != null)
+                {
+                    await uploadEntregaRef.ClearFiles();
+                }
                 await CarregarEntregas(); // Atualiza a lista na tela
             }
             else
