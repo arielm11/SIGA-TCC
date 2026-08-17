@@ -15,10 +15,12 @@ namespace TccManager.Api.Controllers;
 public class UsuarioController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILogger<UsuarioController> _logger;
 
-    public UsuarioController(AppDbContext context)
+    public UsuarioController(AppDbContext context, ILogger<UsuarioController> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -69,7 +71,13 @@ public class UsuarioController : ControllerBase
     public async Task<IActionResult> GetUsuarioById(int id)
     {
         if (!PodeAcessarOuEditar(id))
+        {
+            _logger.LogWarning(
+                "Acesso negado em GET /api/usuario/{{id}}. Solicitante: {SolicitanteId}, alvo: {AlvoId}",
+                ObterIdClaimAutenticado() ?? "desconhecido",
+                id);
             return Forbid();
+        }
 
         var usuario = await _context.Usuarios.FindAsync(id);
 
@@ -125,7 +133,13 @@ public class UsuarioController : ControllerBase
     public async Task<IActionResult> UpdateUsuario(int id, [FromBody] UsuarioDto dto)
     {
         if (!PodeAcessarOuEditar(id))
+        {
+            _logger.LogWarning(
+                "Acesso negado em PUT /api/usuario/{{id}}. Solicitante: {SolicitanteId}, alvo: {AlvoId}",
+                ObterIdClaimAutenticado() ?? "desconhecido",
+                id);
             return Forbid();
+        }
 
         var usuario = await _context.Usuarios.FindAsync(id);
 
@@ -140,8 +154,23 @@ public class UsuarioController : ControllerBase
         // e ignorado e o valor atual do servidor e preservado.
         if (User.IsInRole("Admin"))
         {
+            var tipoAntigo = usuario.Tipo;
+            var ativoAntigo = usuario.Ativo;
+
             usuario.Tipo = dto.Tipo;
             usuario.Ativo = dto.Ativo;
+
+            if (tipoAntigo != usuario.Tipo || ativoAntigo != usuario.Ativo)
+            {
+                _logger.LogWarning(
+                    "Alteração de campos sensíveis em PUT /api/usuario/{{id}}. Admin: {AdminId}, alvo: {AlvoId}, Tipo: {TipoAntigo} -> {TipoNovo}, Ativo: {AtivoAntigo} -> {AtivoNovo}",
+                    ObterIdClaimAutenticado() ?? "desconhecido",
+                    id,
+                    tipoAntigo,
+                    usuario.Tipo,
+                    ativoAntigo,
+                    usuario.Ativo);
+            }
         }
 
         if (!string.IsNullOrEmpty(dto.Senha))
@@ -202,10 +231,13 @@ public class UsuarioController : ControllerBase
         if (User.IsInRole("Admin"))
             return true;
 
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? User.FindFirst("nameid")?.Value;
+        var userIdClaim = ObterIdClaimAutenticado();
 
         return int.TryParse(userIdClaim, out var usuarioIdAutenticado)
             && usuarioIdAutenticado == id;
     }
+
+    private string? ObterIdClaimAutenticado() =>
+        User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("nameid")?.Value;
 }

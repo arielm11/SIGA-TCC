@@ -14,11 +14,13 @@ public class AuthController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly IAuthTokenService _authTokenService;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(AppDbContext context, IAuthTokenService authTokenService)
+    public AuthController(AppDbContext context, IAuthTokenService authTokenService, ILogger<AuthController> logger)
     {
         _context = context;
         _authTokenService = authTokenService;
+        _logger = logger;
     }
 
     [HttpPost("login")]
@@ -34,13 +36,29 @@ public class AuthController : ControllerBase
         // o login) em troca de um erro mais claro para o usuário legítimo. Reverte a postura
         // anti-enumeração anterior deliberadamente — não é uma regressão não avaliada.
         if (usuario == null)
+        {
+            // Nunca logar o e-mail tentado (decisão de LGPD registrada na issue #61).
+            _logger.LogWarning(
+                "Falha de login. IP de origem: {RemoteIp}, motivo: usuário não encontrado",
+                HttpContext.Connection.RemoteIpAddress);
             return Unauthorized("Usuário não encontrado.");
+        }
 
         if (!BCrypt.Net.BCrypt.Verify(dto.Senha, usuario.SenhaHash))
+        {
+            _logger.LogWarning(
+                "Falha de login. IP de origem: {RemoteIp}, motivo: senha incorreta",
+                HttpContext.Connection.RemoteIpAddress);
             return Unauthorized("Senha incorreta.");
+        }
 
         if (!usuario.Ativo)
+        {
+            _logger.LogWarning(
+                "Falha de login. IP de origem: {RemoteIp}, motivo: usuário inativo",
+                HttpContext.Connection.RemoteIpAddress);
             return Unauthorized("Usuário inativo.");
+        }
 
         var par = await _authTokenService.LoginAsync(usuario);
 
@@ -55,7 +73,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [EnableRateLimiting("login")]
+    [EnableRateLimiting("refresh")]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequestDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.RefreshToken))

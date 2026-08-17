@@ -32,7 +32,10 @@ builder.Services.AddScoped<ITokenRefreshCoordinator, TokenRefreshCoordinator>();
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<TemaService>();
 
-builder.Services.AddTransient<AuthTokenHandler>();
+builder.Services.AddTransient(sp => new AuthTokenHandler(
+    sp.GetRequiredService<ILocalStorageService>(),
+    sp.GetRequiredService<ITokenRefreshCoordinator>(),
+    new Uri(apiBaseUrl)));
 
 // Cliente "cru", sem o AuthTokenHandler — usado exclusivamente pelo handler/coordenador
 // para chamar /api/auth/refresh e /api/auth/logout, evitando recursão (§6.1 da

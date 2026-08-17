@@ -24,17 +24,19 @@ public class AuthTokenHandler : DelegatingHandler
 
     private readonly ILocalStorageService _localStorage;
     private readonly ITokenRefreshCoordinator _refreshCoordinator;
+    private readonly Uri _apiBaseUri;
 
-    public AuthTokenHandler(ILocalStorageService localStorage, ITokenRefreshCoordinator refreshCoordinator)
+    public AuthTokenHandler(ILocalStorageService localStorage, ITokenRefreshCoordinator refreshCoordinator, Uri apiBaseUri)
     {
         _localStorage = localStorage;
         _refreshCoordinator = refreshCoordinator;
+        _apiBaseUri = apiBaseUri;
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var tokenUsado = await ObterTokenSalvoAsync(cancellationToken);
-        AnexarBearer(request, tokenUsado);
+        AnexarBearer(request, tokenUsado, _apiBaseUri);
 
         if (EhRotaAuth(request))
         {
@@ -64,7 +66,7 @@ public class AuthTokenHandler : DelegatingHandler
         var novoToken = await ObterTokenSalvoAsync(cancellationToken);
 
         var retryRequest = ClonarRequisicao(request, conteudoBufferizado);
-        AnexarBearer(retryRequest, novoToken);
+        AnexarBearer(retryRequest, novoToken, _apiBaseUri);
 
         // Retry único (§6.4): se o retry ainda vier 401, propaga como sessão encerrada —
         // não há nova tentativa de refresh a partir daqui.
@@ -77,11 +79,30 @@ public class AuthTokenHandler : DelegatingHandler
         return token?.Replace("\"", string.Empty);
     }
 
-    private static void AnexarBearer(HttpRequestMessage request, string? token)
+    private static void AnexarBearer(HttpRequestMessage request, string? token, Uri apiBaseUri)
     {
-        request.Headers.Authorization = string.IsNullOrWhiteSpace(token)
+        request.Headers.Authorization = string.IsNullOrWhiteSpace(token) || !EhDestinoApi(request.RequestUri, apiBaseUri)
             ? null
             : new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    /// <summary>
+    /// Só anexa o Bearer quando o destino é a própria API (ou uma URI relativa, resolvida
+    /// contra o BaseAddress do HttpClient). Evita vazar o token de sessão para um host
+    /// externo caso, por bug ou uso indevido futuro, uma URI absoluta seja passada a este
+    /// mesmo HttpClient nomeado "Api" (issue #63 — DelegatingHandler não checava o host).
+    /// </summary>
+    private static bool EhDestinoApi(Uri? requestUri, Uri apiBaseUri)
+    {
+        if (requestUri is null || !requestUri.IsAbsoluteUri)
+            return true;
+
+        return Uri.Compare(
+            requestUri,
+            apiBaseUri,
+            UriComponents.Scheme | UriComponents.Host | UriComponents.Port,
+            UriFormat.UriEscaped,
+            StringComparison.OrdinalIgnoreCase) == 0;
     }
 
     private static bool EhRotaAuth(HttpRequestMessage request)

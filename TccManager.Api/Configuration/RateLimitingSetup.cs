@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace TccManager.Api.Configuration;
 
 /// <summary>
-/// Políticas de rate limiting nomeadas "login" e "rascunho-publico": ambas usam
+/// Políticas de rate limiting nomeadas "login", "refresh" e "rascunho-publico": todas usam
 /// FixedWindowLimiter, particionado por IP do cliente (Connection.RemoteIpAddress —
 /// ambiente é localhost-only, sem proxy reverso, portanto não há tratamento de
 /// ForwardedHeaders/X-Forwarded-For) e o mesmo OnRejected (429 + Retry-After + log).
@@ -13,6 +13,7 @@ namespace TccManager.Api.Configuration;
 public static class RateLimitingSetup
 {
     public const string LoginPolicyName = "login";
+    public const string RefreshPolicyName = "refresh";
     public const string RascunhoPublicoPolicyName = "rascunho-publico";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
@@ -20,6 +21,13 @@ public static class RateLimitingSetup
         var loginPermitLimit = configuration.GetValue<int?>("RateLimiting:Login:PermitLimit") ?? 5;
         var loginWindowSeconds = configuration.GetValue<int?>("RateLimiting:Login:WindowSeconds") ?? 60;
         var loginQueueLimit = configuration.GetValue<int?>("RateLimiting:Login:QueueLimit") ?? 0;
+
+        // /refresh acontece em segundo plano com frequência maior que login manual
+        // (renovação silenciosa do cliente) — limite mais generoso que "login", mas
+        // ainda finito, para preservar o sinal de reuse-detection contra automação.
+        var refreshPermitLimit = configuration.GetValue<int?>("RateLimiting:Refresh:PermitLimit") ?? 15;
+        var refreshWindowSeconds = configuration.GetValue<int?>("RateLimiting:Refresh:WindowSeconds") ?? 60;
+        var refreshQueueLimit = configuration.GetValue<int?>("RateLimiting:Refresh:QueueLimit") ?? 0;
 
         // O membro externo pode legitimamente recarregar/reabrir o link do rascunho
         // (RF-04/RF-05) — janela um pouco mais folgada que a de "login".
@@ -39,6 +47,16 @@ public static class RateLimitingSetup
                         PermitLimit = loginPermitLimit,
                         Window = TimeSpan.FromSeconds(loginWindowSeconds),
                         QueueLimit = loginQueueLimit
+                    }));
+
+            options.AddPolicy(RefreshPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = refreshPermitLimit,
+                        Window = TimeSpan.FromSeconds(refreshWindowSeconds),
+                        QueueLimit = refreshQueueLimit
                     }));
 
             options.AddPolicy(RascunhoPublicoPolicyName, context =>
