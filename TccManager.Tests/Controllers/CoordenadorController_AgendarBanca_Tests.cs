@@ -1,6 +1,5 @@
 ﻿using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
-using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -232,7 +231,10 @@ public class CoordenadorController_AgendarBanca_Tests
         using var context = factory.CriarContextoDireto();
         var banca = await context.Banca.FirstAsync(b => b.TccId == tccId);
 
-        var utcEsperado = BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc(dataHoraEmBrasilia);
+        // Oráculo independente: Brasília é sempre UTC-3 desde o fim do horário de verão no
+        // Brasil (2019) — não reaproveita BrasiliaTimeZoneService.ConverterDeBrasiliaParaUtc
+        // (a própria função de produção sendo testada) para o teste não ficar tautológico.
+        var utcEsperado = DateTime.SpecifyKind(dataHoraEmBrasilia.AddHours(3), DateTimeKind.Utc);
 
         Assert.Equal(utcEsperado, banca.DataHora);
     }

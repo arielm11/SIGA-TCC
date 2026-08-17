@@ -44,7 +44,7 @@ try
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 
-    var jwtKey = Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"]!);
+    var jwtKey = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!);
 
     builder.Services.AddAuthentication(options =>
     {
@@ -58,10 +58,13 @@ try
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(jwtKey),
-            ValidateIssuer = false,
+            ValidateIssuer = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidateAudience = false,
-            ValidAudience = builder.Configuration["Jwt:Audience"]
+            ValidateAudience = true,
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            // Tolerância pequena, apenas para diferença de relógio entre servidores —
+            // não deve estender de forma relevante a vida útil do access token (15 min).
+            ClockSkew = TimeSpan.FromSeconds(30)
         };
     });
 

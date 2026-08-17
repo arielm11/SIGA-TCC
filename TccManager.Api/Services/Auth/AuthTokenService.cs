@@ -12,12 +12,18 @@ public class AuthTokenService : IAuthTokenService
     private readonly AppDbContext _context;
     private readonly ITokenService _tokenService;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthTokenService> _logger;
 
-    public AuthTokenService(AppDbContext context, ITokenService tokenService, IConfiguration configuration)
+    public AuthTokenService(
+        AppDbContext context,
+        ITokenService tokenService,
+        IConfiguration configuration,
+        ILogger<AuthTokenService> logger)
     {
         _context = context;
         _tokenService = tokenService;
         _configuration = configuration;
+        _logger = logger;
     }
 
     private int RefreshTokenDays => _configuration.GetValue<int?>("Jwt:RefreshTokenDays") ?? 7;
@@ -40,7 +46,23 @@ public class AuthTokenService : IAuthTokenService
             .Include(rt => rt.Usuario)
             .FirstOrDefaultAsync(rt => rt.TokenHash == hash);
 
-        if (tokenAtual == null || tokenAtual.Usuario == null || !EhUtilizavel(tokenAtual))
+        // Reuse-detection: um token já rotacionado (revogado por já ter sido trocado por
+        // um novo, distinto de uma revogação por logout manual) sendo reapresentado é
+        // evidência de vazamento — o cliente legítimo já seguiu adiante na cadeia de
+        // rotação. Revoga todas as sessões ativas do usuário por precaução.
+        if (tokenAtual != null && tokenAtual.RevokedAtUtc != null && tokenAtual.ReplacedByTokenHash != null)
+        {
+            _logger.LogWarning(
+                "Reuso de refresh token detectado para usuário {UsuarioId} — sessão revogada por precaução",
+                tokenAtual.UsuarioId);
+
+            await RevokeAllForUserAsync(tokenAtual.UsuarioId);
+            await _context.SaveChangesAsync();
+
+            return null;
+        }
+
+        if (tokenAtual == null || tokenAtual.Usuario == null || !tokenAtual.Usuario.Ativo || !EhUtilizavel(tokenAtual))
             return null;
 
         var (par, novoRefreshToken) = CriarNovoPar(tokenAtual.Usuario);
