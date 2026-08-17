@@ -20,23 +20,23 @@
         <Columns>
             <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NomeAluno" Title="Aluno" />
             <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="TccTitulo" Title="Título do TCC" />
-            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="DataHora" Title="Data da Banca" Width="180px">
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="DataHora" Title="Data da Banca" Width="180px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
                     @banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NotaFinal" Title="Nota" Width="100px">
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NotaFinal" Title="Nota" Width="100px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
                     @banca.NotaFinal.ToString("0.0")
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Status" Width="130px">
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Status" Width="130px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
                     <RadzenBadge BadgeStyle="@(banca.Aprovado ? BadgeStyle.Success : BadgeStyle.Danger)"
                                  Text="@(banca.Aprovado ? "Aprovado" : "Reprovado")" />
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Ação" Sortable="false" Filterable="false" Width="160px" TextAlign="TextAlign.End">
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Ação" Sortable="false" Filterable="false" Width="160px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
                     <RadzenButton Text="Baixar PDF" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
                                   IsBusy="@(bancaIdBaixando == banca.BancaId)" BusyText="Baixando..."
