@@ -3,10 +3,12 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @attribute [Authorize]
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ITokenRefreshCoordinator TokenRefreshCoordinator
 @inject NotificationService NotificationService
 @inject NavigationManager Navigation
 
@@ -174,6 +176,15 @@
                 // de sucesso permaneça visível (um forceLoad imediato descartaria a notificação
                 // antes do usuário conseguir vê-la) — decisão registrada na arquitetura (seção 7.2/11, P3).
                 await CarregarDados();
+
+                // Nome/e-mail exibidos no NavMenu vêm de claims presas no token já emitido —
+                // força a renovação do par para que o token novo carregue os dados atuais do
+                // banco, sem exigir logout/login (o refresh já recarrega a entidade do usuário).
+                var tokenAtual = await LocalStorage.GetItemAsStringAsync("authToken");
+                if (!string.IsNullOrWhiteSpace(tokenAtual))
+                {
+                    await TokenRefreshCoordinator.EnsureRefreshedAsync(tokenAtual.Replace("\"", string.Empty));
+                }
 
                 NotificationService.Notify(new NotificationMessage
                 {

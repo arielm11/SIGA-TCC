@@ -229,7 +229,7 @@ public class CoordenadorController : ControllerBase
         var lista = await _context.Tccs
             .Include(t => t.Aluno)
             .Include(t => t.Orientador)
-            .Where(t => t.Status == StatusTcc.AguardandoDefesa)
+            .Where(t => t.Status == StatusTcc.AguardandoDefesa && !_context.Banca.Any(b => b.TccId == t.Id))
             .Select(t => new TccAguardandoBancaDto
             {
                 Id = t.Id,

@@ -122,8 +122,8 @@
                                                 <DataAnnotationsValidator />
                                                 <RadzenRow Gap="1rem">
                                                     <RadzenColumn SizeMD="3" SizeXS="12">
-                                                        <RadzenFormField Text="Nota (Opcional)" Variant="Variant.Outlined" style="width: 100%;">
-                                                            <RadzenNumeric TValue="decimal?" @bind-Value="feedbackAtual.Nota" style="width: 100%;" />
+                                                        <RadzenFormField Text="Nota (Opcional, 0 a 10)" Variant="Variant.Outlined" style="width: 100%;">
+                                                            <RadzenNumeric TValue="decimal?" @bind-Value="feedbackAtual.Nota" Min="0" Max="10" Step="0.1" style="width: 100%;" />
                                                         </RadzenFormField>
                                                     </RadzenColumn>
                                                     <RadzenColumn SizeMD="9" SizeXS="12">
