@@ -62,10 +62,13 @@
                     </RadzenColumn>
                 </RadzenRow>
 
-                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                    <RadzenCheckBox Name="Ativo" @bind-Value="usuario.Ativo" />
-                    <RadzenLabel Component="Ativo" Text="Usuário Ativo" />
-                </RadzenStack>
+                @if (Id.HasValue)
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenCheckBox Name="Ativo" @bind-Value="usuario.Ativo" />
+                        <RadzenLabel Component="Ativo" Text="Usuário Ativo" />
+                    </RadzenStack>
+                }
 
                 <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
                     <RadzenButton ButtonType="ButtonType.Submit"
