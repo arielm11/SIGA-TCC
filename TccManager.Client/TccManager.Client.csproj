@@ -4,6 +4,16 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Sobrescreve o Directory.Build.props da raiz: este projeto NAO gera packages.lock.json.
+         O SDK do Blazor WebAssembly injeta como referencia direta os pacotes
+         Microsoft.NET.ILLink.Tasks e Microsoft.NET.Sdk.WebAssembly.Pack, cuja versao vem
+         do SDK instalado (ex.: 9.0.11 no SDK 9.0.308, 9.0.19/10.0.11 no SDK 10.0.400).
+         Com lock file esse projeto quebraria a restauracao travada do CI sempre que a
+         versao do SDK da maquina/runner mudasse, sem nenhuma alteracao real de dependencia.
+         As dependencias deste projeto continuam cobertas pelo scan de vulnerabilidades do CI
+         ("dotnet list package" com as flags vulnerable/include-transitive), que nao usa o lock.
+         Reavaliar se o repositorio passar a fixar a versao do SDK via global.json. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>

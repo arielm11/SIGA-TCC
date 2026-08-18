@@ -10,6 +10,9 @@ on:
 env:
   DOTNET_VERSION: "9.0.x"
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -23,13 +26,42 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore --locked-mode
+        # --locked-mode: falha se os packages.lock.json estiverem dessincronizados
+        # dos .csproj. Ao alterar/adicionar um PackageReference, regenere os locks
+        # localmente com "dotnet restore --force-evaluate" e commite o resultado.
+        # TccManager.Client não gera lock (ver comentário no .csproj dele).
 
       - name: Verificar formatação (dotnet format)
         run: dotnet format --verify-no-changes --verbosity diagnostic
         continue-on-error: true
         # continue-on-error: true por enquanto — troque para "false" quando
         # o time estiver confortável com o gate de formatação bloqueando PRs.
+
+      - name: Scan de vulnerabilidades em pacotes
+        run: |
+          set -o pipefail
+          dotnet list TccManager.sln package --vulnerable --include-transitive --no-restore \
+            | tee vulnerable-packages.txt
+          {
+            echo "## Scan de vulnerabilidades de pacotes"
+            echo ""
+            echo '```'
+            cat vulnerable-packages.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "https://github.com/advisories" vulnerable-packages.txt; then
+            echo "::warning::Pacote(s) com vulnerabilidade conhecida — veja a aba Summary deste run."
+            exit 1
+          fi
+        continue-on-error: true
+        # continue-on-error: true por enquanto — o step existe para VISIBILIDADE
+        # (o resultado aparece no log e na aba Summary do run) enquanto os achados
+        # já conhecidos não são resolvidos: AngleSharp transitivo via HtmlSanitizer,
+        # severidade Moderate, rastreado na issue #95. Troque para "false" quando
+        # esses achados estiverem resolvidos, para o scan passar a bloquear PRs.
+        # Obs.: "dotnet list package --vulnerable" retorna exit code 0 mesmo com
+        # achados — por isso o grep acima é o que marca o step como falho.
 
       - name: Build
         run: dotnet build --no-restore --configuration Release

@@ -1,0 +1,11 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Supply chain: grava as versoes resolvidas de cada projeto em packages.lock.json.
+         O CI restaura em modo travado (restore com a flag locked-mode), entao toda alteracao
+         de PackageReference exige regenerar os locks com "dotnet restore /p:RestoreForceEvaluate=true"
+         (ou "dotnet restore" com a flag force-evaluate). -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+</Project>
