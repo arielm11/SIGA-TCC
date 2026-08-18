@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using TccManager.Api.Data;
 
@@ -11,9 +12,11 @@ using TccManager.Api.Data;
 namespace TccManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260817215219_AddIndiceUnicoEmailUsuarios")]
+    partial class AddIndiceUnicoEmailUsuarios
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -44,7 +47,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasIndex("TccId");
 
-                    b.ToTable("Acompanhamentos", (string)null);
+                    b.ToTable("Acompanhamentos");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Banca", b =>
@@ -76,7 +79,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasIndex("TccId");
 
-                    b.ToTable("Banca", (string)null);
+                    b.ToTable("Banca");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.BancaAvaliador", b =>
@@ -104,7 +107,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasIndex("ProfessorId");
 
-                    b.ToTable("BancaAvaliadores", (string)null);
+                    b.ToTable("BancaAvaliadores");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Entrega", b =>
@@ -142,7 +145,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasIndex("TccId");
 
-                    b.ToTable("Entregas", (string)null);
+                    b.ToTable("Entregas");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.MembroExterno", b =>
@@ -167,7 +170,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("MembrosExternos", (string)null);
+                    b.ToTable("MembrosExternos");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.RascunhoAtaToken", b =>
@@ -292,7 +295,7 @@ namespace TccManager.Api.Migrations
 
                     b.HasIndex("OrientadorId");
 
-                    b.ToTable("Tccs", (string)null);
+                    b.ToTable("Tccs");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Usuario", b =>

@@ -23,7 +23,14 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Usuario>().ToTable("usuarios");
+        modelBuilder.Entity<Usuario>(entity =>
+        {
+            entity.ToTable("usuarios");
+
+            // Reforça no banco a invariante de e-mail único por usuário — ver
+            // UsuarioController.CreateUsuario/UpdateUsuario, que já validam isso na aplicação.
+            entity.HasIndex(u => u.Email).IsUnique();
+        });
 
         modelBuilder.Entity<BancaAvaliador>()
             .HasOne(ba => ba.Professor)
