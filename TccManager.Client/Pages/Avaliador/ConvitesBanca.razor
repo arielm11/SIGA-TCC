@@ -66,13 +66,14 @@
                                           Disabled="@(bancaIdBaixandoRascunho == convite.BancaId)"
                                           Click="@(() => BaixarAtaRascunho(convite.BancaId))" />
 
-                            @if (!string.IsNullOrEmpty(convite.ArquivoFinalCaminho))
+                            @if (convite.ArquivoFinalEntregaId.HasValue)
                             {
-                                <a href="@UrlArquivo(convite.ArquivoFinalCaminho)" target="_blank" rel="noopener"
-                                   style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.5rem 1rem; border-radius: 4px; background-color: var(--rz-success); color: var(--rz-on-success, #fff); text-decoration:none; font-weight:500; white-space:nowrap;">
+                                <button type="button" @onclick="@(() => BaixarArquivoFinal(convite.ArquivoFinalEntregaId.Value, convite.ArquivoFinalExtensao))"
+                                        disabled="@(entregaIdBaixando == convite.ArquivoFinalEntregaId)"
+                                        style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.5rem 1rem; border-radius: 4px; border: none; background-color: var(--rz-success); color: var(--rz-on-success, #fff); text-decoration:none; font-weight:500; white-space:nowrap; cursor:pointer;">
                                     <RadzenIcon Icon="picture_as_pdf" IconColor="inherit" />
-                                    Baixar Versão Final (TCC)
-                                </a>
+                                    @(entregaIdBaixando == convite.ArquivoFinalEntregaId ? "Baixando..." : "Baixar Versão Final (TCC)")
+                                </button>
                             }
                             else
                             {
@@ -89,6 +90,7 @@
 
 @code {
     private bool carregando = true;
+    private int? entregaIdBaixando;
     private List<ConviteBancaDto> convites = new();
     private int? bancaIdBaixandoRascunho;
 
@@ -97,7 +99,56 @@
         await CarregarConvites();
     }
 
-    private string UrlArquivo(string caminho) => $"{Http.BaseAddress?.ToString().TrimEnd('/')}{caminho}";
+    // Download autenticado do arquivo da entrega Final (o endpoint estático sem autenticação
+    // foi removido — ver TccManager.Api Program.cs / A01-1); busca via HttpClient (Bearer já
+    // anexado pelo AuthTokenHandler) e dispara o download via blob, mesmo padrão de
+    // BaixarAtaRascunho abaixo e de DetalhesTcc.razor.
+    private async Task BaixarArquivoFinal(int entregaId, string? extensao)
+    {
+        entregaIdBaixando = entregaId;
+        try
+        {
+            var response = await Http.GetAsync($"api/tcc/entregas/{entregaId}/download");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"entrega-{entregaId}{extensao}", "application/octet-stream", base64);
+            }
+            else
+            {
+                var detalhe = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Forbidden => "Você não tem permissão para baixar este arquivo.",
+                    System.Net.HttpStatusCode.NotFound => "Arquivo não encontrado.",
+                    _ => "Não foi possível baixar o arquivo. Tente novamente mais tarde."
+                };
+
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao baixar arquivo",
+                    Detail = detalhe,
+                    Duration = 5000
+                });
+            }
+        }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao baixar o arquivo.",
+                Duration = 5000
+            });
+        }
+        finally
+        {
+            entregaIdBaixando = null;
+        }
+    }
 
     private async Task CarregarConvites()
     {

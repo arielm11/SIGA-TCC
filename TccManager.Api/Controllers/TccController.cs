@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
@@ -20,12 +21,27 @@ public class TccController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ISanitizerService _sanitizerService;
     private readonly IStorageService _storageService;
+    private readonly ILogger<TccController> _logger;
 
-    public TccController(AppDbContext context, ISanitizerService sanitizerService, IStorageService storageService)
+    // Categoria dedicada de auditoria (upload/compensação/download de entrega): o
+    // MinimumLevel padrão do Serilog é Warning, que descartaria eventos de auditoria em
+    // Information. "TccManager.Api.Auditoria" tem Override explícito em appsettings.json
+    // para não perder essa trilha — mesmo padrão de "TccManager.Api.RateLimiting" em
+    // RateLimitingSetup. Ver docs/seguranca/2026-08-18-fix-upload-storage-hardening.md, A09-1.
+    private readonly ILogger _auditLogger;
+
+    public TccController(
+        AppDbContext context,
+        ISanitizerService sanitizerService,
+        IStorageService storageService,
+        ILogger<TccController> logger,
+        ILoggerFactory loggerFactory)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _storageService = storageService;
+        _logger = logger;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("meu-tcc")]
@@ -145,9 +161,23 @@ public class TccController : ControllerBase
             return BadRequest("Você não pode enviar a versão FINAL sem ter um Orientador definido (RN03).");
 
         string caminho;
-        using (var stream = arquivo.OpenReadStream())
+        using (var streamOriginal = arquivo.OpenReadStream())
         {
-            caminho = await _storageService.UploadAsync(stream, arquivo.FileName, CategoriaArquivo.Entregas);
+            var (assinaturaValida, streamParaUpload) = await ValidarAssinaturaArquivoAsync(
+                streamOriginal, extensao, HttpContext.RequestAborted);
+
+            try
+            {
+                if (!assinaturaValida)
+                    return BadRequest("Conteúdo do arquivo não corresponde à extensão informada.");
+
+                caminho = await _storageService.UploadAsync(streamParaUpload, arquivo.FileName, CategoriaArquivo.Entregas);
+            }
+            finally
+            {
+                if (!ReferenceEquals(streamParaUpload, streamOriginal))
+                    await streamParaUpload.DisposeAsync();
+            }
         }
 
         var entrega = new Entrega
@@ -160,9 +190,178 @@ public class TccController : ControllerBase
         };
 
         _context.Entregas.Add(entrega);
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Backstop atômico do índice único filtrado (UX_Entregas_TccId_Final) contra o
+            // AnyAsync de aplicação acima, que sozinho não impede duas requisições
+            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL. Não
+            // logar a exceção crua (mesmo padrão de UsuarioController).
+            _auditLogger.LogWarning(
+                "Falha ao salvar entrega em POST /api/tcc/entregas: possível violação da restrição de unicidade de entrega FINAL. TccId: {TccId}",
+                tcc.Id);
+            await CompensarUploadOrfaoAsync(caminho, tcc.Id, "violação de unicidade de entrega FINAL");
+            return Conflict("A versão FINAL já foi enviada. O ciclo de entregas está encerrado.");
+        }
+        catch (Exception)
+        {
+            // Compensação manual: o arquivo já foi gravado em disco antes do SaveChanges
+            // (não há transação distribuída entre disco e banco) — sem isso, uma falha
+            // aqui deixaria o arquivo órfão em wwwroot/uploads/entregas.
+            await CompensarUploadOrfaoAsync(caminho, tcc.Id, "falha ao salvar entrega no banco de dados");
+            throw;
+        }
+
+        _auditLogger.LogInformation(
+            "Entrega enviada com sucesso. TccId: {TccId}, EntregaId: {EntregaId}, Tipo: {Tipo}",
+            tcc.Id,
+            entrega.Id,
+            entrega.Tipo);
 
         return Ok(entrega);
+    }
+
+    /// <summary>
+    /// RF-05/hardening: valida a assinatura binária (magic bytes) do arquivo enviado contra
+    /// a extensão declarada, para não confiar apenas no nome do arquivo. PDF exige o prefixo
+    /// "%PDF-"; DOC (legado) exige a assinatura OLE Compound File; DOCX e ZIP compartilham a
+    /// mesma assinatura de contêiner ZIP (DOCX é um pacote OOXML) — não é objetivo desta
+    /// validação diferenciar DOCX de ZIP genérico, apenas rejeitar arquivos que não são
+    /// nenhum dos tipos esperados.
+    /// </summary>
+    private static async Task<(bool AssinaturaValida, Stream StreamParaUpload)> ValidarAssinaturaArquivoAsync(
+        Stream streamOriginal, string extensao, CancellationToken cancellationToken)
+    {
+        var streamSeekavel = streamOriginal;
+
+        // arquivo.OpenReadStream() de um IFormFile é seekable no caso normal (buffer em
+        // memória/disco pelo model binding); fallback defensivo para o caso (não esperado
+        // em produção) de um stream forward-only.
+        if (!streamOriginal.CanSeek)
+        {
+            var buffer = new MemoryStream();
+            await streamOriginal.CopyToAsync(buffer, cancellationToken);
+            buffer.Seek(0, SeekOrigin.Begin);
+            streamSeekavel = buffer;
+        }
+
+        var assinaturasEsperadas = ObterAssinaturasEsperadas(extensao);
+        var tamanhoCabecalho = assinaturasEsperadas.Length == 0 ? 0 : assinaturasEsperadas.Max(a => a.Length);
+        var cabecalho = new byte[tamanhoCabecalho];
+        var totalLido = tamanhoCabecalho == 0
+            ? 0
+            : await streamSeekavel.ReadAsync(cabecalho.AsMemory(0, tamanhoCabecalho), cancellationToken);
+
+        streamSeekavel.Seek(0, SeekOrigin.Begin);
+
+        var assinaturaValida = assinaturasEsperadas.Any(assinatura =>
+            totalLido >= assinatura.Length && cabecalho.AsSpan(0, assinatura.Length).SequenceEqual(assinatura));
+
+        return (assinaturaValida, streamSeekavel);
+    }
+
+    private static byte[][] ObterAssinaturasEsperadas(string extensao) => extensao switch
+    {
+        ".pdf" => new[] { new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D } }, // "%PDF-"
+        ".docx" => new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } }, // ZIP/OOXML
+        ".zip" => new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } }, // ZIP
+        ".doc" => new[] { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } }, // OLE Compound File
+        _ => Array.Empty<byte[]>()
+    };
+
+    // Remove o arquivo já gravado em disco quando o SaveChangesAsync que persistiria a
+    // Entrega falha por qualquer motivo — best-effort, nunca propaga (não pode mascarar o
+    // erro original que causou a chamada). Log de auditoria sem PII: apenas ids/metadados,
+    // nunca o nome original do arquivo.
+    private async Task CompensarUploadOrfaoAsync(string caminho, int tccId, string motivo)
+    {
+        try
+        {
+            await _storageService.DeleteAsync(caminho);
+            _auditLogger.LogInformation(
+                "Arquivo de entrega removido por compensação após falha ao salvar no banco. TccId: {TccId}, Motivo: {Motivo}",
+                tccId,
+                motivo);
+        }
+        catch (Exception)
+        {
+            _auditLogger.LogWarning(
+                "Falha ao remover arquivo órfão em compensação de upload de entrega. TccId: {TccId}, Motivo: {Motivo}",
+                tccId,
+                motivo);
+        }
+    }
+
+    /// <summary>
+    /// Download autenticado do arquivo da entrega (substitui o acesso direto e sem
+    /// autorização via UseStaticFiles/wwwroot). Autorizado para: o Aluno dono do TCC, o
+    /// Orientador do TCC, um Coordenador, ou um Professor avaliador da banca do TCC.
+    /// </summary>
+    [HttpGet("entregas/{idEntrega}/download")]
+    public async Task<IActionResult> DownloadEntrega(int idEntrega)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int usuarioId))
+            return Unauthorized();
+
+        var entrega = await _context.Entregas
+            .Include(e => e.Tcc)
+            .FirstOrDefaultAsync(e => e.Id == idEntrega);
+
+        // Resposta uniforme (404, nunca 403) para entrega inexistente E para entrega sem
+        // autorização: evita que um usuário autenticado distinga "id não existe" de "id
+        // existe mas não é seu" e enumere o espaço de ids de Entregas.
+        if (entrega?.Tcc == null)
+            return NotFound("Entrega não encontrada.");
+
+        var tcc = entrega.Tcc;
+
+        var autorizado = tcc.AlunoId == usuarioId
+            || tcc.OrientadorId == usuarioId
+            || User.IsInRole("Coordenador")
+            || await _context.BancaAvaliadores.AnyAsync(ba => ba.ProfessorId == usuarioId && ba.Banca!.TccId == tcc.Id);
+
+        if (!autorizado)
+        {
+            _auditLogger.LogWarning(
+                "Acesso negado em GET /api/tcc/entregas/{{idEntrega}}/download. Solicitante: {SolicitanteId}, EntregaId: {EntregaId}, TccId: {TccId}",
+                usuarioId,
+                idEntrega,
+                tcc.Id);
+            return NotFound("Entrega não encontrada.");
+        }
+
+        Stream? stream;
+        try
+        {
+            stream = await _storageService.AbrirLeituraAsync(entrega.ArquivoCaminho, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            // Caminho persistido inconsistente (fora do diretório de uploads) ou arquivo
+            // bloqueado/sem permissão de leitura pelo SO — não deve virar 500. Não logar o
+            // caminho do arquivo, só ids.
+            _auditLogger.LogWarning(
+                "Falha ao abrir arquivo para download em GET /api/tcc/entregas/{{idEntrega}}/download. EntregaId: {EntregaId}",
+                entrega.Id);
+            return NotFound("Arquivo não encontrado.");
+        }
+
+        if (stream == null)
+            return NotFound("Arquivo não encontrado.");
+
+        _auditLogger.LogInformation(
+            "Download de entrega concedido. Solicitante: {SolicitanteId}, EntregaId: {EntregaId}, TccId: {TccId}",
+            usuarioId,
+            entrega.Id,
+            tcc.Id);
+
+        var nomeArquivo = $"entrega-{entrega.Id}{Path.GetExtension(entrega.ArquivoCaminho)}";
+        return File(stream, "application/octet-stream", nomeArquivo);
     }
 
     [HttpGet("entregas/{idEntrega}/feedbacks")]

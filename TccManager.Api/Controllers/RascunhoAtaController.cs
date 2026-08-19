@@ -19,10 +19,18 @@ public class RascunhoAtaController : ControllerBase
     private readonly IRascunhoAtaTokenService _tokenService;
     private readonly IAtaPdfService _ataPdfService;
 
-    public RascunhoAtaController(IRascunhoAtaTokenService tokenService, IAtaPdfService ataPdfService)
+    // Categoria dedicada de auditoria — ver TccController para o motivo (MinimumLevel padrão
+    // do Serilog é Warning; "TccManager.Api.Auditoria" tem Override para Information).
+    private readonly ILogger _auditLogger;
+
+    public RascunhoAtaController(
+        IRascunhoAtaTokenService tokenService,
+        IAtaPdfService ataPdfService,
+        ILoggerFactory loggerFactory)
     {
         _tokenService = tokenService;
         _ataPdfService = ataPdfService;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("{token}")]
@@ -30,6 +38,24 @@ public class RascunhoAtaController : ControllerBase
     public async Task<IActionResult> GetRascunhoPorToken(string token)
     {
         var validacao = await _tokenService.ValidarAsync(token);
+
+        // Auditoria de acesso: nunca o token em si (credencial de portador) nem o e-mail
+        // do membro externo — apenas os ids envolvidos e o desfecho da validação.
+        if (validacao.Status == RascunhoTokenValidacaoStatus.Invalido)
+        {
+            _auditLogger.LogWarning(
+                "Acesso ao rascunho da ata via token inválido/expirado. BancaId: {BancaId}, MembroExternoId: {MembroExternoId}",
+                validacao.BancaId,
+                validacao.MembroExternoId);
+        }
+        else
+        {
+            _auditLogger.LogInformation(
+                "Acesso ao rascunho da ata via token válido. BancaId: {BancaId}, MembroExternoId: {MembroExternoId}, Status: {Status}",
+                validacao.BancaId,
+                validacao.MembroExternoId,
+                validacao.Status);
+        }
 
         if (validacao.Status == RascunhoTokenValidacaoStatus.Invalido)
             return NotFound("Link inválido ou expirado.");

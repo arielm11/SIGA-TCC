@@ -18,16 +18,19 @@ namespace TccManager.Tests.Client.Pages.Professor;
 ///
 /// O que É coberto: os membros de <c>@code</c> que são transição de estado pura / mapeamento e não
 /// dependem de <c>HttpClient</c>, <c>DialogService</c> ou <c>NotificationService</c>:
-/// <c>AbrirFormFeedback</c>/<c>FecharFormFeedback</c> (form inline de feedback por entrega),
+/// <c>AbrirFormFeedback</c>/<c>FecharFormFeedback</c> (form inline de feedback por entrega) e
 /// <c>PrepararEdicaoAcompanhamento</c>/<c>CancelarEdicaoAcompanhamento</c> (alternância criar vs.
-/// editar ata) e o helper <c>UrlArquivo</c> (extraído do markup nesta etapa). São membros privados do
-/// componente, acessados via reflection sobre <c>new DetalhesTcc()</c>, que não aciona renderer nem
-/// injeção de dependência.
+/// editar ata). São membros privados do componente, acessados via reflection sobre
+/// <c>new DetalhesTcc()</c>, que não aciona renderer nem injeção de dependência.
 ///
 /// Onde há dependência injetada mas SEM I/O real, ela é preenchida por reflection com objetos
 /// concretos já usados no projeto: <see cref="FakeJsRuntime"/> (apenas registra a interop cosmética
-/// <c>window.scrollTo</c>) e um <see cref="HttpClient"/> com <c>BaseAddress</c> definido, do qual
-/// <c>UrlArquivo</c> só lê a propriedade — nenhuma requisição HTTP é feita em nenhum teste deste arquivo.
+/// <c>window.scrollTo</c>) — nenhuma requisição HTTP é feita em nenhum teste deste arquivo.
+///
+/// <c>BaixarArquivoEntrega</c> (issue #69 — download autenticado do arquivo da entrega, substituindo
+/// o antigo link estático/<c>UrlArquivo</c>) faz <c>HttpClient.GetAsync</c> + <c>IJSRuntime</c> +
+/// <c>NotificationService</c> reais — é um fluxo HTTP completo, portanto fora do escopo deste arquivo
+/// pelos mesmos critérios já documentados acima (gap pré-existente de infraestrutura bUnit).
 /// </summary>
 public class DetalhesTccTests
 {
@@ -255,49 +258,5 @@ public class DetalhesTccTests
 
         Assert.Null(LerCampo<int?>(componente, "acompanhamentoEmEdicaoId"));
         Assert.Equal(string.Empty, LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata);
-    }
-
-    // ── UrlArquivo: link direto de download da entrega do aluno ────────────────────
-
-    private static string InvocarUrlArquivo(string? baseAddress, string caminho)
-    {
-        var componente = new DetalhesTcc();
-        var http = new HttpClient();
-        if (baseAddress != null)
-        {
-            http.BaseAddress = new Uri(baseAddress);
-        }
-        DefinirInjetado(componente, "Http", http);
-
-        var metodo = typeof(DetalhesTcc).GetMethod("UrlArquivo", Privados)
-            ?? throw new MissingMethodException(nameof(DetalhesTcc), "UrlArquivo");
-        return (string)metodo.Invoke(componente, [caminho])!;
-    }
-
-    [Fact]
-    public void UrlArquivo_BaseComBarraFinal_NaoDuplicaABarra()
-    {
-        // ArquivoCaminho vem do backend sempre iniciado por "/" (LocalStorageService retorna
-        // "/uploads/{categoria}/{arquivo}"); a base do HttpClient termina em "/".
-        var url = InvocarUrlArquivo("https://localhost:7145/", "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("https://localhost:7145/uploads/entregas/abc_tcc.pdf", url);
-    }
-
-    [Fact]
-    public void UrlArquivo_BaseSemBarraFinal_ConcatenaDireto()
-    {
-        var url = InvocarUrlArquivo("https://api.exemplo.br/tcc", "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("https://api.exemplo.br/tcc/uploads/entregas/abc_tcc.pdf", url);
-    }
-
-    [Fact]
-    public void UrlArquivo_SemBaseAddress_RetornaApenasOCaminho()
-    {
-        // Guarda de null do operador ?. — não gera "https://null...".
-        var url = InvocarUrlArquivo(null, "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("/uploads/entregas/abc_tcc.pdf", url);
     }
 }

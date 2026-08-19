@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
@@ -145,10 +147,18 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("membros-externos")]
-    public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExterno membro)
+    public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExternoDto dto)
     {
-        membro.Nome = _sanitizerService.Sanitizar(membro.Nome)!;
-        membro.Instituicao = _sanitizerService.Sanitizar(membro.Instituicao)!;
+        // Recebe o DTO (sem Id) em vez da entidade inteira: MembroExterno.Id é
+        // Identity/auto-gerado, e aceitar um Id não-default vindo do corpo da requisição
+        // (mass assignment) arrisca SqlException ao tentar inserir valor explícito numa
+        // coluna Identity — mesmo padrão de UsuarioController.CreateUsuario.
+        var membro = new MembroExterno
+        {
+            Nome = _sanitizerService.Sanitizar(dto.Nome)!,
+            Email = dto.Email,
+            Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!
+        };
 
         _context.MembrosExternos.Add(membro);
         await _context.SaveChangesAsync();
@@ -325,6 +335,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("banca/{idBanca}/ata-pdf")]
+    [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
     public async Task<IActionResult> GetAtaPdf(int idBanca)
     {
         var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca);
@@ -338,6 +349,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
+    [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
     public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
     {
         var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);

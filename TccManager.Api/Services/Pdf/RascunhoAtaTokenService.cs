@@ -60,20 +60,45 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
             .FirstOrDefaultAsync(t => t.TokenHash == hash);
 
         // Token inexistente ou revogado: resposta genérica (Invalido) para não vazar
-        // existência/estado de token a um chamador anônimo.
-        if (token?.Banca == null || token.RevokedAtUtc != null)
+        // existência/estado de token a um chamador anônimo. Quando o token foi encontrado
+        // (apenas revogado), BancaId/MembroExternoId ainda são preenchidos para permitir
+        // auditoria interna — nunca são expostos na resposta HTTP.
+        if (token?.Banca == null)
             return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Invalido };
+
+        if (token.RevokedAtUtc != null)
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.Invalido,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
         // Bloqueio definitivo (RNF-03): checado antes da expiração por data, para que o
         // resultado já registrado sempre prevaleça (410) mesmo quando a data da banca já
         // passou — os 3 pontos de acesso devem convergir no mesmo status nesse cenário.
         if (token.Banca.NotaFinal != null)
-            return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.ResultadoRegistrado, BancaId = token.BancaId };
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.ResultadoRegistrado,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
         if (DateTime.UtcNow >= token.Banca.DataHora)
-            return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Invalido };
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.Invalido,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
-        return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Valido, BancaId = token.BancaId };
+        return new RascunhoTokenValidacao
+        {
+            Status = RascunhoTokenValidacaoStatus.Valido,
+            BancaId = token.BancaId,
+            MembroExternoId = token.MembroExternoId
+        };
     }
 
     public async Task RevogarTokenAtualAsync(int bancaId, int membroExternoId)

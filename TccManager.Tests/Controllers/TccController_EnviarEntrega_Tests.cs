@@ -82,13 +82,29 @@ public class TccController_EnviarEntrega_Tests
         form.Add(new StringContent(tituloEntrega), "tituloEntrega");
         form.Add(new StringContent(tipo.ToString()), "tipo");
 
-        // Bytes mínimos "%PDF" só para passar da validação de "arquivo obrigatório";
-        // é a EXTENSÃO do nomeArquivo que determina o resultado do RF5.
-        var arquivo = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+        // Bytes mínimos de magic number correspondentes à EXTENSÃO do nomeArquivo, para
+        // passar da validação de conteúdo (hardening da issue #69, item 2) além da
+        // validação de "arquivo obrigatório"; é a EXTENSÃO do nomeArquivo que determina
+        // o resultado do RF5 — o conteúdo aqui só precisa ser plausível para ela.
+        var arquivo = new ByteArrayContent(ObterBytesMagicNumberPara(nomeArquivo));
         arquivo.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         form.Add(arquivo, "arquivo", nomeArquivo);
 
         return form;
+    }
+
+    private static byte[] ObterBytesMagicNumberPara(string nomeArquivo)
+    {
+        var extensao = Path.GetExtension(nomeArquivo).ToLowerInvariant();
+
+        return extensao switch
+        {
+            ".doc" => new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 },
+            ".docx" or ".zip" => new byte[] { 0x50, 0x4B, 0x03, 0x04 },
+            // Default (inclui ".pdf" e extensões não permitidas, cujo conteúdo é
+            // irrelevante porque o bloqueio ocorre antes, pela extensão).
+            _ => new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D }
+        };
     }
 
     // RF1 — bloqueio de entrega Final sem OrientadorId (variante RN03)
