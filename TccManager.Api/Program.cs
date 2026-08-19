@@ -156,13 +156,26 @@ try
 
     app.UseHttpsRedirection();
 
-    app.UseStaticFiles();
+    // Sem UseStaticFiles(): wwwroot/uploads (entregas/atas/propostas) nunca deve ser servido
+    // sem autenticação/autorização. O único uso de wwwroot hoje é esse diretório de uploads,
+    // acessado exclusivamente via LocalStorageService (I/O direto em disco, não HTTP) e
+    // exposto ao cliente só por endpoints autenticados (ex.: TccController.DownloadEntrega).
+    // Ver achado A01-1, docs/seguranca/2026-08-18-fix-upload-storage-hardening.md.
 
     app.UseCors("AllowBlazorClient");
 
+    // UseAuthentication antes de UseRateLimiter: a política "geracao-pdf" precisa de
+    // HttpContext.User já populado para particionar por usuário autenticado em vez de IP
+    // (achado A02-2, docs/seguranca/2026-08-18-fix-upload-storage-hardening.md — partição
+    // por IP, atrás de proxy sem UseForwardedHeaders, colapsava a cota de toda a rede/campus
+    // num único bucket, consumível inclusive por requisição anônima). As políticas
+    // pré-autenticação (login/refresh/rascunho-publico) continuam particionadas por IP
+    // explicitamente dentro de si mesmas em RateLimitingSetup — não dependem de User e não
+    // são afetadas pela troca de ordem.
+    app.UseAuthentication();
+
     app.UseRateLimiter();
 
-    app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapControllers();

@@ -105,11 +105,11 @@
                                         </RadzenStack>
 
                                         <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
-                                            <a href="@UrlArquivo(entrega.ArquivoCaminho)" target="_blank" rel="noopener"
-                                               style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.35rem 0.9rem; border: 1px solid var(--rz-primary); border-radius: 4px; color: var(--rz-primary); text-decoration:none; font-weight:500; white-space:nowrap;">
+                                            <button type="button" @onclick="@(() => BaixarArquivoEntrega(entrega))" disabled="@(entregaIdBaixando == entrega.Id)"
+                                                    style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.35rem 0.9rem; border: 1px solid var(--rz-primary); border-radius: 4px; background:none; color: var(--rz-primary); text-decoration:none; font-weight:500; white-space:nowrap; cursor:pointer;">
                                                 <RadzenIcon Icon="download" />
-                                                Baixar Arquivo
-                                            </a>
+                                                @(entregaIdBaixando == entrega.Id ? "Baixando..." : "Baixar Arquivo")
+                                            </button>
                                             <RadzenButton Text="@(string.IsNullOrEmpty(entrega.Feedback) ? "Avaliar" : "Editar Avaliação")" Icon="chat"
                                                           ButtonStyle="ButtonStyle.Success" Click="@(() => AbrirFormFeedback(entrega))" />
                                         </RadzenStack>
@@ -228,6 +228,7 @@
 
     private int? entregaEmAvaliacao;
     private FeedbackDto feedbackAtual = new();
+    private int? entregaIdBaixando;
 
     private AcompanhamentoDto novoAcompanhamento = new();
     private bool salvandoAcompanhamento = false;
@@ -240,7 +241,56 @@
         await CarregarTcc();
     }
 
-    private string UrlArquivo(string caminho) => $"{Http.BaseAddress?.ToString().TrimEnd('/')}{caminho}";
+    // Download autenticado do arquivo da entrega (o endpoint estático sem autenticação foi
+    // removido; agora exige Bearer token, por isso é buscado via HttpClient em vez de <a href>).
+    private async Task BaixarArquivoEntrega(Entrega entrega)
+    {
+        entregaIdBaixando = entrega.Id;
+        try
+        {
+            var response = await Http.GetAsync($"api/tcc/entregas/{entrega.Id}/download");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                var extensao = Path.GetExtension(entrega.ArquivoCaminho);
+                var nomeArquivo = $"entrega-{entrega.Id}{extensao}";
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", nomeArquivo, "application/octet-stream", base64);
+            }
+            else
+            {
+                var detalhe = response.StatusCode switch
+                {
+                    System.Net.HttpStatusCode.Forbidden => "Você não tem permissão para baixar este arquivo.",
+                    System.Net.HttpStatusCode.NotFound => "Arquivo não encontrado.",
+                    _ => "Não foi possível baixar o arquivo. Tente novamente mais tarde."
+                };
+
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro ao baixar arquivo",
+                    Detail = detalhe,
+                    Duration = 5000
+                });
+            }
+        }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao baixar o arquivo.",
+                Duration = 5000
+            });
+        }
+        finally
+        {
+            entregaIdBaixando = null;
+        }
+    }
 
     private async Task CarregarTcc()
     {

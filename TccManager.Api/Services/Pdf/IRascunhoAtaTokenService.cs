@@ -21,6 +21,11 @@ public class RascunhoTokenValidacao
 {
     public required RascunhoTokenValidacaoStatus Status { get; init; }
     public int BancaId { get; init; }
+
+    // Preenchido sempre que o token é encontrado por hash (mesmo quando Status é
+    // Invalido por estar revogado) — usado apenas para auditoria interna (log), nunca
+    // exposto na resposta HTTP ao chamador anônimo.
+    public int? MembroExternoId { get; init; }
 }
 
 /// <summary>

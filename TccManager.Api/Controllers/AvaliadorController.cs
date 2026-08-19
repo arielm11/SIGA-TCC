@@ -1,7 +1,9 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Services.Pdf;
 using TccManager.Shared.DTOs;
@@ -30,29 +32,43 @@ public class AvaliadorController : ControllerBase
         if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int profId))
             return Unauthorized();
 
-        var convites = await _context.BancaAvaliadores
+        // A extensão real (.pdf/.doc/.docx/.zip) não é calculável em SQL — Path.GetExtension
+        // roda em memória sobre o caminho já materializado, então a projeção fica em duas
+        // etapas: busca o caminho da Entrega Final (SQL) e só depois deriva a extensão (C#).
+        var convitesBrutos = await _context.BancaAvaliadores
             .Include(ba => ba.Banca)
                 .ThenInclude(b => b!.Tcc)
                     .ThenInclude(t => t!.Aluno)
             .Include(ba => ba.Banca!.Tcc!.Orientador)
-            .Include(ba => ba.Banca!.Tcc!.Entregas) 
+            .Include(ba => ba.Banca!.Tcc!.Entregas)
             .Where(ba => ba.ProfessorId == profId && ba.Banca!.Tcc!.Status != StatusTcc.Finalizado)
-            .Select(ba => new ConviteBancaDto
+            .Select(ba => new
             {
-                BancaId = ba.BancaId,
+                ba.BancaId,
                 DataHora = ba.Banca!.DataHora,
                 Local = ba.Banca.Local,
                 TccTitulo = ba.Banca.Tcc!.Titulo,
                 NomeAluno = ba.Banca.Tcc.Aluno!.Nome,
                 NomeOrientador = ba.Banca.Tcc.Orientador!.Nome,
-
-                ArquivoFinalCaminho = ba.Banca.Tcc.Entregas
+                ArquivoFinal = ba.Banca.Tcc.Entregas
                     .Where(e => e.Tipo == TipoEntrega.Final)
-                    .Select(e => e.ArquivoCaminho)
-                    .FirstOrDefault() ?? ""
+                    .Select(e => new { e.Id, e.ArquivoCaminho })
+                    .FirstOrDefault()
             })
             .OrderBy(c => c.DataHora)
             .ToListAsync();
+
+        var convites = convitesBrutos.Select(c => new ConviteBancaDto
+        {
+            BancaId = c.BancaId,
+            DataHora = c.DataHora,
+            Local = c.Local,
+            TccTitulo = c.TccTitulo,
+            NomeAluno = c.NomeAluno,
+            NomeOrientador = c.NomeOrientador,
+            ArquivoFinalEntregaId = c.ArquivoFinal?.Id,
+            ArquivoFinalExtensao = c.ArquivoFinal != null ? Path.GetExtension(c.ArquivoFinal.ArquivoCaminho) : null
+        }).ToList();
 
         return Ok(convites);
     }
@@ -65,6 +81,7 @@ public class AvaliadorController : ControllerBase
     /// qualquer banca apenas trocando o idBanca na URL.
     /// </summary>
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
+    [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
     public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

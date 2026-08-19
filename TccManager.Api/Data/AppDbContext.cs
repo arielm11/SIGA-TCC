@@ -32,6 +32,25 @@ public class AppDbContext : DbContext
             entity.HasIndex(u => u.Email).IsUnique();
         });
 
+        modelBuilder.Entity<Entrega>(entity =>
+        {
+            // Reforça no banco a invariante "no máximo 1 entrega FINAL por TCC" (RN03),
+            // como backstop atômico ao AnyAsync de aplicação em
+            // TccController.EnviarEntrega — que sozinho não impede duas requisições
+            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL.
+            // TipoEntrega.Final == 1 (sem HasConversion, enum persistido como int).
+            //
+            // Substitui o índice não-único de convenção (FK em TccId): o EF Core não
+            // suporta dois índices distintos sobre o mesmo conjunto de propriedades no
+            // Fluent API (a segunda definição sempre sobrescreve a primeira no modelo,
+            // mesmo com HasDatabaseName diferente) — trade-off aceito, não bloqueante,
+            // registrado em docs/implementacao.
+            entity.HasIndex(e => e.TccId)
+                .IsUnique()
+                .HasFilter("[Tipo] = 1")
+                .HasDatabaseName("UX_Entregas_TccId_Final");
+        });
+
         modelBuilder.Entity<BancaAvaliador>()
             .HasOne(ba => ba.Professor)
             .WithMany()
