@@ -391,10 +391,12 @@ public class TccNotificationService : ITccNotificationService
     {
         var coordenadores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Coordenador && u.Ativo)
-            .Select(u => new { u.Nome, u.Email })
+            .Select(u => new { u.Id, u.Email })
             .ToListAsync();
 
-        return coordenadores.Select(c => ($"Coordenador {c.Nome}", (string?)c.Email));
+        // "Papel" só serve para o log de auditoria de ColetarEmails quando o e-mail está
+        // vazio/inválido — usa o Id, nunca o nome (PII), mesma disciplina do resto do projeto.
+        return coordenadores.Select(c => ($"Coordenador {c.Id}", (string?)c.Email));
     }
 
     private string MontarLinkRascunhoExterno(string tokenBruto) =>

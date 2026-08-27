@@ -12,6 +12,16 @@ namespace TccManager.Api.Services.Email;
 /// é o ponto central de log de falha (RF4/RNF1). Registrado como Singleton: um SmtpClient
 /// novo é criado a cada chamada, pois o cliente MailKit não é thread-safe para reuso
 /// concorrente entre múltiplos envios simultâneos.
+///
+/// <c>Smtp:UseSsl = false</c> usa <see cref="SecureSocketOptions.StartTls"/> (obrigatório,
+/// não <c>StartTlsWhenAvailable</c> — achado de segurança #70/A04: a versão anterior fazia
+/// downgrade silencioso para texto puro se o servidor não anunciasse STARTTLS, expondo
+/// credenciais SMTP e o corpo do e-mail a um MITM/STARTTLS-stripping). Isso exige que o
+/// catcher local de desenvolvimento (smtp4dev/Papercut) anuncie STARTTLS com um certificado
+/// confiado pela máquina — não há bypass de validação de certificado neste código, de
+/// propósito. Se o catcher em uso não suportar isso, prefira apontar <c>Smtp:UseSsl = true</c>
+/// para uma porta com TLS implícito (<see cref="SecureSocketOptions.SslOnConnect"/>) em vez
+/// de reintroduzir um modo "downgrade permitido" aqui.
 /// </summary>
 public class MailKitEmailService : IEmailService
 {
@@ -40,9 +50,12 @@ public class MailKitEmailService : IEmailService
 
         using var client = new SmtpClient();
 
+        // StartTls (não StartTlsWhenAvailable): exige que o servidor suporte STARTTLS e
+        // falha a conexão se não suportar, em vez de fazer downgrade silencioso para texto
+        // puro quando o servidor não anuncia a extensão.
         var opcoesSocket = _settings.Smtp.UseSsl
             ? SecureSocketOptions.SslOnConnect
-            : SecureSocketOptions.StartTlsWhenAvailable;
+            : SecureSocketOptions.StartTls;
 
         await client.ConnectAsync(_settings.Smtp.Host, _settings.Smtp.Port, opcoesSocket, cancellationToken);
 

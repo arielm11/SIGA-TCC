@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TccManager.Api.Services.Notifications;
 
@@ -13,17 +14,39 @@ public class FileEmailTemplateRenderer : IEmailTemplateRenderer
 {
     private static readonly ConcurrentDictionary<string, string> Cache = new();
 
+    private static readonly Regex PlaceholderRegex = new(@"\{\{(\w+)\}\}", RegexOptions.Compiled);
+
+    private readonly ILogger<FileEmailTemplateRenderer> _logger;
+
+    public FileEmailTemplateRenderer(ILogger<FileEmailTemplateRenderer> logger)
+    {
+        _logger = logger;
+    }
+
     public string Render(string chaveTemplate, IReadOnlyDictionary<string, string> valores)
     {
         var template = Cache.GetOrAdd(chaveTemplate, CarregarTemplate);
 
-        var corpo = template;
-        foreach (var (chave, valor) in valores)
+        // Substituição em uma única passada (Regex.Replace + MatchEvaluator), não N chamadas
+        // sequenciais de string.Replace: se o valor de um placeholder contivesse a sintaxe
+        // "{{OutraChave}}", uma substituição posterior o pegaria de novo (dupla substituição).
+        // Placeholder sem entrada em "valores" permanece intacto no corpo (mesmo comportamento
+        // anterior, que só substituía as chaves fornecidas) — mas agora gera um Warning, para
+        // que um template editado sem atualizar o código que o preenche não vaze "{{Chave}}"
+        // cru para o destinatário em silêncio.
+        return PlaceholderRegex.Replace(template, match =>
         {
-            corpo = corpo.Replace($"{{{{{chave}}}}}", valor ?? string.Empty);
-        }
+            var chave = match.Groups[1].Value;
 
-        return corpo;
+            if (valores.TryGetValue(chave, out var valor))
+                return valor ?? string.Empty;
+
+            _logger.LogWarning(
+                "Placeholder {Chave} do template {ChaveTemplate} não foi fornecido; permanecerá literal no corpo do e-mail.",
+                chave,
+                chaveTemplate);
+            return match.Value;
+        });
     }
 
     private static string CarregarTemplate(string chaveTemplate)

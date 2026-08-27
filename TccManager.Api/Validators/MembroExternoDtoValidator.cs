@@ -4,9 +4,9 @@ using TccManager.Shared.DTOs;
 
 namespace TccManager.Api.Validators;
 
-public class UsuarioDtoValidator : AbstractValidator<UsuarioDto>
+public class MembroExternoDtoValidator : AbstractValidator<MembroExternoDto>
 {
-    public UsuarioDtoValidator()
+    public MembroExternoDtoValidator()
     {
         RuleFor(dto => dto.Nome)
             .NotEmpty().WithMessage("O nome é obrigatório.");
@@ -21,5 +21,8 @@ public class UsuarioDtoValidator : AbstractValidator<UsuarioDto>
             // (ParseException, descartado com um warning). Mesmo parser nas duas pontas.
             .Must(email => MailboxAddress.TryParse(email, out _))
                 .WithMessage("O email informado não é aceito pelo servidor de e-mail.");
+
+        RuleFor(dto => dto.Instituicao)
+            .NotEmpty().WithMessage("A instituição é obrigatória.");
     }
 }
