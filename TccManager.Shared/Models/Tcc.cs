@@ -10,13 +10,16 @@ public class Tcc
     public int Id { get; set; }
 
     [Required]
+    [MaxLength(200)]
     public string Titulo { get; set; } = string.Empty;
 
     [Required]
+    [MaxLength(4000)]
     public string Resumo { get; set; } = string.Empty;
 
     public string? ArquivoCaminho { get; set; }
-    
+
+    [MaxLength(2000)]
     public string? MotivoRejeicao { get; set; }
 
     public DateTime DataCriacao { get; set; } = DateTime.UtcNow;

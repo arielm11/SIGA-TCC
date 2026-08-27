@@ -328,6 +328,96 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         Assert.DoesNotContain("já registrado", corpoErro, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Issue #73: motivoReprovacao é parâmetro de form escalar, não passa pelo
+    // FluentValidationActionFilter (que só intercepta DTOs de corpo) — o [StringLength] no
+    // próprio parâmetro precisa gerar 400 via o model binding padrão do [ApiController].
+    [Fact]
+    public async Task MotivoReprovacaoComMaisDe2000Caracteres_DeveRetornarBadRequest()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, new string('a', 2001)));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Fact]
+    public async Task MotivoReprovacaoComExatamente2000Caracteres_DeveReprovarTcc()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var motivo = new string('a', 2000);
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, motivo));
+
+        response.EnsureSuccessStatusCode();
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.Reprovado, tcc.Status);
+        Assert.Equal(motivo, tcc.MotivoRejeicao);
+    }
+
+    // Achado A10-1 da revisão de segurança (docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md):
+    // HtmlSanitizer codifica "&" em "&amp;" (5x maior) — um motivo de 2000 "&" passa no
+    // limite cru mas viraria 10000 caracteres sanitizados, estourando a coluna
+    // nvarchar(2000). A checagem no controller mede o valor JÁ sanitizado, ANTES do upload
+    // do arquivo da ata (sem deixar arquivo órfão em storage).
+    [Fact]
+    public async Task MotivoReprovacaoSoComTagsHtml_SanitizaParaVazio_DeveRetornarBadRequest()
+    {
+        // Correção pós-QA da issue #73: a checagem de obrigatoriedade precisa rodar sobre o
+        // valor JÁ sanitizado, não o cru — "<b></b>" não é whitespace no valor cru, mas
+        // sanitiza para string vazia (HtmlSanitizer remove a tag e não sobra texto interno).
+        // Checar o valor cru deixaria isso passar como se fosse um motivo válido.
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, "<b></b>"));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpoErro = await response.Content.ReadAsStringAsync();
+        Assert.Contains("obrigatório informar o motivo", corpoErro, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Fact]
+    public async Task MotivoReprovacaoDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveRetornarBadRequest()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, new string('&', 2000)));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+
+        Assert.True(!Directory.Exists(factory.PastaAtas) || Directory.GetFiles(factory.PastaAtas).Length == 0);
+    }
+
     [Fact]
     public async Task Regressao_NotaDecimal_NaoDeveSerAfetadaPelaCulturaDoSistema()
     {

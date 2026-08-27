@@ -35,6 +35,31 @@ public class UsuarioDtoValidatorTests
         Assert.True(result.IsValid);
     }
 
+    [Fact]
+    public void NomeComExatamente200Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de Usuario.Nome ([MaxLength(200)]).
+        var dto = DtoValido();
+        dto.Nome = new string('a', 200);
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void NomeComMaisDe200Caracteres_DeveFalhar()
+    {
+        var dto = DtoValido();
+        dto.Nome = new string('a', 201);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(UsuarioDto.Nome)
+                                         && e.ErrorMessage == "O nome deve ter no máximo 200 caracteres.");
+    }
+
     [Theory]
     [InlineData("a b@c.com")] // espaço no local-part: EmailAddress() aceita, MimeKit não
     [InlineData("<script>@x.com")]

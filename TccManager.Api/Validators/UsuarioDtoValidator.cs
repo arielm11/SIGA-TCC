@@ -9,7 +9,8 @@ public class UsuarioDtoValidator : AbstractValidator<UsuarioDto>
     public UsuarioDtoValidator()
     {
         RuleFor(dto => dto.Nome)
-            .NotEmpty().WithMessage("O nome é obrigatório.");
+            .NotEmpty().WithMessage("O nome é obrigatório.")
+            .MaximumLength(200).WithMessage("O nome deve ter no máximo 200 caracteres.");
 
         RuleFor(dto => dto.Email)
             .NotEmpty().WithMessage("O email é obrigatório.")

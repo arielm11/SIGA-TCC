@@ -1,3 +1,4 @@
+using TccManager.Api.Services;
 using TccManager.Api.Validators;
 using TccManager.Shared.DTOs;
 using Xunit;
@@ -14,7 +15,7 @@ namespace TccManager.Tests.Validators;
 /// </summary>
 public class MembroExternoDtoValidatorTests
 {
-    private readonly MembroExternoDtoValidator _validator = new();
+    private readonly MembroExternoDtoValidator _validator = new(new HtmlSanitizerService());
 
     private static MembroExternoDto DtoValido() => new()
     {
@@ -94,6 +95,84 @@ public class MembroExternoDtoValidatorTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Email)
                                          && e.ErrorMessage == "O email informado não é válido.");
+    }
+
+    [Fact]
+    public void NomeComExatamente200Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de MembroExterno.Nome ([MaxLength(200)]).
+        var dto = DtoValido();
+        dto.Nome = new string('a', 200);
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void NomeComMaisDe200Caracteres_DeveFalhar()
+    {
+        var dto = DtoValido();
+        dto.Nome = new string('a', 201);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Nome)
+                                         && e.ErrorMessage == "O nome deve ter no máximo 200 caracteres.");
+    }
+
+    [Fact]
+    public void InstituicaoComExatamente300Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de MembroExterno.Instituicao ([MaxLength(300)]).
+        var dto = DtoValido();
+        dto.Instituicao = new string('a', 300);
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void InstituicaoComMaisDe300Caracteres_DeveFalhar()
+    {
+        var dto = DtoValido();
+        dto.Instituicao = new string('a', 301);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Instituicao)
+                                         && e.ErrorMessage == "A instituição deve ter no máximo 300 caracteres.");
+    }
+
+    [Fact]
+    public void NomeDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveFalhar()
+    {
+        // Achado A10-1 da revisão de segurança — ver PropostaTccDtoValidatorTests para o
+        // raciocínio completo (HtmlSanitizer codifica "&" em "&amp;", 5x maior).
+        var dto = DtoValido();
+        dto.Nome = new string('&', 200);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Nome)
+                                         && e.ErrorMessage == "O nome deve ter no máximo 200 caracteres.");
+    }
+
+    [Fact]
+    public void InstituicaoDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveFalhar()
+    {
+        var dto = DtoValido();
+        dto.Instituicao = new string('&', 300);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Instituicao)
+                                         && e.ErrorMessage == "A instituição deve ter no máximo 300 caracteres.");
     }
 
     [Fact]

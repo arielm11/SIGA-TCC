@@ -133,7 +133,10 @@ public class TccController : ControllerBase
 
     [HttpPost("entregas")]
     [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> EnviarEntrega([FromForm] string tituloEntrega, [FromForm] TipoEntrega tipo, IFormFile arquivo)
+    public async Task<IActionResult> EnviarEntrega(
+        [FromForm] string tituloEntrega,
+        [FromForm] TipoEntrega tipo,
+        IFormFile arquivo)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
@@ -147,6 +150,21 @@ public class TccController : ControllerBase
         var jaEnviouFinal = await _context.Entregas.AnyAsync(e => e.TccId == tcc.Id && e.Tipo == TipoEntrega.Final);
         if (jaEnviouFinal)
             return BadRequest("A versão FINAL já foi enviada. O ciclo de entregas está encerrado.");
+
+        // Issue #73 (achado A10-1 da revisão de segurança,
+        // docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md): tituloEntrega é
+        // parâmetro de form escalar, não passa pelo FluentValidationActionFilter — e não dá
+        // pra usar [StringLength] no parâmetro porque isso validaria o valor CRU, não o
+        // sanitizado que de fato é persistido (HtmlSanitizer só CODIFICA entidades, nunca
+        // decodifica — um título de 200 caracteres crus pode virar mais de 200 depois de
+        // sanitizado, e estourar a coluna nvarchar(200) no INSERT). Sanitiza primeiro, mede
+        // depois, ANTES do upload do arquivo (para não deixar arquivo órfão em storage por
+        // causa de um título grande demais).
+        var tituloSanitizado = _sanitizerService.Sanitizar(tituloEntrega) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(tituloSanitizado))
+            return BadRequest("O título da entrega é obrigatório.");
+        if (tituloSanitizado.Length > 200)
+            return BadRequest("O título da entrega deve ter no máximo 200 caracteres.");
 
         if (arquivo == null || arquivo.Length == 0)
             return BadRequest("Nenhum arquivo enviado.");
@@ -183,7 +201,7 @@ public class TccController : ControllerBase
         var entrega = new Entrega
         {
             TccId = tcc.Id,
-            Titulo = _sanitizerService.Sanitizar(tituloEntrega)!,
+            Titulo = tituloSanitizado,
             ArquivoCaminho = caminho,
             Tipo = tipo,
             DataEnvio = DateTime.UtcNow

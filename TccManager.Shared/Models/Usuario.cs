@@ -11,6 +11,7 @@ public class Usuario
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public int Id { get; set; }
 
+    [MaxLength(200)]
     public string Nome { get; set; } = string.Empty;
 
     [MaxLength(450)]

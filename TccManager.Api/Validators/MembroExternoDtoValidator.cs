@@ -1,15 +1,25 @@
 using FluentValidation;
 using MimeKit;
+using TccManager.Api.Services;
 using TccManager.Shared.DTOs;
 
 namespace TccManager.Api.Validators;
 
 public class MembroExternoDtoValidator : AbstractValidator<MembroExternoDto>
 {
-    public MembroExternoDtoValidator()
+    public MembroExternoDtoValidator(ISanitizerService sanitizerService)
     {
+        // Issue #73 (achado A10-1 da revisão de segurança): CoordenadorController persiste
+        // _sanitizerService.Sanitizar(dto.Nome/Instituicao), não o valor cru — HtmlSanitizer
+        // só CODIFICA entidades (nunca decodifica), então validar o comprimento cru permitia
+        // um Nome/Instituicao dentro do limite estourar a coluna no INSERT. Medir o
+        // comprimento do valor já sanitizado fecha esse descompasso. Email NÃO é sanitizado
+        // (não passa por _sanitizerService.Sanitizar em nenhum ponto), então continua medido
+        // pelo valor cru.
         RuleFor(dto => dto.Nome)
-            .NotEmpty().WithMessage("O nome é obrigatório.");
+            .NotEmpty().WithMessage("O nome é obrigatório.")
+            .Must(nome => (sanitizerService.Sanitizar(nome)?.Length ?? 0) <= 200)
+                .WithMessage("O nome deve ter no máximo 200 caracteres.");
 
         RuleFor(dto => dto.Email)
             .NotEmpty().WithMessage("O email é obrigatório.")
@@ -23,6 +33,8 @@ public class MembroExternoDtoValidator : AbstractValidator<MembroExternoDto>
                 .WithMessage("O email informado não é aceito pelo servidor de e-mail.");
 
         RuleFor(dto => dto.Instituicao)
-            .NotEmpty().WithMessage("A instituição é obrigatória.");
+            .NotEmpty().WithMessage("A instituição é obrigatória.")
+            .Must(instituicao => (sanitizerService.Sanitizar(instituicao)?.Length ?? 0) <= 300)
+                .WithMessage("A instituição deve ter no máximo 300 caracteres.");
     }
 }
