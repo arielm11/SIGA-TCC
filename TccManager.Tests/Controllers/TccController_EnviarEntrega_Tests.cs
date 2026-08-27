@@ -227,6 +227,67 @@ public class TccController_EnviarEntrega_Tests
         Assert.Single(Directory.GetFiles(factory.PastaEntregas));
     }
 
+    // Issue #73: tituloEntrega é parâmetro de form escalar, não passa pelo
+    // FluentValidationActionFilter (que só intercepta DTOs de corpo) — o [StringLength] no
+    // próprio parâmetro precisa gerar 400 via o model binding padrão do [ApiController].
+    [Fact]
+    public async Task TituloEntregaComMaisDe200Caracteres_DeveRetornarBadRequest()
+    {
+        using var factory = new WebRootIsolatedApiFactory();
+        var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
+        var client = factory.CreateClientAutenticado(idAluno, "Aluno");
+
+        var response = await client.PostAsync(
+            "/api/tcc/entregas",
+            MontarFormEntrega(new string('a', 201), TipoEntrega.Parcial, "entrega.pdf"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var houveEntrega = await context.Entregas.AnyAsync(e => e.TccId == tccId);
+        Assert.False(houveEntrega);
+    }
+
+    [Fact]
+    public async Task TituloEntregaComExatamente200Caracteres_DeveRetornarOk()
+    {
+        using var factory = new WebRootIsolatedApiFactory();
+        await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
+        var client = factory.CreateClientAutenticado(idAluno, "Aluno");
+
+        var response = await client.PostAsync(
+            "/api/tcc/entregas",
+            MontarFormEntrega(new string('a', 200), TipoEntrega.Parcial, "entrega.pdf"));
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    // Achado A10-1 da revisão de segurança (docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md):
+    // HtmlSanitizer codifica "&" em "&amp;" (5x maior) — um título de 200 "&" passa no limite
+    // cru mas viraria 1000 caracteres sanitizados, estourando a coluna nvarchar(200). A
+    // checagem no controller mede o valor JÁ sanitizado.
+    [Fact]
+    public async Task TituloEntregaDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveRetornarBadRequest()
+    {
+        using var factory = new WebRootIsolatedApiFactory();
+        var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
+        var client = factory.CreateClientAutenticado(idAluno, "Aluno");
+
+        var response = await client.PostAsync(
+            "/api/tcc/entregas",
+            MontarFormEntrega(new string('&', 200), TipoEntrega.Parcial, "entrega.pdf"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var houveEntrega = await context.Entregas.AnyAsync(e => e.TccId == tccId);
+        Assert.False(houveEntrega);
+
+        // Núcleo do achado: nenhum arquivo órfão sobra em storage — a checagem acontece
+        // ANTES do upload.
+        Assert.True(!Directory.Exists(factory.PastaEntregas) || Directory.GetFiles(factory.PastaEntregas).Length == 0);
+    }
+
     // RF5 — bloqueio por extensão de arquivo não permitida
     [Theory]
     [InlineData("entrega.exe")]

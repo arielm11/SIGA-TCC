@@ -92,4 +92,51 @@ public class AgendarBancaDtoValidatorTests
 
         Assert.False(result.IsValid);
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void LocalVazio_DeveFalhar(string? local)
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = local!;
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.Local)
+                                         && e.ErrorMessage == "O local ou link é obrigatório.");
+    }
+
+    [Fact]
+    public void LocalComExatamente300Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de Banca.Local ([MaxLength(300)]).
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = new string('a', 300);
+
+        var result = validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void LocalComMaisDe300Caracteres_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = new string('a', 301);
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.Local)
+                                         && e.ErrorMessage == "O local ou link deve ter no máximo 300 caracteres.");
+    }
 }

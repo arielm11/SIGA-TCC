@@ -284,7 +284,11 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
-    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta, [FromForm] string? motivoReprovacao)
+    public async Task<IActionResult> RegistrarResultadoBanca(
+        int idBanca,
+        [FromForm] decimal notaFinal,
+        [FromForm] IFormFile arquivoAta,
+        [FromForm] string? motivoReprovacao)
     {
         var banca = await _context.Banca
             .Include(b => b.Tcc)
@@ -301,8 +305,25 @@ public class CoordenadorController : ControllerBase
 
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
-        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
-            return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
+        // Issue #73 (achado A10-1 da revisão de segurança,
+        // docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md): motivoReprovacao é
+        // parâmetro de form escalar, não passa pelo FluentValidationActionFilter — e não dá
+        // pra usar [StringLength] no parâmetro porque isso validaria o valor CRU, não o
+        // sanitizado que de fato é persistido (HtmlSanitizer só CODIFICA entidades, nunca
+        // decodifica). Sanitiza primeiro, valida (obrigatoriedade E tamanho) sobre o valor JÁ
+        // sanitizado — não o cru: um motivo só com tags HTML (ex.: "<b></b>") sanitiza para
+        // string vazia, e checar IsNullOrWhiteSpace no valor cru deixaria isso passar como se
+        // fosse um motivo válido. Tudo ANTES do upload do arquivo da ata, para não deixar
+        // arquivo órfão em storage por causa de um motivo inválido.
+        string? motivoSanitizado = null;
+        if (!aprovado)
+        {
+            motivoSanitizado = _sanitizerService.Sanitizar(motivoReprovacao);
+            if (string.IsNullOrWhiteSpace(motivoSanitizado))
+                return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
+            if (motivoSanitizado.Length > 2000)
+                return BadRequest("O motivo da reprovação deve ter no máximo 2000 caracteres.");
+        }
 
         string caminho;
         using (var stream = arquivoAta.OpenReadStream())
@@ -321,7 +342,7 @@ public class CoordenadorController : ControllerBase
         else
         {
             banca.Tcc.Status = StatusTcc.Reprovado;
-            banca.Tcc.MotivoRejeicao = _sanitizerService.Sanitizar(motivoReprovacao);
+            banca.Tcc.MotivoRejeicao = motivoSanitizado;
         }
 
         await _context.SaveChangesAsync();
