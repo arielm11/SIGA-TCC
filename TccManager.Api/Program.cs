@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation;
@@ -7,6 +9,7 @@ using TccManager.Api.Binders;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Filters;
+using TccManager.Api.Logging;
 using TccManager.Api.Middleware;
 using TccManager.Api.ModelBinding;
 using TccManager.Api.Services;
@@ -33,6 +36,62 @@ try
         {
             options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
         });
+
+    // Middleware de exceção global (issue #71) — ver GlobalExceptionHandler para o motivo de
+    // nunca devolver detalhe de exceção no corpo, em nenhum ambiente.
+    builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+    builder.Services.AddProblemDetails();
+
+    // Log estruturado de falha de validação (issue #71): envolve o factory PADRÃO do
+    // framework (usado tanto pelo filtro automático de ModelState do [ApiController] para
+    // DataAnnotations quanto por FluentValidationActionFilter, que delega para o mesmo
+    // IOptions<ApiBehaviorOptions>.Value.InvalidModelStateResponseFactory) — loga só os
+    // NOMES dos campos que falharam, nunca os valores submetidos, para dar visibilidade de
+    // abuso/fuzzing sem virar mais um lugar que registra dado de usuário.
+    //
+    // PostConfigure (não Configure): Configure<T> compõe na ordem de REGISTRO, então
+    // capturar o factory padrão do framework dependeria de este bloco vir depois de
+    // AddControllers(...) no arquivo — inverter as duas silenciosamente desativaria o log,
+    // sem erro nenhum (achado A06-1). PostConfigure roda sempre por último, independente de
+    // ordem de registro, e o guard abaixo falha o startup em vez de degradar em silêncio.
+    builder.Services.PostConfigure<ApiBehaviorOptions>(options =>
+    {
+        var factoryPadrao = options.InvalidModelStateResponseFactory
+            ?? throw new InvalidOperationException(
+                "ApiBehaviorOptions.InvalidModelStateResponseFactory padrão não estava configurado " +
+                "quando o wrapper de log de validação foi aplicado.");
+
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var logger = context.HttpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("TccManager.Api.ValidationFailures");
+
+            var campos = context.ModelState
+                .Where(kv => kv.Value?.Errors.Count > 0)
+                .Select(kv => kv.Key)
+                .ToArray();
+
+            // Ator (id de usuário autenticado, ou IP para requisição anônima — ex.: login,
+            // rascunho público): sem isso o log responde "qual campo falhou" mas não "quem
+            // está fuzzando", que é o objetivo declarado da issue (achado A09-3).
+            var usuarioId = context.HttpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var ator = usuarioId ?? $"anon:{context.HttpContext.Connection.RemoteIpAddress}";
+
+            // "campos" passado como array, não concatenado em string: preserva a estrutura
+            // (Serilog escapa cada elemento) em vez de virar uma única string opaca — e evita
+            // que uma chave de ModelState hostil (ex.: derivada de JSON path malformado, com
+            // CRLF) forje uma linha extra no sink de arquivo (achado A05-1).
+            logger.LogWarning(
+                "Falha de validação em {Method} {RequestPath}. Ator: {Ator}, Campos: {Campos}",
+                context.HttpContext.Request.Method,
+                RequestPathRedactor.Redigir(context.HttpContext.Request.Path.Value),
+                ator,
+                campos);
+
+            return factoryPadrao(context);
+        };
+    });
 
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
@@ -139,6 +198,10 @@ try
 
     app.UseMiddleware<CorrelationIdMiddleware>();
 
+    // Depois do CorrelationIdMiddleware (para o CorrelationId já estar no LogContext quando
+    // uma exceção é logada) e antes de tudo que pode lançar (roteamento, auth, controllers).
+    app.UseExceptionHandler();
+
     // MessageTemplate customizado para não expor o token bruto do rascunho no path
     // quando essa rota lançar exceção (nível Error, acima do MinimumLevel.Default).
     app.UseSerilogRequestLogging(options =>
@@ -146,11 +209,7 @@ try
         options.MessageTemplate = "HTTP {RequestMethod} {RequestPathRedacted} responded {StatusCode} in {Elapsed:0.0000} ms";
         options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
         {
-            var path = httpContext.Request.Path.Value ?? string.Empty;
-            var redigido = path.StartsWith("/api/rascunho-ata/", StringComparison.OrdinalIgnoreCase)
-                ? "/api/rascunho-ata/[REDACTED]"
-                : path;
-            diagnosticContext.Set("RequestPathRedacted", redigido);
+            diagnosticContext.Set("RequestPathRedacted", RequestPathRedactor.Redigir(httpContext.Request.Path.Value));
         };
     });
 

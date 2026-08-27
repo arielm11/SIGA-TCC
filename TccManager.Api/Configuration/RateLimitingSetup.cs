@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using TccManager.Api.Logging;
 
 namespace TccManager.Api.Configuration;
 
@@ -141,27 +142,12 @@ public static class RateLimitingSetup
                 logger.LogWarning(
                     "Requisição bloqueada por rate limiting. IP de origem: {RemoteIp}, Rota: {RequestPath}",
                     remoteIp,
-                    RedigirPath(httpContext.Request.Path.Value));
+                    RequestPathRedactor.Redigir(httpContext.Request.Path.Value));
 
                 return ValueTask.CompletedTask;
             };
         });
 
         return services;
-    }
-
-    // O path de /api/rascunho-ata/{token} carrega a credencial de portador no próprio
-    // path — nunca deve chegar ao log em claro (rota pública, sem outra forma de logar
-    // apenas o template da rota a partir do rate limiter).
-    private const string RascunhoAtaPathPrefix = "/api/rascunho-ata/";
-
-    private static string RedigirPath(string? path)
-    {
-        if (string.IsNullOrEmpty(path))
-            return "unknown";
-
-        return path.StartsWith(RascunhoAtaPathPrefix, StringComparison.OrdinalIgnoreCase)
-            ? $"{RascunhoAtaPathPrefix}[REDACTED]"
-            : path;
     }
 }

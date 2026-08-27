@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
@@ -68,8 +69,8 @@ public class TccController_CompensacaoUploadOrfao_Tests
         await SemearTccAprovadoAsync(factory);
         var client = factory.CreateClientAutenticado(IdAluno, "Aluno");
 
-        // O controller relança depois de compensar; o host de teste roda em Development, onde
-        // o DeveloperExceptionPageMiddleware converte a exceção em 500 (não há UseExceptionHandler).
+        // O controller relança depois de compensar; GlobalExceptionHandler (issue #71)
+        // intercepta e converte em 500.
         var resposta = await client.PostAsync("/api/tcc/entregas", MontarForm(tipo));
 
         Assert.Equal(HttpStatusCode.InternalServerError, resposta.StatusCode);
@@ -84,10 +85,13 @@ public class TccController_CompensacaoUploadOrfao_Tests
     }
 
     [Fact]
-    public async Task FalhaAoSalvarNoBanco_NaoMascaraOErroOriginal()
+    public async Task FalhaAoSalvarNoBanco_RespostaEhProblemDetailsGenericoSemDetalheDaExcecao()
     {
-        // A compensação é best-effort e nunca pode substituir/engolir a exceção que a causou:
-        // o erro que sobe é o do banco, não um erro de I/O da limpeza.
+        // Issue #71 (middleware de exceção global): o 500 nunca mais carrega a mensagem crua
+        // da exceção no corpo, em nenhum ambiente — GlobalExceptionHandler intercepta e
+        // devolve um ProblemDetails fixo. Ver GlobalExceptionHandlerTests para a prova, em
+        // nível de unidade, de que a exceção original (não uma substituta da compensação)
+        // continua chegando ao handler e sendo logada por inteiro no servidor.
         using var factory = new SaveChangesFalhaEntregaApiFactory();
         await SemearTccAprovadoAsync(factory);
         var client = factory.CreateClientAutenticado(IdAluno, "Aluno");
@@ -95,10 +99,38 @@ public class TccController_CompensacaoUploadOrfao_Tests
         var resposta = await client.PostAsync("/api/tcc/entregas", MontarForm(TipoEntrega.Parcial));
 
         Assert.Equal(HttpStatusCode.InternalServerError, resposta.StatusCode);
-        Assert.Contains(
-            SaveChangesFalhaEntregaApiFactory.MensagemDaFalha,
-            await resposta.Content.ReadAsStringAsync(),
-            StringComparison.Ordinal);
+        var corpo = await resposta.Content.ReadAsStringAsync();
+        Assert.Contains("Ocorreu um erro inesperado.", corpo, StringComparison.Ordinal);
+        Assert.DoesNotContain(SaveChangesFalhaEntregaApiFactory.MensagemDaFalha, corpo, StringComparison.Ordinal);
+        Assert.DoesNotContain("InvalidOperationException", corpo, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FalhaAoSalvarNoBanco_CorrelationIdNoHeaderENoCorpoBatem()
+    {
+        // Achado A09-1 (docs/seguranca/2026-08-19-fix-middleware-excecao-global.md): o
+        // ExceptionHandlerMiddleware do framework chama Response.Clear() antes de invocar
+        // GlobalExceptionHandler, apagando qualquer header setado antes por
+        // CorrelationIdMiddleware. Este teste sobe o pipeline real (não construção manual de
+        // HttpContext) para provar que, mesmo assim, o CorrelationId sobrevive e é o MESMO no
+        // header X-Correlation-Id e no campo correlationId do corpo.
+        using var factory = new SaveChangesFalhaEntregaApiFactory();
+        await SemearTccAprovadoAsync(factory);
+        var client = factory.CreateClientAutenticado(IdAluno, "Aluno");
+
+        var resposta = await client.PostAsync("/api/tcc/entregas", MontarForm(TipoEntrega.Parcial));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, resposta.StatusCode);
+
+        Assert.True(resposta.Headers.TryGetValues("X-Correlation-Id", out var valoresHeader));
+        var correlationIdHeader = Assert.Single(valoresHeader!);
+        Assert.True(Guid.TryParse(correlationIdHeader, out _));
+
+        var corpo = await resposta.Content.ReadAsStringAsync();
+        using var documento = JsonDocument.Parse(corpo);
+        var correlationIdCorpo = documento.RootElement.GetProperty("correlationId").GetString();
+
+        Assert.Equal(correlationIdHeader, correlationIdCorpo);
     }
 
     [Fact]
