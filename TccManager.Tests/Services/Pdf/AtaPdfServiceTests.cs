@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using QuestPDF.Infrastructure;
 using TccManager.Api.Data;
@@ -41,7 +42,7 @@ public class AtaPdfServiceTests
             Instituicao = "Instituto de Teste",
             Curso = "Ciência da Computação"
         });
-        return new AtaPdfService(context, options);
+        return new AtaPdfService(context, options, NullLogger<AtaPdfService>.Instance);
     }
 
     private static async Task<int> SemearBancaAsync(
@@ -150,6 +151,110 @@ public class AtaPdfServiceTests
         Assert.Equal(AtaPdfResultadoStatus.Sucesso, resultado.Status);
         Assert.NotNull(resultado.PdfBytes);
         AssertAssinaturaPdf(resultado.PdfBytes!);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_TccOrfao_RetornaBancaNaoEncontrada_SemLancarNRE()
+    {
+        // Issue #72: Banca.TccId aponta para um Tcc que não existe (dado inconsistente — o
+        // provider InMemory não reforça a FK como o SQL Server faria). Comportamento real
+        // observado: como Banca.TccId é um FK obrigatório, o EF Core trata a navegação Tcc
+        // como relação "required" e usa semântica de INNER JOIN no Include — a Banca inteira
+        // some do resultado da query em vez de vir com Tcc nulo. Por isso o Status aqui é
+        // BancaNaoEncontrada (não DadosInconsistentes): o núcleo do achado da issue (a
+        // NullReferenceException do antigo "Tcc!") já não acontece, só por outro caminho.
+        // TentarValidarConsistencia mantém o guard de banca.Tcc nulo mesmo assim, como defesa
+        // caso o carregamento mude no futuro (ex.: AsSplitQuery, FK deixar de ser obrigatório).
+        using var context = NovoContexto();
+        var banca = new Banca { TccId = 999, DataHora = DateTime.UtcNow.AddDays(-1), Local = "Auditório 1", NotaFinal = 85m };
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaFinalAsync(banca.Id);
+
+        Assert.Equal(AtaPdfResultadoStatus.BancaNaoEncontrada, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_AvaliadorComProfessorOrfao_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Issue #72: BancaAvaliador.ProfessorId aponta para um Usuario que não existe —
+        // o "Professor!" em AtaPdfService lançava NullReferenceException aqui.
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: 85m, statusTcc: StatusTcc.Finalizado);
+        context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = bancaId, ProfessorId = 999 });
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaFinalAsync(bancaId);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_SemNenhumAvaliador_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Achado A06-1 da revisão de segurança: sem este check, uma banca sem avaliador
+        // nenhum gerava uma ata "de sucesso" sem membros de banca nem assinaturas.
+        using var context = NovoContexto();
+        var aluno = new Usuario { Nome = "Aluno", Email = "aluno2@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true };
+        context.Usuarios.Add(aluno);
+        await context.SaveChangesAsync();
+        var tcc = new Tcc { Titulo = "TCC sem avaliador", Resumo = "r", AlunoId = aluno.Id, Status = StatusTcc.Finalizado, DataCriacao = DateTime.UtcNow };
+        context.Tccs.Add(tcc);
+        await context.SaveChangesAsync();
+        var banca = new Banca { TccId = tcc.Id, DataHora = DateTime.UtcNow.AddDays(-1), Local = "Auditório 1", NotaFinal = 85m };
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaFinalAsync(banca.Id);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_OrientadorOrfao_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Achado A08-1 da revisão de segurança: OrientadorId é FK opcional, então um
+        // OrientadorId órfão não lançava NRE (MontarModel usa "?.Nome ?? "-""), mas mascarava
+        // silenciosamente a inconsistência como "sem orientador atribuído".
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: 85m, statusTcc: StatusTcc.Finalizado);
+        var banca = await context.Banca.FirstAsync(b => b.Id == bancaId);
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == banca.TccId);
+        tcc.OrientadorId = 999;
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaFinalAsync(bancaId);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_AvaliadorComProfessorEMembroExternoAmbosPreenchidos_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Achado A08-2 da revisão de segurança: a validação exige EXATAMENTE um dos dois FKs,
+        // não "pelo menos um" — com os dois preenchidos, MontarModel escolhia o Professor e
+        // descartava o MembroExterno da ata em silêncio.
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: 85m, statusTcc: StatusTcc.Finalizado, comAvaliadorExterno: true);
+        var avaliadorInterno = await context.BancaAvaliadores.FirstAsync(a => a.BancaId == bancaId && a.ProfessorId != null);
+        var membroExterno = await context.MembrosExternos.FirstAsync();
+        avaliadorInterno.MembroExternoId = membroExterno.Id;
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaFinalAsync(bancaId);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
     }
 
     private static void AssertAssinaturaPdf(byte[] bytes)

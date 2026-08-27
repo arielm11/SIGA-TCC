@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using QuestPDF.Infrastructure;
 using TccManager.Api.Data;
@@ -41,7 +42,7 @@ public class AtaPdfServiceRascunhoTests
             Instituicao = "Instituto de Teste",
             Curso = "Ciência da Computação"
         });
-        return new AtaPdfService(context, options);
+        return new AtaPdfService(context, options, NullLogger<AtaPdfService>.Instance);
     }
 
     private static async Task<int> SemearBancaAsync(
@@ -84,6 +85,41 @@ public class AtaPdfServiceRascunhoTests
 
         await context.SaveChangesAsync();
         return banca.Id;
+    }
+
+    [Fact]
+    public async Task GerarAtaRascunho_AvaliadorComMembroExternoOrfao_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Issue #72: BancaAvaliador.MembroExternoId aponta para um MembroExterno que não
+        // existe — o "MembroExterno!" em AtaPdfService lançava NullReferenceException aqui.
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: null, statusTcc: StatusTcc.AguardandoDefesa);
+        context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = bancaId, MembroExternoId = 999 });
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaRascunhoAsync(bancaId);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaRascunho_AvaliadorSemProfessorNemMembroExterno_RetornaDadosInconsistentes_SemPdf()
+    {
+        // Issue #72: BancaAvaliador sem nenhum dos dois FKs preenchidos — viola a invariante
+        // de que todo avaliador é interno OU externo. Antes desta issue caía no ramo
+        // "MembroExterno!" (ProfessorId == null) e lançava NullReferenceException.
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: null, statusTcc: StatusTcc.AguardandoDefesa);
+        context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = bancaId });
+        await context.SaveChangesAsync();
+        var servico = NovoServico(context);
+
+        var resultado = await servico.GerarAtaRascunhoAsync(bancaId);
+
+        Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
+        Assert.Null(resultado.PdfBytes);
     }
 
     private static void AssertAssinaturaPdf(byte[] bytes)

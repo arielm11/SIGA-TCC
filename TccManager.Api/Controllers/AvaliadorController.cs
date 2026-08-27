@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Middleware;
 using TccManager.Api.Services.Pdf;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -23,6 +24,21 @@ public class AvaliadorController : ControllerBase
     {
         _context = context;
         _ataPdfService = ataPdfService;
+    }
+
+    // Issue #72: mesmo raciocínio do CorrelationId em GlobalExceptionHandler (issue #71) —
+    // sem ele, "contate o suporte" não dá ao suporte como localizar o log com o motivo
+    // específico da inconsistência.
+    private ObjectResult ErroDadosInconsistentesAtaPdf()
+    {
+        var correlationId = HttpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
+        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title = "Não foi possível gerar a ata.",
+            Detail = "Dados da banca inconsistentes. Contate o suporte.",
+            Extensions = { ["correlationId"] = correlationId }
+        });
     }
 
     [HttpGet("meus-convites")]
@@ -98,9 +114,11 @@ public class AvaliadorController : ControllerBase
 
         return resultado.Status switch
         {
+            AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf"),
             AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
             AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
-            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf")
+            AtaPdfResultadoStatus.DadosInconsistentes => ErroDadosInconsistentesAtaPdf(),
+            _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
         };
     }
 }
