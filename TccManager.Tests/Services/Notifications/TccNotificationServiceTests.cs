@@ -33,7 +33,7 @@ public class TccNotificationServiceTests
     private static TccNotificationService CriarServico(AppDbContext context, FakeEmailQueue queue)
         => new(
             context,
-            new FileEmailTemplateRenderer(),
+            new FileEmailTemplateRenderer(NullLogger<FileEmailTemplateRenderer>.Instance),
             queue,
             NullLogger<TccNotificationService>.Instance,
             new RascunhoAtaTokenService(context),
