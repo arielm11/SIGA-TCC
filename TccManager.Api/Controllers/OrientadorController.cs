@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
@@ -29,7 +31,8 @@ public class OrientadorController : ControllerBase
     }
 
     [HttpGet("dashboard")]
-    public async Task<IActionResult> GetDaboard([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetDaboard([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
@@ -47,7 +50,7 @@ public class OrientadorController : ControllerBase
                 NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconecido",
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
-            }).ToPagedResultAsync(paginacao);
+            }).ToPagedResultAsync(paginacao, cancellationToken);
 
         var ativos = await _context.Tccs
             .Include(t => t.Aluno)
@@ -60,7 +63,7 @@ public class OrientadorController : ControllerBase
                 NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconecido",
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
-            }).ToListAsync();
+            }).ToListAsync(cancellationToken);
 
         var dashboard = new DashboardOrientadorDto
         {

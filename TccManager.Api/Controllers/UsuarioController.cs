@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
@@ -283,8 +285,15 @@ public class UsuarioController : ControllerBase
         return Ok("Usuário deletado com sucesso");
     }
 
+    // Issue #74 (achado F-01 da revisão de segurança,
+    // docs/seguranca/2026-08-27-paginacao-cancellation-rate-limiting.md): este endpoint
+    // devolve o mesmo catálogo de professores que CoordenadorController.GetProfessores (com
+    // Email a mais, sem paginação), acessível a QUALQUER papel autenticado — sem a mesma
+    // política aplicada aqui, a proteção adicionada ao endpoint do Coordenador seria
+    // contornável trivialmente por este caminho equivalente e mais permissivo.
     [HttpGet("professores")]
     [Authorize]
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetProfessores()
     {
         var professores = await _context.Usuarios

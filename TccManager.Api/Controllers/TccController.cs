@@ -1,8 +1,10 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
@@ -114,19 +116,20 @@ public class TccController : ControllerBase
 
     [HttpGet("entregas")]
     [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado, cancellationToken);
         if (tcc == null) return NotFound("TCC não encontrado.");
 
         var entregas = await _context.Entregas
             .Where(e => e.TccId == tcc.Id)
             .OrderByDescending(e => e.DataEnvio)
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(entregas);
     }

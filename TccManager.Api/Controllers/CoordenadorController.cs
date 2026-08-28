@@ -60,7 +60,8 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("professores")]
-    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var professores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
@@ -73,7 +74,7 @@ public class CoordenadorController : ControllerBase
                 CargaAtual = _context.Tccs.Count(t => t.OrientadorId == u.Id && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
             })
             .OrderBy(p => p.Nome)
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(professores);
     }
@@ -131,7 +132,8 @@ public class CoordenadorController : ControllerBase
 
     // --- CRUD MEMBROS EXTERNOS ---
     [HttpGet("membros-externos")]
-    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var membros = await _context.MembrosExternos
             .OrderBy(m => m.Nome)
@@ -142,7 +144,7 @@ public class CoordenadorController : ControllerBase
                 Email = m.Email,
                 Instituicao = m.Instituicao
             })
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(membros);
     }
@@ -435,7 +437,8 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpGet("bancas-concluidas")]
-    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var bancas = await _context.Banca
             .Where(b => b.NotaFinal != null)
@@ -452,7 +455,7 @@ public class CoordenadorController : ControllerBase
                 // nota — ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5.
                 Aprovado = b.Tcc.Status == StatusTcc.Finalizado
             })
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(bancas);
     }
