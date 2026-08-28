@@ -1,0 +1,44 @@
+name: Build LaTeX (Projeto de Pesquisa)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/projeto-pesquisa/**"
+      - ".github/workflows/build-latex.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Compilar LaTeX (abnTeX2)
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: docs/projeto-pesquisa
+          latexmk_use_lualatex: false
+          args: -pdf -interaction=nonstopmode -halt-on-error -file-line-error
+
+      - name: Copiar PDF para pasta de build
+        run: |
+          mkdir -p docs/projeto-pesquisa/build
+          cp docs/projeto-pesquisa/main.pdf docs/projeto-pesquisa/build/main.pdf
+
+      - name: Commitar PDF gerado
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: recompila PDF do projeto de pesquisa [skip ci]"
+          file_pattern: docs/projeto-pesquisa/build/main.pdf
+
+      - name: Publicar PDF como artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: projeto-pesquisa-pdf
+          path: docs/projeto-pesquisa/main.pdf
