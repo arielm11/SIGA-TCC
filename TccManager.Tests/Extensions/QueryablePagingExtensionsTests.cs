@@ -142,6 +142,25 @@ public class QueryablePagingExtensionsTests
         Assert.Equal(0, resultado.TotalPages);
     }
 
+    [Fact]
+    public async Task CancellationTokenJaCancelado_LancaOperationCanceledException()
+    {
+        // Issue #74: sem propagação do CancellationToken para CountAsync/ToListAsync, uma
+        // requisição cancelada pelo cliente (aba fechada, navegação, timeout) continuava
+        // executando as duas queries no servidor até o fim, sem nenhum benefício — a resposta
+        // nunca seria entregue. Este teste prova que o token chega às queries internas: com
+        // ele já cancelado, a chamada deve lançar antes de completar, não silenciosamente
+        // ignorar o cancelamento.
+        using var context = await ContextoComProfessores(5);
+        var query = context.Usuarios.OrderBy(u => u.Nome);
+        var paginacao = new PaginacaoQuery { Page = 1, PageSize = 10 };
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => query.ToPagedResultAsync(paginacao, cts.Token));
+    }
+
     [Theory]
     [InlineData(10, 10, 1)]
     [InlineData(11, 10, 2)]

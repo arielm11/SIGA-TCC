@@ -14,9 +14,9 @@ namespace TccManager.Api.Configuration;
 /// três são pré-autenticação por natureza (login ainda não tem usuário; refresh e o
 /// rascunho público não exigem token de sessão), então IP é a partição correta para elas.
 ///
-/// "geracao-pdf" é diferente: os 3 endpoints que a usam exigem autenticação, então é
-/// particionada por usuário (Claim NameIdentifier), não por IP — ver o comentário na
-/// definição da política.
+/// "geracao-pdf" e "listagem-paginada" são diferentes: os endpoints que as usam exigem
+/// autenticação, então são particionadas por usuário (Claim NameIdentifier), não por IP —
+/// ver o comentário na definição de cada uma.
 /// </summary>
 public static class RateLimitingSetup
 {
@@ -24,6 +24,7 @@ public static class RateLimitingSetup
     public const string RefreshPolicyName = "refresh";
     public const string RascunhoPublicoPolicyName = "rascunho-publico";
     public const string GeracaoPdfPolicyName = "geracao-pdf";
+    public const string ListagemPaginadaPolicyName = "listagem-paginada";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -57,6 +58,27 @@ public static class RateLimitingSetup
         // se for, fica bem mais restritivo que o limite por usuário, e nunca compartilha a
         // partição de um usuário legítimo).
         var geracaoPdfPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:GeracaoPdf:PermitLimitAnonimo") ?? 5;
+
+        // Issue #74: endpoints de listagem paginada (professores, membros externos, bancas
+        // concluídas, dashboard do orientador, minhas entregas) não tinham rate limiting nem
+        // log de rejeição. O valor real desta política é limitar custo de CPU/banco por
+        // usuário e gerar sinal de log para investigação — não impedir enumeração completa
+        // do catálogo por si só (com MaxPageSize=100, 60 req/min ainda permite ler bases de
+        // porte pequeno/médio dentro de uma janela; ver achado da revisão de segurança,
+        // docs/seguranca/2026-08-27-paginacao-cancellation-rate-limiting.md). Limite bem mais
+        // generoso que "geracao-pdf" (listar é leve; paginação/navegação legítima pode
+        // disparar várias chamadas em sequência rápida), mas ainda finito.
+        var listagemPaginadaPermitLimit = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:PermitLimit") ?? 60;
+        var listagemPaginadaWindowSeconds = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:WindowSeconds") ?? 60;
+        var listagemPaginadaQueueLimit = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:QueueLimit") ?? 0;
+
+        // Mesmo raciocínio do fallback de "geracao-pdf": todos os endpoints desta política
+        // são [Authorize], então este ramo não deveria ser alcançável por uma requisição que
+        // chegue à ação — mas UseRateLimiter() roda antes de UseAuthorization() em
+        // Program.cs, então uma requisição SEM token válido ainda é avaliada pelo limitador
+        // antes de ser rejeitada com 401. Fica mais restritivo que o limite por usuário, e
+        // nunca compartilha a partição de um usuário legítimo.
+        var listagemPaginadaPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:PermitLimitAnonimo") ?? 10;
 
         services.AddRateLimiter(options =>
         {
@@ -121,6 +143,34 @@ public static class RateLimitingSetup
                         });
             });
 
+            // Mesmo raciocínio de particionamento de "geracao-pdf" (achado A02-2): os 6
+            // endpoints desta política exigem autenticação, então particiona por usuário
+            // (Claim NameIdentifier), não por IP — a rede de origem típica é um campus
+            // universitário, e particionar por IP faria usuários diferentes atrás do mesmo
+            // NAT/proxy compartilharem uma única cota.
+            options.AddPolicy(ListagemPaginadaPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = listagemPaginadaPermitLimit,
+                            Window = TimeSpan.FromSeconds(listagemPaginadaWindowSeconds),
+                            QueueLimit = listagemPaginadaQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = listagemPaginadaPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(listagemPaginadaWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
             options.OnRejected = (context, cancellationToken) =>
             {
                 var httpContext = context.HttpContext;
@@ -133,6 +183,13 @@ public static class RateLimitingSetup
 
                 var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
+                // Issue #74 (achado F-07 da revisão de segurança): políticas particionadas
+                // por usuário autenticado (geracao-pdf, listagem-paginada) tornam o IP sozinho
+                // pouco acionável — a rede de origem típica é um campus universitário atrás de
+                // NAT/proxy, então o IP não identifica quem excedeu a cota. Inclui o
+                // UsuarioId quando disponível (requisição autenticada); "anon" caso contrário.
+                var usuarioId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anon";
+
                 // Logger obtido via DI (não Serilog.Log estático) para respeitar o logger
                 // configurado por host (ver LoggingSetup, preserveStaticLogger: true).
                 var logger = httpContext.RequestServices
@@ -140,8 +197,9 @@ public static class RateLimitingSetup
                     .CreateLogger("TccManager.Api.RateLimiting");
 
                 logger.LogWarning(
-                    "Requisição bloqueada por rate limiting. IP de origem: {RemoteIp}, Rota: {RequestPath}",
+                    "Requisição bloqueada por rate limiting. IP de origem: {RemoteIp}, UsuarioId: {UsuarioId}, Rota: {RequestPath}",
                     remoteIp,
+                    usuarioId,
                     RequestPathRedactor.Redigir(httpContext.Request.Path.Value));
 
                 return ValueTask.CompletedTask;
