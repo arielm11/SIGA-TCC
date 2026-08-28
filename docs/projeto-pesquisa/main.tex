@@ -1,0 +1,166 @@
+% ============================================================
+% Projeto de Pesquisa — SIGA-TCC (TccManager)
+% Centro Universitário de Itajubá-FEPI
+%
+% Baseado no template institucional (.doc) fornecido pela FEPI.
+% Classe: abnTeX2 (https://www.abntex.net.br/)
+% ============================================================
+\documentclass[
+    12pt,
+    a4paper,
+    oneside,
+    chapter=TITLE,
+    section=TITLE,
+    subsection=TITLE
+]{abntex2}
+
+% ---------------------------------------------------------------
+% Pacotes básicos
+% ---------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{indentfirst}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{multirow}
+\usepackage[alf]{abntex2cite}
+
+% Fonte: o template institucional usa Arial no corpo do texto.
+% "helvet" é a substituta metricamente compatível (Helvetica) usada
+% para reproduzir Arial em PDF gerado por LaTeX.
+\usepackage[scaled=1]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+
+% ---------------------------------------------------------------
+% Margens do template institucional (medidas exatamente a partir do
+% arquivo .doc original: 3cm esquerda/direita, 2,5cm superior/inferior).
+% abnTeX2 é baseado na classe memoir, que usa seus próprios comandos de
+% layout em vez do pacote geometry.
+% ---------------------------------------------------------------
+\setlrmarginsandblock{3cm}{3cm}{*}
+\setulmarginsandblock{2.5cm}{2.5cm}{*}
+\checkandfixthelayout
+
+% ---------------------------------------------------------------
+% Este é um documento "plano" (sem \chapter, só \section): o template
+% institucional numera 1, 2, 3... e não 0.1, 0.2 (que seria o padrão
+% do abnTeX2 ao combinar seção com um capítulo implícito de número 0).
+% ---------------------------------------------------------------
+\renewcommand{\thesection}{\arabic{section}}
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}
+
+% ---------------------------------------------------------------
+% Dados do documento — EDITE AQUI
+% ---------------------------------------------------------------
+% Nome do curso, usado apenas na capa (não é um campo padrão do abnTeX2).
+\newcommand{\curso}{Nome do Curso}
+
+\titulo{TÍTULO DO TRABALHO}
+\autor{Nome do Aluno(a)}
+\local{Itajubá}
+\data{2025}
+\instituicao{Centro Universitário de Itajubá-FEPI}
+\orientador{Prof(a). Nome do professor}
+\preambulo{Projeto de Trabalho de Conclusão de Curso.}
+
+% ---------------------------------------------------------------
+% Configurações de aparência do PDF
+% ---------------------------------------------------------------
+\makeatletter
+\hypersetup{
+  pdftitle={\@title},
+  pdfauthor={\@author},
+  pdfsubject={Projeto de Pesquisa},
+  pdfkeywords={abnt, latex, projeto de pesquisa}
+}
+\makeatother
+
+\begin{document}
+
+% ---------------------------------------------------------------
+% ELEMENTOS PRÉ-TEXTUAIS
+% ---------------------------------------------------------------
+\pretextual
+% O template institucional numera as páginas a partir da folha de
+% rosto (a capa continua sem número, mas sumário e resumo já mostram
+% o número no canto superior direito — diferente do padrão do
+% abnTeX2, que só numera a partir da parte textual).
+\pagestyle{abntchapfirst}
+
+% Capa customizada, reproduzindo o template institucional: nome da
+% instituição e do curso aparecem acima do nome do autor (o
+% \imprimircapa padrão do abnTeX2 não inclui esses campos).
+\begin{capa}
+  \thispagestyle{empty}
+  \center
+  \large\imprimirinstituicao
+
+  \large Curso de \curso
+  \vspace{2cm}
+
+  \large\imprimirautor
+
+  \vfill
+  \begin{center}
+    \bfseries\LARGE\imprimirtitulo
+  \end{center}
+  \vfill
+
+  \bfseries\large\imprimirlocal
+
+  \bfseries\large\imprimirdata
+  \vspace*{1cm}
+\end{capa}
+
+% No arquivo .doc original a numeração começa em "2" na folha de
+% rosto (a capa é a página 1, mas sem número impresso).
+\setcounter{page}{2}
+
+\imprimirfolhaderostostar
+
+\tableofcontents*
+\clearpage
+
+\begin{resumo}
+  Escreva um resumo na seguinte estrutura: apresentação do tema e
+  objetivos da pesquisa, procedimentos metodológicos e resultados
+  esperados ao término do trabalho (de 100 a 150 palavras).
+
+  \vspace{\onelineskip}
+  \noindent
+  \textbf{Palavras-chave}: palavra 1. palavra 2. palavra 3.
+\end{resumo}
+\clearpage
+
+% ---------------------------------------------------------------
+% ELEMENTOS TEXTUAIS
+% ---------------------------------------------------------------
+\textual
+% O template institucional não mostra o título da seção no cabeçalho,
+% apenas o número da página no canto superior direito.
+\pagestyle{abntchapfirst}
+
+\input{capitulos/01-apresentacao-tema}
+\input{capitulos/02-justificativa}
+\input{capitulos/03-problema-pesquisa}
+\input{capitulos/04-objetivos}
+\input{capitulos/05-hipoteses}
+\input{capitulos/06-referencial-teorico}
+\input{capitulos/07-procedimentos-metodologicos}
+\input{capitulos/08-cronograma}
+
+% ---------------------------------------------------------------
+% ELEMENTOS PÓS-TEXTUAIS
+% ---------------------------------------------------------------
+\postextual
+
+% Título da seção de referências, igual ao template institucional
+% (nesta fase do trabalho as referências ainda são preliminares).
+% Precisa ser feito aqui, depois do \begin{document}, porque o pacote
+% babel (idioma brazil) redefine \bibname ao carregar o idioma.
+\renewcommand{\bibname}{Referências Bibliográficas Iniciais}
+
+\bibliography{referencias}
+
+\end{document}
