@@ -15,7 +15,7 @@ public class Entrega
 
     [Required]
     public string ArquivoCaminho { get; set; } = string.Empty;
-    public DateTime DataEnvio { get; set; } = DateTime.Now;
+    public DateTime DataEnvio { get; set; } = DateTime.UtcNow;
     public TipoEntrega Tipo { get; set; } = TipoEntrega.Parcial;
 
     [MaxLength(2000)]
