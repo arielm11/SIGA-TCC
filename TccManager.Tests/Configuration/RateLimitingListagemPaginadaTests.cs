@@ -14,6 +14,13 @@ namespace TccManager.Tests.Configuration;
 /// particionado por usuário autenticado (mesmo raciocínio de "geracao-pdf", achado A02-2:
 /// partição por IP colapsaria a cota de uma rede inteira, ex. campus universitário atrás de
 /// NAT/proxy, num único bucket compartilhado entre usuários diferentes).
+///
+/// Issue #76 (D3): OrientadorController.GetDaboard deixou de ser um endpoint de listagem
+/// PAGINADA (perdeu o PaginacaoQuery junto com a lista de propostas pendentes), mas a política
+/// continua aplicada nele de propósito — segue sendo listagem autenticada, e removê-la
+/// afrouxaria sem motivo uma proteção da issue #74. O nome da política ficou levemente
+/// impreciso para esse caso; renomeá-la exigiria revisar os 6 endpoints, custo maior que o
+/// ganho. Os testes deste arquivo continuam usando rotas do Coordenador, não a do Orientador.
 /// </summary>
 public class RateLimitingListagemPaginadaTests
 {

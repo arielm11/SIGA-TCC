@@ -1,4 +1,6 @@
-﻿namespace TccManager.Shared.DTOs;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace TccManager.Shared.DTOs;
 
 public class DashboardCoordenadorDto
 {
@@ -20,6 +22,12 @@ public class ProfessorResumoDto
 public class DesignarOrientadorDto
 {
     public int OrientadorId { get; set; }
+}
+
+public class RejeicaoDto
+{
+    [Required(ErrorMessage = "O motivo da rejeição é obrigatório!")]
+    public string Motivo { get; set; } = string.Empty;
 }
 
 public class CapacidadeProfessorDto
