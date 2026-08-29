@@ -4,6 +4,7 @@
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject NotificationService NotificationService
+@inject DialogService DialogService
 
 <PageTitle>Painel da Coordenação</PageTitle>
 
@@ -74,10 +75,23 @@
                         @tcc.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy")
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="TccResumoDto" Title="Ação" Sortable="false" Filterable="false" Width="160px">
+                <RadzenDataGridColumn TItem="TccResumoDto" Title="Resumo" Sortable="false" Filterable="false" Width="170px">
+                    <Template Context="tcc">
+                        <RadzenButton Text="@(propostaResumoExpandidoId == tcc.Id ? "Ocultar" : "Ver Resumo")" Icon="visibility"
+                                      ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => AlternarResumo(tcc.Id))" />
+                        @if (propostaResumoExpandidoId == tcc.Id)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">@tcc.Resumo</RadzenText>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TccResumoDto" Title="Ação" Sortable="false" Filterable="false" Width="220px">
                     <Template Context="tcc">
                         <RadzenButton Text="Designar" Icon="person_add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
-                                      Click="@(() => AbrirDesignacao(tcc))" />
+                                      class="rz-me-1" Click="@(() => AbrirDesignacao(tcc))" />
+                        <RadzenButton Text="Rejeitar" Icon="cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => AbrirRejeicao(tcc))" />
                     </Template>
                 </RadzenDataGridColumn>
             </Columns>
@@ -123,6 +137,7 @@
 
     private TccResumoDto? tccSelecionado;
     private int professorSelecionadoId = 0;
+    private int? propostaResumoExpandidoId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -155,6 +170,50 @@
             });
         }
         finally { carregando = false; }
+    }
+
+    private void AlternarResumo(int tccId)
+    {
+        propostaResumoExpandidoId = propostaResumoExpandidoId == tccId ? null : tccId;
+    }
+
+    // Issue #76 (D9): rejeição de proposta passa a ser exclusiva do Coordenador. Reutiliza o
+    // mesmo RejeitarPropostaDialog "burro" que existia em Pages/Professor/Dashboard.razor —
+    // devolve o motivo via DialogService.Close, e esta página faz o PUT.
+    private async Task AbrirRejeicao(TccResumoDto tcc)
+    {
+        var resultado = await DialogService.OpenAsync<RejeitarPropostaDialog>(
+            "Rejeitar Proposta",
+            new Dictionary<string, object?>(),
+            new DialogOptions { Width = "500px" });
+
+        if (resultado is string motivo && !string.IsNullOrWhiteSpace(motivo))
+        {
+            var payload = new RejeicaoDto { Motivo = motivo };
+            var response = await Http.PutAsJsonAsync($"api/coordenador/propostas/{tcc.Id}/rejeitar", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Proposta rejeitada",
+                    Detail = "Proposta rejeitada com sucesso.",
+                    Duration = 5000
+                });
+                await CarregarDados(); // Recarrega KPIs e a lista
+            }
+            else
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao rejeitar a proposta.",
+                    Duration = 5000
+                });
+            }
+        }
     }
 
     private void AbrirDesignacao(TccResumoDto tcc)

@@ -8,5 +8,4 @@ public class PropostaTccDto
 
     [Required(ErrorMessage = "O resumo é obrigatório.")]
     public string Resumo { get; set; } = string.Empty;
-    public int OrientadorId { get; set; }
 }

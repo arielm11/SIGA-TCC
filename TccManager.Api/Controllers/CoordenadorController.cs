@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -30,13 +31,20 @@ public class CoordenadorController : ControllerBase
     private readonly IRascunhoAtaTokenService _rascunhoTokenService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
+    // Categoria dedicada de auditoria, mesmo padrão de TccController — issue #76 (D7):
+    // a rejeição de proposta decide o encerramento negativo do TCC de um aluno e precisa
+    // de trilha estruturada (RNF-01). "TccManager.Api.Auditoria" já tem Override explícito
+    // em appsettings.json para não ser descartada pelo MinimumLevel Warning do Serilog.
+    private readonly ILogger _auditLogger;
+
     public CoordenadorController(
         AppDbContext context,
         ISanitizerService sanitizerService,
         ITccNotificationService notificationService,
         IStorageService storageService,
         IAtaPdfService ataPdfService,
-        IRascunhoAtaTokenService rascunhoTokenService)
+        IRascunhoAtaTokenService rascunhoTokenService,
+        ILoggerFactory loggerFactory)
     {
         _context = context;
         _sanitizerService = sanitizerService;
@@ -44,6 +52,7 @@ public class CoordenadorController : ControllerBase
         _storageService = storageService;
         _ataPdfService = ataPdfService;
         _rascunhoTokenService = rascunhoTokenService;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("dashboard-stats")]
@@ -90,6 +99,7 @@ public class CoordenadorController : ControllerBase
             {
                 Id = t.Id,
                 Titulo = t.Titulo,
+                Resumo = t.Resumo,
                 NomeAluno = t.Aluno!.Nome,
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
@@ -112,10 +122,60 @@ public class CoordenadorController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        // Mesmo evento/template de OrientadorController.AprovarProposta (RF7).
+        // Auditoria (RNF-01, achado A09-1 da revisão de segurança da issue #76): mesma
+        // disciplina de RejeitarProposta — designar orientador é igualmente uma decisão
+        // terminal sobre a proposta (aloca carga de um professor, aprova o TCC), então precisa
+        // da mesma trilha. Logo após o SaveChanges (achado A09-3): a auditoria não pode
+        // depender do envio de notificação (que já é best-effort/try-catch) para existir.
+        var coordenadorIdClaimDesignacao = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Orientador designado pelo Coordenador. TccId: {TccId}, AlunoId: {AlunoId}, OrientadorId: {OrientadorId}, CoordenadorId: {CoordenadorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            tcc.OrientadorId,
+            coordenadorIdClaimDesignacao);
+
+        // Aprovação (RF7) — única via desde a issue #76 (rota do Professor removida).
         await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
 
         return Ok("Orientador designado com sucesso.");
+    }
+
+    // Issue #76 (D7): rejeição de proposta passa a ser exclusiva do Coordenador — antes era
+    // POST api/orientador/propostas/{id}/rejeitar, sem nenhuma verificação de vínculo entre o
+    // Professor autenticado e a proposta (achado de RBAC). Espelha DesignarOrientador (mesma
+    // guarda de status, mesmo estilo de resposta 200/404).
+    [HttpPut("propostas/{id}/rejeitar")]
+    public async Task<IActionResult> RejeitarProposta(int id, [FromBody] RejeicaoDto dto)
+    {
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == id && t.Status == StatusTcc.Pendente);
+        if (tcc == null) return NotFound("Proposta não encontrada ou já processada.");
+
+        tcc.Status = StatusTcc.Reprovado;
+        // Issue #73 (achado A10-1): sanitizar antes de persistir e antes de medir o limite de
+        // 2000 caracteres da coluna (RejeicaoDtoValidator já valida isso sobre o valor
+        // sanitizado, mas o sanitizador é reaplicado aqui, não reaproveitado do validador).
+        tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
+
+        await _context.SaveChangesAsync();
+
+        // Auditoria (RNF-01): só ids, nunca o texto do motivo (campo livre preenchido por
+        // humano — duplicá-lo no log espalharia conteúdo potencialmente sensível para fora do
+        // banco, mesma disciplina de PII do projeto). Logo após o SaveChanges, não depois da
+        // notificação (achado A09-3 da revisão de segurança): a trilha de auditoria de uma
+        // decisão terminal não pode depender do envio de e-mail ter sido tentado.
+        var coordenadorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Proposta rejeitada pelo Coordenador. TccId: {TccId}, AlunoId: {AlunoId}, CoordenadorId: {CoordenadorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            coordenadorIdClaim);
+
+        // Depois do SaveChanges, como em todos os outros pontos do projeto: o serviço lê o
+        // estado já persistido (o template do RF8 usa o motivo).
+        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
+
+        return Ok("Proposta rejeitada com sucesso.");
     }
 
     [HttpPut("professores/{id}/capacidade")]

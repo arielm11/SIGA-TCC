@@ -5,7 +5,6 @@ namespace TccManager.Shared.DTOs;
 
 public class DashboardOrientadorDto
 {
-    public PagedResult<TccResumoDto> PropostasPendentes { get; set; } = new();
     public List<TccResumoDto> OrientandosAtivos { get; set; } = new();
 }
 
@@ -17,12 +16,6 @@ public class TccResumoDto
     public string NomeAluno { get; set; } = string.Empty;
     public StatusTcc Status { get; set; }
     public DateTime DataCriacao { get; set; }
-}
-
-public class RejeicaoDto 
-{
-    [Required(ErrorMessage = "O motivo da rejeição é obrigatório!")]
-    public string Motivo { get; set; } = string.Empty;
 }
 
 public class FeedbackDto

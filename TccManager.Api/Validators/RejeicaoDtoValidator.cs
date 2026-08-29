@@ -8,7 +8,7 @@ public class RejeicaoDtoValidator : AbstractValidator<RejeicaoDto>
 {
     public RejeicaoDtoValidator(ISanitizerService sanitizerService)
     {
-        // Issue #73 (achado A10-1 da revisão de segurança): OrientadorController persiste
+        // Issue #73 (achado A10-1 da revisão de segurança): CoordenadorController persiste
         // _sanitizerService.Sanitizar(dto.Motivo), não o valor cru — HtmlSanitizer só CODIFICA
         // entidades (nunca decodifica), então validar o comprimento cru permitia um Motivo
         // dentro do limite estourar a coluna nvarchar(2000) no INSERT. Medir o comprimento do

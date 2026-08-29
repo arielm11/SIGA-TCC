@@ -1,7 +1,9 @@
-@* Diálogo de rejeição de proposta (N3 Etapa 4 — Professor/Dashboard).
-   Substitui o prompt() de motivo de rejeição; aberto via DialogService.OpenAsync<RejeitarPropostaDialog>.
+@* Diálogo de rejeição de proposta (N3 Etapa 4 — originalmente Professor/Dashboard;
+   issue #76/D9 — chamador passou a ser Coordenador/Dashboard).
+   Aberto via DialogService.OpenAsync<RejeitarPropostaDialog>.
    Fecha retornando o motivo (string) via DialogService.Close ao confirmar, ou null ao cancelar.
-   A página chamadora é responsável pelo POST .../rejeitar e pelo reload do dashboard. *@
+   A página chamadora é responsável pelo PUT api/coordenador/propostas/{id}/rejeitar e pelo
+   reload do dashboard. *@
 @using TccManager.Shared.DTOs
 @inject DialogService DialogService
 

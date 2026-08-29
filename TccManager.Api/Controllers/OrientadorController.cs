@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
-using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
@@ -32,25 +31,11 @@ public class OrientadorController : ControllerBase
 
     [HttpGet("dashboard")]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
-    public async Task<IActionResult> GetDaboard([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetDaboard(CancellationToken cancellationToken)
     {
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
-
-        var pendentes = await _context.Tccs
-            .Include(t => t.Aluno)
-            .Where(t => t.Status == StatusTcc.Pendente)
-            .OrderByDescending(t => t.DataCriacao)
-            .Select(t => new TccResumoDto
-            {
-                Id = t.Id,
-                Titulo = t.Titulo,
-                Resumo = t.Resumo,
-                NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconecido",
-                DataCriacao = t.DataCriacao,
-                Status = t.Status
-            }).ToPagedResultAsync(paginacao, cancellationToken);
 
         var ativos = await _context.Tccs
             .Include(t => t.Aluno)
@@ -67,53 +52,10 @@ public class OrientadorController : ControllerBase
 
         var dashboard = new DashboardOrientadorDto
         {
-            PropostasPendentes = pendentes,
             OrientandosAtivos = ativos
         };
 
         return Ok(dashboard);
-    }
-
-    [HttpPost("propostas/{id}/aprovar")]
-    public async Task<IActionResult> AprovarProposta(int id)
-    {
-        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
-            return Unauthorized();
-
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == id && t.Status == StatusTcc.Pendente);
-
-        if (tcc == null) return NotFound("Proposta não encontrada ou já avaliada.");
-
-        tcc.Status = StatusTcc.Aprovado;
-        tcc.OrientadorId = profId;
-
-        await _context.SaveChangesAsync();
-
-        await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
-
-        return Ok("Proposta enviada com sucesso!");
-    }
-
-    [HttpPost("propostas/{id}/rejeitar")]
-    public async Task<IActionResult> RejeitarProposta(int id, [FromBody] RejeicaoDto dto)
-    {
-        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
-            return Unauthorized();
-
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == id && t.Status == StatusTcc.Pendente);
-
-        if (tcc == null) return NotFound("Proposta não encontrada ou já avaliada.");
-
-        tcc.Status = StatusTcc.Reprovado;
-        tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
-
-        await _context.SaveChangesAsync();
-
-        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
-
-        return Ok("Proposta rejeitada.");
     }
 
     [HttpGet("tcc/{idTcc}")]

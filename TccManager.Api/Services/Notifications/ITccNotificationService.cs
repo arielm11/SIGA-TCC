@@ -9,10 +9,13 @@ namespace TccManager.Api.Services.Notifications;
 /// </summary>
 public interface ITccNotificationService
 {
-    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado tanto por AprovarProposta quanto por DesignarOrientador.</summary>
+    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado por DesignarOrientador (issue #76: a
+    /// aprovação autônoma do Professor foi removida — atribuir orientador é a única forma de
+    /// aprovar uma proposta, exclusiva do Coordenador).</summary>
     Task NotificarPropostaAprovadaAsync(int tccId);
 
-    /// <summary>Proposta rejeitada (RF8) — Aluno, com motivo.</summary>
+    /// <summary>Proposta rejeitada (RF8) — Aluno, com motivo. Disparado por
+    /// CoordenadorController.RejeitarProposta (issue #76 — migrou de OrientadorController).</summary>
     Task NotificarPropostaRejeitadaAsync(int tccId);
 
     /// <summary>Banca agendada (RF9) — Aluno, Orientador e avaliadores (internos e externos).</summary>

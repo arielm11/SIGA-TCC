@@ -14,11 +14,14 @@ public class PropostaTccDtoValidatorTests
 {
     private readonly PropostaTccDtoValidator _validator = new(new HtmlSanitizerService());
 
+    // Issue #76 (D4): PropostaTccDto.OrientadorId foi removido do contrato (era campo morto —
+    // nunca validado aqui, nunca lido por TccController.SubmeterProposta). A guarda de que um
+    // orientadorId enviado no corpo continua sendo ignorado migrou para o teste de integração
+    // TccController_SubmeterProposta_Tests.Bug4_..._DeveSerIgnorado, que envia JSON cru.
     private static PropostaTccDto DtoValido() => new()
     {
         Titulo = "Um Título de TCC",
-        Resumo = "Um resumo qualquer.",
-        OrientadorId = 1
+        Resumo = "Um resumo qualquer."
     };
 
     [Fact]
