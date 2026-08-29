@@ -7,6 +7,7 @@ using TccManager.Api.Services;
 using TccManager.Api.Services.Email;
 using TccManager.Api.Services.Pdf;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Formatting;
 
 namespace TccManager.Api.Services.Notifications;
 
@@ -260,7 +261,10 @@ public class TccNotificationService : ITccNotificationService
                 ["TituloTcc"] = Codificar(entrega.Tcc.Titulo),
                 ["TituloEntrega"] = Codificar(entrega.Titulo),
                 ["Feedback"] = Codificar(entrega.Feedback) is { Length: > 0 } feedback ? feedback : "Sem comentários adicionais.",
-                ["Nota"] = entrega.Nota.HasValue ? entrega.Nota.Value.ToString("0.0") : "Não informada"
+                // NotaFormatter (não CurrentCulture): e-mail institucional em português,
+                // "87,5" é o formato correto independente da cultura do SO onde a API roda —
+                // ver comentário completo em AtaPdfDocument.cs (achado do CI da issue #75).
+                ["Nota"] = entrega.Nota.HasValue ? NotaFormatter.Formatar(entrega.Nota.Value) : "Não informada"
             });
 
             Enfileirar(destinatarios, "Feedback registrado na sua entrega", corpo);
@@ -333,7 +337,8 @@ public class TccNotificationService : ITccNotificationService
             {
                 ["NomeAluno"] = Codificar(banca.Tcc.Aluno?.Nome),
                 ["TituloTcc"] = Codificar(banca.Tcc.Titulo),
-                ["NotaFinal"] = banca.NotaFinal.HasValue ? banca.NotaFinal.Value.ToString("0.0") : "Não informada"
+                // NotaFormatter — ver comentário em NotificarFeedbackRegistradoAsync.
+                ["NotaFinal"] = banca.NotaFinal.HasValue ? NotaFormatter.Formatar(banca.NotaFinal.Value) : "Não informada"
             };
 
             if (!aprovado)

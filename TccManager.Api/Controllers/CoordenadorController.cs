@@ -12,6 +12,7 @@ using TccManager.Api.Services.Pdf;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Formatting;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Controllers;
@@ -330,7 +331,10 @@ public class CoordenadorController : ControllerBase
         {
             motivoSanitizado = _sanitizerService.Sanitizar(motivoReprovacao);
             if (string.IsNullOrWhiteSpace(motivoSanitizado))
-                return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
+                // NotaFormatter (não CurrentCulture) — mesmo achado do CI da issue #75 em
+                // AtaPdfDocument.cs/TccNotificationService.cs: "60,0" é o formato correto
+                // para este público, independente da cultura do SO onde a API roda.
+                return BadRequest($"Nota inferior a {NotaFormatter.Formatar(notaMinimaAprovacao)}. É obrigatório informar o motivo da reprovação.");
             if (motivoSanitizado.Length > 2000)
                 return BadRequest("O motivo da reprovação deve ter no máximo 2000 caracteres.");
         }
