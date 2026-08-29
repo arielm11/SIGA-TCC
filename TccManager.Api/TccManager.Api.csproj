@@ -38,6 +38,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Issue #75: expõe o construtor internal de teste de MailKitEmailService (seam para
+         injetar um SmtpClient com certificado de teste confiado, sem tocar no construtor de
+         produção nem no registro de DI). -->
+    <InternalsVisibleTo Include="TccManager.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Migrations\" />
   </ItemGroup>
 

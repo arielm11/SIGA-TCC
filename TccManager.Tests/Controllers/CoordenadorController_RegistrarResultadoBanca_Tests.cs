@@ -459,4 +459,34 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             Thread.CurrentThread.CurrentUICulture = culturaOriginalUI;
         }
     }
+
+    // Issue #75: nenhum endpoint de upload tinha limite de tamanho — ver o mesmo achado e
+    // raciocínio em TccController_EnviarEntrega_Tests.ArquivoAcimaDoLimiteDeTamanho_DeveSerRejeitado
+    // ([RequestSizeLimit] não é reproduzido pelo TestServer em memória; é a checagem explícita
+    // sobre IFormFile.Length que este teste prova).
+    [Fact]
+    public async Task ArquivoDaAtaAcimaDoLimiteDeTamanho_DeveSerRejeitado()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent("85.0"), "notaFinal");
+        var conteudoGigante = new byte[TccManager.Api.Configuration.UploadLimits.MaxArquivoUploadBytes + 1024];
+        conteudoGigante[0] = 0x25; conteudoGigante[1] = 0x50; conteudoGigante[2] = 0x44; conteudoGigante[3] = 0x46;
+        var arquivo = new ByteArrayContent(conteudoGigante);
+        arquivo.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        form.Add(arquivo, "arquivoAta", "ata-gigante.pdf");
+
+        var response = await client.PostAsync($"/api/coordenador/banca/{bancaId}/registrar-resultado", form);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("tamanho máximo", corpo, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
 }

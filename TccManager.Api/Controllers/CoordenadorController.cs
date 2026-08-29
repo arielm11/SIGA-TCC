@@ -12,6 +12,7 @@ using TccManager.Api.Services.Pdf;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Formatting;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Controllers;
@@ -286,6 +287,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
+    [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
     public async Task<IActionResult> RegistrarResultadoBanca(
         int idBanca,
         [FromForm] decimal notaFinal,
@@ -305,6 +307,13 @@ public class CoordenadorController : ControllerBase
         if (arquivoAta == null || arquivoAta.Length == 0)
             return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
 
+        // Issue #75: [RequestSizeLimit] (no atributo do método) protege a conexão Kestrel
+        // real, mas esse corte não é reproduzido pelo TestServer em memória usado pelos
+        // testes de integração — ver o mesmo comentário em TccController.EnviarEntrega para
+        // o raciocínio completo. Esta é a camada testável.
+        if (arquivoAta.Length > UploadLimits.MaxArquivoUploadBytes)
+            return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
+
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
         // Issue #73 (achado A10-1 da revisão de segurança,
@@ -322,7 +331,10 @@ public class CoordenadorController : ControllerBase
         {
             motivoSanitizado = _sanitizerService.Sanitizar(motivoReprovacao);
             if (string.IsNullOrWhiteSpace(motivoSanitizado))
-                return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
+                // NotaFormatter (não CurrentCulture) — mesmo achado do CI da issue #75 em
+                // AtaPdfDocument.cs/TccNotificationService.cs: "60,0" é o formato correto
+                // para este público, independente da cultura do SO onde a API roda.
+                return BadRequest($"Nota inferior a {NotaFormatter.Formatar(notaMinimaAprovacao)}. É obrigatório informar o motivo da reprovação.");
             if (motivoSanitizado.Length > 2000)
                 return BadRequest("O motivo da reprovação deve ter no máximo 2000 caracteres.");
         }

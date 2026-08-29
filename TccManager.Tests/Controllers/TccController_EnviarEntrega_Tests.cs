@@ -336,4 +336,62 @@ public class TccController_EnviarEntrega_Tests
         var houveEntrega = await context.Entregas.AnyAsync(e => e.TccId == tccId);
         Assert.True(houveEntrega);
     }
+
+    // Issue #75: [Authorize(Roles = "Aluno")] em EnviarEntrega nunca tinha teste dedicado —
+    // toda a suíte só exercitava esse endpoint autenticada como Aluno. [Authorize(Roles=...)]
+    // roda como filtro de autorização antes do corpo da ação (não depende de nenhum dado no
+    // banco), então nem precisa semear TCC para provar o 403.
+    [Theory]
+    [InlineData("Professor")]
+    [InlineData("Coordenador")]
+    public async Task PapelDiferenteDeAluno_DeveRetornarForbidden(string papel)
+    {
+        using var factory = new WebRootIsolatedApiFactory();
+        var client = factory.CreateClientAutenticado(idProfessor, papel);
+
+        var response = await client.PostAsync(
+            "/api/tcc/entregas",
+            MontarFormEntrega("Entrega Parcial", TipoEntrega.Parcial, "entrega.pdf"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        Assert.False(await context.Entregas.AnyAsync());
+    }
+
+    // Issue #75: nenhum endpoint de upload tinha limite de tamanho. [RequestSizeLimit]
+    // (no atributo do método) protege a conexão Kestrel real, mas esse corte não é
+    // reproduzido pelo TestServer em memória usado aqui (confirmado empiricamente: sem a
+    // checagem explícita sobre IFormFile.Length dentro do método, um corpo de
+    // MaxArquivoUploadBytes + 1024 bytes passava batido pelo TestServer direto até a
+    // validação de conteúdo do arquivo, sem nenhuma rejeição por tamanho) — é a checagem
+    // explícita, não o atributo, que este teste prova.
+    [Fact]
+    public async Task ArquivoAcimaDoLimiteDeTamanho_DeveSerRejeitado()
+    {
+        using var factory = new WebRootIsolatedApiFactory();
+        var tccId = await SemearTccAsync(factory, StatusTcc.Aprovado, comOrientador: false);
+        var client = factory.CreateClientAutenticado(idAluno, "Aluno");
+
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent("Entrega Grande Demais"), "tituloEntrega");
+        form.Add(new StringContent(TipoEntrega.Parcial.ToString()), "tipo");
+
+        var conteudoGigante = new byte[TccManager.Api.Configuration.UploadLimits.MaxArquivoUploadBytes + 1024];
+        // Prefixo com o magic number do PDF: prova que a rejeição é especificamente por
+        // tamanho, não por a validação de conteúdo ter barrado primeiro.
+        conteudoGigante[0] = 0x25; conteudoGigante[1] = 0x50; conteudoGigante[2] = 0x44; conteudoGigante[3] = 0x46;
+        var arquivo = new ByteArrayContent(conteudoGigante);
+        arquivo.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        form.Add(arquivo, "arquivo", "entrega-gigante.pdf");
+
+        var response = await client.PostAsync("/api/tcc/entregas", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("tamanho máximo", corpo, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        Assert.False(await context.Entregas.AnyAsync(e => e.TccId == tccId));
+    }
 }

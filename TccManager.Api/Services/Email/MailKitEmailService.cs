@@ -26,10 +26,24 @@ namespace TccManager.Api.Services.Email;
 public class MailKitEmailService : IEmailService
 {
     private readonly EmailSettings _settings;
+    private readonly Func<SmtpClient> _clientFactory;
 
-    public MailKitEmailService(IOptions<EmailSettings> settings)
+    public MailKitEmailService(IOptions<EmailSettings> settings) : this(settings, null)
+    {
+    }
+
+    // Issue #75 ("teste de envio SMTP real"): construtor de teste — o DI de produção sempre
+    // resolve o construtor de um parâmetro acima (clientFactory fica null, cai no
+    // "() => new SmtpClient()" abaixo, comportamento inalterado). O parâmetro extra existe só
+    // para o teste conseguir injetar um SmtpClient com ServerCertificateValidationCallback
+    // apontado para o certificado efêmero autoassinado do servidor SMTP falso — sem isso não
+    // haveria como completar um handshake TLS de verdade em teste (StartTls é obrigatório,
+    // não tem modo texto puro, por desenho do achado #70/A04) sem manipular o repositório de
+    // certificados confiáveis do sistema operacional.
+    internal MailKitEmailService(IOptions<EmailSettings> settings, Func<SmtpClient>? clientFactory)
     {
         _settings = settings.Value;
+        _clientFactory = clientFactory ?? (() => new SmtpClient());
     }
 
     public async Task EnviarAsync(EmailMessage mensagem, CancellationToken cancellationToken = default)
@@ -48,7 +62,7 @@ public class MailKitEmailService : IEmailService
             Text = mensagem.CorpoHtml
         };
 
-        using var client = new SmtpClient();
+        using var client = _clientFactory();
 
         // StartTls (não StartTlsWhenAvailable): exige que o servidor suporte STARTTLS e
         // falha a conexão se não suportar, em vez de fazer downgrade silencioso para texto

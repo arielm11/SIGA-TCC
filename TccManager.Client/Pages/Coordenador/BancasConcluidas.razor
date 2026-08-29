@@ -1,6 +1,7 @@
 @page "/coordenador/bancas-concluidas"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
+@using TccManager.Shared.Formatting
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
@@ -27,7 +28,11 @@
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="BancaConcluidaDto" Property="NotaFinal" Title="Nota" Width="100px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
-                    @banca.NotaFinal.ToString("0.0")
+                    @* NotaFormatter: "87,5" é o formato correto para este público,
+                       independente da cultura que o navegador expõe ao WASM (achado do CI da
+                       issue #75 — mesmo bug de AtaPdfDocument.cs/TccNotificationService.cs, do
+                       lado do servidor). *@
+                    @NotaFormatter.Formatar(banca.NotaFinal)
                 </Template>
             </RadzenDataGridColumn>
             <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Status" Width="130px" TextAlign="TextAlign.Center">

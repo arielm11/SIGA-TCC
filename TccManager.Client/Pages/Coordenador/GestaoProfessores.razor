@@ -151,9 +151,27 @@
         var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
         var page = (args.Skip ?? 0) / pageSize + 1;
 
-        var resultado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={page}&pageSize={pageSize}");
-        professores = resultado?.Items ?? new();
-        countProfessores = resultado?.TotalCount ?? 0;
+        try
+        {
+            var resultado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={page}&pageSize={pageSize}");
+            professores = resultado?.Items ?? new();
+            countProfessores = resultado?.TotalCount ?? 0;
+        }
+        catch
+        {
+            // Issue #75: LoadData é invocado por RadzenDataGrid.Reload() a partir de
+            // OnAfterRenderAsync — sem este catch, uma falha de HTTP virava exceção não
+            // tratada propagada até o renderer do Blazor (não só desta página: no navegador
+            // real isso derruba a aplicação inteira com o overlay "An unhandled error has
+            // occurred"), não só um erro local desta grid.
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao carregar a lista de professores.",
+                Duration = 5000
+            });
+        }
     }
 
     private async Task LoadDataExternos(LoadDataArgs args)
@@ -161,9 +179,23 @@
         var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
         var page = (args.Skip ?? 0) / pageSize + 1;
 
-        var resultado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={page}&pageSize={pageSize}");
-        externos = resultado?.Items ?? new();
-        countExternos = resultado?.TotalCount ?? 0;
+        try
+        {
+            var resultado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={page}&pageSize={pageSize}");
+            externos = resultado?.Items ?? new();
+            countExternos = resultado?.TotalCount ?? 0;
+        }
+        catch
+        {
+            // Mesmo raciocínio de LoadDataProfessores acima.
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao carregar a lista de avaliadores externos.",
+                Duration = 5000
+            });
+        }
     }
 
     private async Task SalvarCapacidade(ProfessorResumoDto prof)

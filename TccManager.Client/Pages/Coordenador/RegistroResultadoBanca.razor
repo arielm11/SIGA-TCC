@@ -90,6 +90,20 @@
         {
             bancasPendentes = await Http.GetFromJsonAsync<List<BancaPendenteDto>>("api/coordenador/bancas-pendentes-resultado") ?? new();
         }
+        catch
+        {
+            // Issue #75: sem este catch, uma falha de HTTP (rede, 401, 500) propagava como
+            // exceção não tratada a partir de OnInitializedAsync, derrubando a renderização
+            // inteira da página em vez de mostrar um erro — mesmo padrão usado em
+            // Dashboard.CarregarDados e ConvitesBanca.CarregarConvites, que já tratavam isso.
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao buscar as bancas pendentes de resultado.",
+                Duration = 5000
+            });
+        }
         finally { carregando = false; }
     }
 

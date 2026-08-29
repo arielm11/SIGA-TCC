@@ -1,6 +1,7 @@
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using TccManager.Shared.Formatting;
 
 namespace TccManager.Api.Services.Pdf;
 
@@ -169,7 +170,16 @@ public class AtaPdfDocument : IDocument
                 text.Span("Nota Final: ").SemiBold();
                 // ComposeResultado só é chamado quando !Rascunho (ver ComposeConteudo), e
                 // nesse caminho o AtaPdfService só chega a Sucesso com NotaFinal != null.
-                text.Span(_model.NotaFinal!.Value.ToString("0.0"));
+                //
+                // NotaFormatter (não CurrentCulture, não GetCultureInfo("pt-BR")): a ata é um
+                // documento institucional brasileiro, "87,5" (vírgula) é o formato correto
+                // independente da cultura do sistema operacional onde a API roda — sem isso,
+                // o mesmo código produz "87,5" numa máquina Windows em pt-BR (dev) e "87.5"
+                // num runner de CI/produção em en-US/invariant (achado do CI da issue #75).
+                // GetCultureInfo("pt-BR") lançaria CultureNotFoundException em modo de
+                // globalização invariante — NotaFormatter usa um NumberFormatInfo direto, sem
+                // esse risco.
+                text.Span(NotaFormatter.Formatar(_model.NotaFinal!.Value));
             });
 
             if (!string.IsNullOrWhiteSpace(_model.MotivoReprovacao))
