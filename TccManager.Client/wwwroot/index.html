@@ -15,6 +15,20 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 
     <!--
+        Pré-carrega a fonte de ícones (issue #79): standard-base.css e standard-dark-base.css
+        declaram o MESMO @font-face "Material Symbols" (mesmo arquivo .woff2), mas como são
+        <link> de stylesheet diferentes, trocar o href em setRadzenTheme (js/theme.js) força o
+        navegador a registrar uma @font-face "nova" a cada troca de tema — sem o arquivo já em
+        cache, isso causa ~2-3s de flash mostrando o nome cru do ícone ("dashboard", "group")
+        até resolver para o glifo. Pré-carregado aqui, o navegador já tem os bytes prontos
+        quando a segunda @font-face é registrada, então a resolução fica praticamente instantânea.
+        crossorigin é necessário mesmo sendo mesma origem: fontes sempre são buscadas em modo
+        CORS anônimo pelo navegador: sem o atributo aqui, o preload não bate com esse modo e o
+        arquivo acaba sendo baixado duas vezes.
+    -->
+    <link rel="preload" as="font" type="font/woff2" href="_content/Radzen.Blazor/fonts/MaterialSymbolsOutlined.woff2" crossorigin>
+
+    <!--
         Aplica o tema Radzen (Standard / Standard Dark) ANTES do WASM iniciar, para não haver
         flash do tema errado no primeiro paint. Lê a mesma chave de localStorage
         ("preferenciaTema") usada pelo TccManager.Client/Services/TemaService.cs. Usamos a
