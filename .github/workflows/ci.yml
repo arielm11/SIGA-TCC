@@ -9,6 +9,12 @@ on:
 
 env:
   DOTNET_VERSION: "9.0.x"
+  # RNF-02 (migração Radzen) nunca teve um número — medido em 2026-08-29 (issue #78):
+  # publish Release sem o workload wasm-tools (CI/dev não o têm instalado, então este é o
+  # bundle real hoje) deu ~4.94 MB (4937970 bytes) em Brotli, o formato que todo navegador
+  # moderno baixa. 6 MB dá ~20% de folga sobre a medição — ajuste este número se o orçamento
+  # precisar mudar, é só um valor de configuração.
+  WASM_BUDGET_BYTES: 6000000
 
 permissions:
   contents: read
@@ -79,3 +85,28 @@ jobs:
         with:
           name: test-results
           path: ./TestResults
+
+      - name: Orçamento do bundle WASM (issue #78)
+        run: |
+          set -o pipefail
+          dotnet publish TccManager.Client/TccManager.Client.csproj \
+            --no-restore --configuration Release --output ./publish-client
+
+          # Soma só os .br: é o formato Brotli que todo navegador moderno baixa (o servidor
+          # negocia Content-Encoding e serve o pré-comprimido, nunca o .wasm/.dll cru).
+          total_bytes=$(find ./publish-client/wwwroot/_framework -name "*.br" -printf "%s\n" | awk '{s+=$1} END {print s+0}')
+          total_mb=$(awk "BEGIN { printf \"%.2f\", $total_bytes / 1000000 }")
+          budget_mb=$(awk "BEGIN { printf \"%.2f\", $WASM_BUDGET_BYTES / 1000000 }")
+
+          {
+            echo "## Orçamento do bundle WASM"
+            echo ""
+            echo "_framework em Brotli (download real de um navegador moderno): **${total_mb} MB** — orçamento: ${budget_mb} MB"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Bundle WASM (_framework, .br): ${total_mb} MB / orçamento ${budget_mb} MB"
+
+          if [ "$total_bytes" -gt "$WASM_BUDGET_BYTES" ]; then
+            echo "::error::Bundle WASM (${total_mb} MB) ultrapassou o orçamento de ${budget_mb} MB — veja issue #78."
+            exit 1
+          fi
