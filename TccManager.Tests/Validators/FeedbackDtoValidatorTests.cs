@@ -26,6 +26,13 @@ public class FeedbackDtoValidatorTests
         Assert.True(result.IsValid);
     }
 
+    // Os dois Theory abaixo usam "decimal nota" (não "decimal? nota") de propósito: confirmado
+    // que [InlineData] não converte literais int/double para decimal? (só o "null" literal
+    // funciona) — o xUnit lança ArgumentException na invocação ("Object of type 'System.Int32'
+    // cannot be converted to type 'System.Nullable`1[System.Decimal]'"), não falha o teste com
+    // uma mensagem clara. Se algum caso de Nota == null precisar entrar nesses Theory no
+    // futuro, adicione um [Fact] separado (como NotaAusente_DevePassar acima) em vez de mudar a
+    // assinatura para decimal? — issue #80.
     [Theory]
     [InlineData(0)]   // limite inferior inclusivo
     [InlineData(5)]
