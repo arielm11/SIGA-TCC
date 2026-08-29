@@ -144,4 +144,61 @@ public class CoordenadorController_MembroExterno_Tests
         Assert.Contains("Ana Externa", corpo, StringComparison.Ordinal);
         Assert.Contains("ana@externa.edu", corpo, StringComparison.Ordinal);
     }
+
+    // Issue #75: GET /api/coordenador/membros-externos tinha só o teste acima (POST-então-GET,
+    // sem checar paginação/lista vazia/autorização do próprio GET). Os testes abaixo fecham
+    // essas lacunas.
+
+    [Fact]
+    public async Task Listagem_SemMembrosCadastrados_RetornaListaVazia()
+    {
+        using var factory = CriarFactory();
+        var client = factory.CreateClientAutenticado(IdCoordenador, "Coordenador");
+
+        var resultado = await client.GetFromJsonAsync<PagedResult<MembroExternoDto>>("/api/coordenador/membros-externos");
+
+        Assert.NotNull(resultado);
+        Assert.Empty(resultado!.Items);
+        Assert.Equal(0, resultado.TotalCount);
+    }
+
+    [Fact]
+    public async Task Listagem_ComMaisMembrosQueOPageSize_RespeitaPaginacaoEOrdenaPorNome()
+    {
+        using var factory = CriarFactory();
+        using (var context = factory.CriarContextoDireto())
+        {
+            context.MembrosExternos.AddRange(
+                new MembroExterno { Nome = "Carlos Externo", Email = "carlos@teste.com", Instituicao = "X" },
+                new MembroExterno { Nome = "Ana Externa", Email = "ana@teste.com", Instituicao = "X" },
+                new MembroExterno { Nome = "Bruno Externo", Email = "bruno@teste.com", Instituicao = "X" });
+            await context.SaveChangesAsync();
+        }
+        var client = factory.CreateClientAutenticado(IdCoordenador, "Coordenador");
+
+        var pagina1 = await client.GetFromJsonAsync<PagedResult<MembroExternoDto>>("/api/coordenador/membros-externos?page=1&pageSize=2");
+
+        Assert.NotNull(pagina1);
+        Assert.Equal(3, pagina1!.TotalCount);
+        Assert.Equal(2, pagina1.Items.Count);
+        // OrderBy(m => m.Nome) no controller — ordem alfabética, não de inserção.
+        Assert.Equal("Ana Externa", pagina1.Items[0].Nome);
+        Assert.Equal("Bruno Externo", pagina1.Items[1].Nome);
+    }
+
+    [Fact]
+    public async Task Listagem_UsuarioSemPapelCoordenador_Retorna403()
+    {
+        using var factory = CriarFactory();
+        using (var context = factory.CriarContextoDireto())
+        {
+            context.MembrosExternos.Add(new MembroExterno { Nome = "X", Email = "x@teste.com", Instituicao = "X" });
+            await context.SaveChangesAsync();
+        }
+        var client = factory.CreateClientAutenticado(10, "Aluno");
+
+        var response = await client.GetAsync("/api/coordenador/membros-externos");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
 }

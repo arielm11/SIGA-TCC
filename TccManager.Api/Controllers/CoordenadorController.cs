@@ -286,6 +286,7 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
+    [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
     public async Task<IActionResult> RegistrarResultadoBanca(
         int idBanca,
         [FromForm] decimal notaFinal,
@@ -304,6 +305,13 @@ public class CoordenadorController : ControllerBase
 
         if (arquivoAta == null || arquivoAta.Length == 0)
             return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
+
+        // Issue #75: [RequestSizeLimit] (no atributo do método) protege a conexão Kestrel
+        // real, mas esse corte não é reproduzido pelo TestServer em memória usado pelos
+        // testes de integração — ver o mesmo comentário em TccController.EnviarEntrega para
+        // o raciocínio completo. Esta é a camada testável.
+        if (arquivoAta.Length > UploadLimits.MaxArquivoUploadBytes)
+            return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
 
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 

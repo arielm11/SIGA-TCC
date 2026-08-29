@@ -136,6 +136,7 @@ public class TccController : ControllerBase
 
     [HttpPost("entregas")]
     [Authorize(Roles = "Aluno")]
+    [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
     public async Task<IActionResult> EnviarEntrega(
         [FromForm] string tituloEntrega,
         [FromForm] TipoEntrega tipo,
@@ -171,6 +172,20 @@ public class TccController : ControllerBase
 
         if (arquivo == null || arquivo.Length == 0)
             return BadRequest("Nenhum arquivo enviado.");
+
+        // Issue #75: [RequestSizeLimit] (abaixo, no atributo do método) já protege a conexão
+        // Kestrel real, abortando a leitura do corpo ao ultrapassar o teto — mas esse corte é
+        // uma característica do transporte Kestrel, não reproduzida pelo TestServer em
+        // memória usado pelos testes de integração (confirmado empiricamente: sem esta
+        // checagem, um corpo gigante passava batido pelo TestServer direto até aqui). Esta
+        // checagem explícita sobre IFormFile.Length é a segunda camada — não evita I/O de
+        // disco em si (o model binder do multipart já spoola partes grandes para um arquivo
+        // temporário do SO antes do corpo da ação executar, com ou sem esta checagem; quem
+        // evita esse spool é o [RequestSizeLimit] acima, abortando mais cedo), mas evita a
+        // gravação no storage da aplicação e a persistência no banco — e é a única camada que
+        // os testes conseguem exercitar de verdade.
+        if (arquivo.Length > UploadLimits.MaxArquivoUploadBytes)
+            return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
 
         var extensoesPermitidas = new[] { ".pdf", ".doc", ".docx", ".zip" };
         var extensao = Path.GetExtension(arquivo.FileName).ToLowerInvariant();
