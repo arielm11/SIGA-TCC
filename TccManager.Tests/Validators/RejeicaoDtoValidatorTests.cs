@@ -8,6 +8,13 @@ namespace TccManager.Tests.Validators;
 /// <summary>
 /// Issue #73 — <see cref="RejeicaoDtoValidator"/> não existia (RejeicaoDto só tinha o
 /// [Required] via DataAnnotations em Motivo, sem limite de tamanho).
+///
+/// Issue #81 (D5): o DTO ganhou um segundo dono (<c>OrientadorController.RejeitarEntrega</c>,
+/// além de <c>CoordenadorController.RejeitarProposta</c>) e mudou de arquivo, mantendo o mesmo
+/// namespace — nada muda aqui, porque estes testes exercitam o validador diretamente, sem
+/// controller nem rota. A aplicação do validador na rota nova é coberta por
+/// <c>OrientadorController_VeredictoEntrega_Tests</c> (motivo vazio e motivo que estoura o
+/// limite ao ser sanitizado).
 /// </summary>
 public class RejeicaoDtoValidatorTests
 {

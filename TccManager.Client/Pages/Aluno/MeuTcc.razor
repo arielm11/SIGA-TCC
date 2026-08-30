@@ -59,7 +59,19 @@
                 <RadzenTabs RenderMode="TabRenderMode.Client">
                     <Tabs>
                         <RadzenTabsItem Text="Entregas & Arquivos" Icon="cloud_upload">
-                            @if (entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final))
+                            @{
+                                // Issue #81 (D13): "Trabalho Concluído!" só se esconde o formulário
+                                // de upload enquanto houver uma Final NÃO rejeitada — é esta linha
+                                // que materializa a reabertura do ciclo na tela do aluno depois que
+                                // o orientador rejeita a Final (espelha o pre-check de
+                                // TccController.EnviarEntrega/D6 e o filtro do índice único/D2).
+                                var finalRejeitadaMaisRecente = entregasFeitas?
+                                    .Where(e => e.Tipo == TipoEntrega.Final)
+                                    .OrderByDescending(e => e.DataEnvio)
+                                    .FirstOrDefault(e => e.Status == StatusEntrega.Rejeitada);
+                                var temFinalNaoRejeitada = entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final && e.Status != StatusEntrega.Rejeitada);
+                            }
+                            @if (temFinalNaoRejeitada)
                             {
                                 <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
                                     <RadzenText TextStyle="TextStyle.H6" class="rz-my-0"><RadzenIcon Icon="emoji_events" IconColor="var(--rz-warning)" /> Trabalho Concluído!</RadzenText>
@@ -68,6 +80,17 @@
                             }
                             else
                             {
+                                @if (finalRejeitadaMaisRecente != null)
+                                {
+                                    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                                        <RadzenText TextStyle="TextStyle.H6" class="rz-my-0"><RadzenIcon Icon="error_outline" /> Sua versão final foi rejeitada</RadzenText>
+                                        <RadzenText class="rz-my-0">Aplique as correções apontadas pelo orientador e envie uma nova versão final abaixo.</RadzenText>
+                                        @if (!string.IsNullOrEmpty(finalRejeitadaMaisRecente.Feedback))
+                                        {
+                                            <RadzenText TextStyle="TextStyle.Body2" style="white-space: pre-line;" class="rz-mt-2 rz-mb-0"><strong>Parecer do orientador:</strong> @finalRejeitadaMaisRecente.Feedback</RadzenText>
+                                        }
+                                    </RadzenAlert>
+                                }
                                 <RadzenText TextStyle="TextStyle.H6" class="rz-mt-1 rz-mb-2"><RadzenIcon Icon="cloud_upload" /> Nova Entrega</RadzenText>
                                 <RadzenCard Variant="Variant.Flat" class="rz-mb-4">
                                     <RadzenRow Gap="1rem">
@@ -127,32 +150,35 @@
                                         </RadzenDataGridColumn>
                                         <RadzenDataGridColumn TItem="Entrega" Title="Parecer do Orientador" Sortable="false" Filterable="false" Width="260px">
                                             <Template Context="entrega">
-                                                @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
-                                                {
-                                                    <RadzenButton Text="@(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")"
-                                                                  Icon="chat" ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                                                  Click="@(() => AlternarFeedback(entrega.Id))" />
+                                                <RadzenStack Gap="0.35rem">
+                                                    @* Issue #81 (D13): reflete entrega.Status (veredito explícito), não mais a
+                                                       heurística antiga de "tem Feedback preenchido" — uma entrega pode ter
+                                                       Feedback e continuar sem veredito registrado. *@
+                                                    <RadzenBadge BadgeStyle="@BadgeStyleParaStatusEntrega(entrega.Status)" Text="@TextoStatusEntrega(entrega.Status)" />
 
-                                                    @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                                    @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
                                                     {
-                                                        <RadzenCard Variant="Variant.Outlined" class="rz-mt-2">
-                                                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start">
-                                                                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Parecer do Orientador</RadzenText>
-                                                                @if (entrega.Nota.HasValue)
-                                                                {
-                                                                    <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"Nota: {entrega.Nota}")" />
-                                                                }
-                                                            </RadzenStack>
-                                                            <RadzenText style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">
-                                                                @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
-                                                            </RadzenText>
-                                                        </RadzenCard>
+                                                        <RadzenButton Text="@(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")"
+                                                                      Icon="chat" ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                                      Click="@(() => AlternarFeedback(entrega.Id))" />
+
+                                                        @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                                        {
+                                                            <RadzenCard Variant="Variant.Outlined" class="rz-mt-2">
+                                                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start">
+                                                                    <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Parecer do Orientador</RadzenText>
+                                                                    @if (entrega.Nota.HasValue)
+                                                                    {
+                                                                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"Nota: {entrega.Nota}")" />
+                                                                    }
+                                                                </RadzenStack>
+                                                                <RadzenText style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">
+                                                                    @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
+                                                                </RadzenText>
+                                                            </RadzenCard>
+                                                        }
                                                     }
-                                                }
-                                                else
-                                                {
-                                                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Aguardando Avaliação" />
-                                                }
+                                                </RadzenStack>
                                             </Template>
                                         </RadzenDataGridColumn>
                                     </Columns>
@@ -608,6 +634,22 @@
     {
         return tcc.Entregas != null && tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
     }
+
+    // Issue #81 (D13): mesma paleta de badges usada na tela do Professor (D12) — Pendente
+    // (ainda sem veredito) em cinza claro, Aprovada em verde, Rejeitada em vermelho.
+    private static BadgeStyle BadgeStyleParaStatusEntrega(StatusEntrega status) => status switch
+    {
+        StatusEntrega.Aprovada => BadgeStyle.Success,
+        StatusEntrega.Rejeitada => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
+    };
+
+    private static string TextoStatusEntrega(StatusEntrega status) => status switch
+    {
+        StatusEntrega.Aprovada => "Aprovada",
+        StatusEntrega.Rejeitada => "Rejeitada",
+        _ => "Aguardando Veredito"
+    };
 
     private class BancaInfoDto
     {

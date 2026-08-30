@@ -40,17 +40,35 @@
                 <RadzenColumn SizeMD="4" SizeXS="12" class="rz-text-align-end">
                     @if (tcc.Status == StatusTcc.Aprovado || tcc.Status == StatusTcc.EmAndamento)
                     {
-                        var temEntregaFinal = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
+                        @* Issue #81 (D7): "Dar Aceite Final" passa a exigir uma Final APROVADA,
+                           não apenas presente — sem isso o Professor contornaria o próprio
+                           veredito de rejeição. A legenda distingue os três casos possíveis. *@
+                        var finalMaisRecente = tcc.Entregas
+                            .Where(e => e.Tipo == TipoEntrega.Final)
+                            .OrderByDescending(e => e.DataEnvio)
+                            .FirstOrDefault();
+                        var temFinalAprovada = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final && e.Status == StatusEntrega.Aprovada);
 
                         <RadzenStack Orientation="Orientation.Vertical" AlignItems="AlignItems.End" Gap="0.5rem">
                             <RadzenButton Text="Dar Aceite Final" Icon="workspace_premium" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Large"
-                                          Disabled="@(!temEntregaFinal || processandoAceite)" IsBusy="processandoAceite" BusyText="Processando..."
+                                          Disabled="@(!temFinalAprovada || processandoAceite)" IsBusy="processandoAceite" BusyText="Processando..."
                                           Click="@DarAceiteFinal" />
 
-                            @if (!temEntregaFinal)
+                            @if (!temFinalAprovada)
                             {
                                 <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">
-                                    Aguardando envio da Versão Final pelo aluno.
+                                    @if (finalMaisRecente == null)
+                                    {
+                                        @:Aguardando envio da Versão Final pelo aluno.
+                                    }
+                                    else if (finalMaisRecente.Status == StatusEntrega.Rejeitada)
+                                    {
+                                        @:A versão final foi rejeitada. Aguarde o novo envio do aluno.
+                                    }
+                                    else
+                                    {
+                                        @:A versão final ainda não foi avaliada. Aprove a entrega final antes de conceder o aceite.
+                                    }
                                 </RadzenText>
                             }
                         </RadzenStack>
@@ -79,12 +97,19 @@
                         <RadzenStack Gap="1rem">
                             @foreach (var entrega in tcc.Entregas)
                             {
+                                @* Issue #81 (D9/D8): botões de veredito só aparecem com o TCC em
+                                   Aprovado/EmAndamento, e ficam ocultos para uma entrega Final já
+                                   Rejeitada (terminal — o aluno já reenviou uma nova Final). *@
+                                var podeAlterarVeredito = (tcc.Status == StatusTcc.Aprovado || tcc.Status == StatusTcc.EmAndamento)
+                                    && !(entrega.Tipo == TipoEntrega.Final && entrega.Status == StatusEntrega.Rejeitada);
+
                                 <RadzenCard Variant="Variant.Outlined">
                                     <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="1rem">
                                         <RadzenStack Gap="0.25rem">
                                             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
                                                 <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-my-0">@entrega.Titulo</RadzenText>
                                                 <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@entrega.Tipo.ToString()" />
+                                                <RadzenBadge BadgeStyle="@BadgeStyleParaStatusEntrega(entrega.Status)" Text="@TextoStatusEntrega(entrega.Status)" />
                                             </RadzenStack>
                                             <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</RadzenText>
 
@@ -104,7 +129,7 @@
                                             }
                                         </RadzenStack>
 
-                                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" class="rz-flex-wrap">
                                             <button type="button" @onclick="@(() => BaixarArquivoEntrega(entrega))" disabled="@(entregaIdBaixando == entrega.Id)"
                                                     style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.35rem 0.9rem; border: 1px solid var(--rz-primary); border-radius: 4px; background:none; color: var(--rz-primary); text-decoration:none; font-weight:500; white-space:nowrap; cursor:pointer;">
                                                 <RadzenIcon Icon="download" />
@@ -112,6 +137,15 @@
                                             </button>
                                             <RadzenButton Text="@(string.IsNullOrEmpty(entrega.Feedback) ? "Avaliar" : "Editar Avaliação")" Icon="chat"
                                                           ButtonStyle="ButtonStyle.Success" Click="@(() => AbrirFormFeedback(entrega))" />
+                                            @if (podeAlterarVeredito)
+                                            {
+                                                <RadzenButton Text="Aprovar" Icon="check_circle" ButtonStyle="ButtonStyle.Success" Variant="Variant.Outlined"
+                                                              Disabled="@(entregaIdProcessandoVeredito == entrega.Id)"
+                                                              Click="@(() => AprovarEntrega(entrega))" />
+                                                <RadzenButton Text="Rejeitar" Icon="cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined"
+                                                              Disabled="@(entregaIdProcessandoVeredito == entrega.Id)"
+                                                              Click="@(() => AbrirRejeicaoEntrega(entrega))" />
+                                            }
                                         </RadzenStack>
                                     </RadzenStack>
 
@@ -235,6 +269,7 @@
     private int? acompanhamentoEmEdicaoId = null;
 
     private bool processandoAceite = false;
+    private int? entregaIdProcessandoVeredito;
 
     protected override async Task OnInitializedAsync()
     {
@@ -504,4 +539,112 @@
         }
         finally { processandoAceite = false; }
     }
+
+    // Issue #81 (D3/D12): veredito de aprovação de uma entrega. Sem corpo; após sucesso, recarrega
+    // a tela (padrão já usado nas demais ações desta página).
+    private async Task AprovarEntrega(Entrega entrega)
+    {
+        var confirmado = await DialogService.Confirm(
+            "Tem certeza que deseja aprovar esta entrega?",
+            "Aprovar entrega",
+            new ConfirmOptions { OkButtonText = "Aprovar", CancelButtonText = "Cancelar" });
+
+        if (confirmado != true) return;
+
+        entregaIdProcessandoVeredito = entrega.Id;
+        try
+        {
+            var response = await Http.PostAsync($"api/orientador/entregas/{entrega.Id}/aprovar", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Entrega aprovada",
+                    Detail = "Entrega aprovada com sucesso!",
+                    Duration = 4000
+                });
+                await CarregarTcc();
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = erro,
+                    Duration = 6000
+                });
+            }
+        }
+        finally { entregaIdProcessandoVeredito = null; }
+    }
+
+    // Issue #81 (D3/D4/D12): veredito de rejeição — reusa RejeitarPropostaDialog (agora
+    // parametrizável) pré-carregado com o Feedback atual da entrega, já que D4 define que rejeitar
+    // sobrescreve o Feedback e o professor precisa ver o que está substituindo.
+    private async Task AbrirRejeicaoEntrega(Entrega entrega)
+    {
+        var resultado = await DialogService.OpenAsync<RejeitarPropostaDialog>(
+            "Rejeitar Entrega",
+            new Dictionary<string, object?>
+            {
+                { "RotuloMotivo", "Parecer / Motivo da Rejeição" },
+                { "TextoBotaoConfirmar", "Rejeitar Entrega" },
+                { "MotivoInicial", entrega.Feedback }
+            },
+            new DialogOptions { Width = "500px" });
+
+        if (resultado is not string motivo || string.IsNullOrWhiteSpace(motivo)) return;
+
+        entregaIdProcessandoVeredito = entrega.Id;
+        try
+        {
+            var payload = new RejeicaoDto { Motivo = motivo };
+            var response = await Http.PostAsJsonAsync($"api/orientador/entregas/{entrega.Id}/rejeitar", payload);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var mensagem = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Entrega rejeitada",
+                    Detail = mensagem,
+                    Duration = 5000
+                });
+                await CarregarTcc();
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = erro,
+                    Duration = 6000
+                });
+            }
+        }
+        finally { entregaIdProcessandoVeredito = null; }
+    }
+
+    // Issue #81 (D12): mesma paleta usada em Aluno/MeuTcc.razor (D13) para o veredito de
+    // Entrega.Status — mantém as duas telas visualmente consistentes para o mesmo conceito.
+    private static BadgeStyle BadgeStyleParaStatusEntrega(StatusEntrega status) => status switch
+    {
+        StatusEntrega.Aprovada => BadgeStyle.Success,
+        StatusEntrega.Rejeitada => BadgeStyle.Danger,
+        _ => BadgeStyle.Light
+    };
+
+    private static string TextoStatusEntrega(StatusEntrega status) => status switch
+    {
+        StatusEntrega.Aprovada => "Aprovada",
+        StatusEntrega.Rejeitada => "Rejeitada",
+        _ => "Aguardando Veredito"
+    };
 }
