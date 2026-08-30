@@ -70,8 +70,11 @@ public class OrientadorController_CicloVeredictoFinal_Tests
             NovoUsuario(idOrientador, "Orientador", "orient@teste.com", TipoUsuario.Professor),
             NovoUsuario(idCoordenador, "Coordenador", "coord@teste.com", TipoUsuario.Coordenador));
 
-        // EnviarEntrega exige tcc.Status == Aprovado; os endpoints de veredito aceitam
-        // Aprovado ou EmAndamento (D9). Aprovado satisfaz os dois lados do ciclo.
+        // Aprovado é o ponto de partida correto: TCC com orientador designado e ZERO entregas
+        // (invariante fixada pela issue #82). O primeiro upload do ciclo abaixo é justamente o
+        // que transiciona o TCC para EmAndamento (D2) — e o reenvio do passo 5 só é aceito
+        // porque o gate de EnviarEntrega passou a aceitar os dois estados (D4/Grupo B). Os
+        // endpoints de veredito aceitam Aprovado ou EmAndamento desde a #81 (D9).
         var tcc = new Tcc
         {
             Titulo = "TCC de Teste",

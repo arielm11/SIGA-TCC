@@ -3,6 +3,7 @@
 @using TccManager.Shared.Models
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
+@using TccManager.Shared.Formatting
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
@@ -34,7 +35,7 @@
                         <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Aluno: @tcc.Aluno?.Nome</RadzenText>
                     </RadzenStack>
                     <RadzenText class="rz-mt-3 rz-mb-3"><strong>Resumo:</strong> @tcc.Resumo</RadzenText>
-                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@($"Status: {tcc.Status}")" />
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@($"Status: {StatusTccFormatter.Formatar(tcc.Status)}")" />
                 </RadzenColumn>
 
                 <RadzenColumn SizeMD="4" SizeXS="12" class="rz-text-align-end">

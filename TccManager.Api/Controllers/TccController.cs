@@ -148,7 +148,12 @@ public class TccController : ControllerBase
 
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
 
-        if (tcc == null || tcc.Status != StatusTcc.Aprovado)
+        // Issue #82 (D4/Grupo B): aceita Aprovado ("orientador designado, ainda nenhuma
+        // entrega") OU EmAndamento ("já enviou pelo menos uma") — sem isso, a transição
+        // automática logo abaixo travaria o aluno já na 2ª entrega. Mensagem de erro
+        // inalterada: os estados recusados (Pendente/Reprovado/AguardandoDefesa/Finalizado)
+        // continuam corretamente descritos como "precisa estar aprovado".
+        if (tcc == null || (tcc.Status != StatusTcc.Aprovado && tcc.Status != StatusTcc.EmAndamento))
             return BadRequest("Seu TCC precisa estar aprovado para enviar entregas.");
 
         // Issue #81 (D6): o bloqueio deixou de ser "existe qualquer Final" e passou a ser
@@ -238,10 +243,25 @@ public class TccController : ControllerBase
             DataEnvio = DateTime.UtcNow
         };
 
+        // Issue #82 (D2): primeira entrega do aluno transiciona o TCC de Aprovado
+        // ("orientador designado, nada enviado") para EmAndamento ("aluno já começou").
+        // Invariante: Aprovado <=> zero Entregas, então o próprio Status já é o marcador de
+        // "é a primeira" — não precisa (nem deve) contar linhas em Entregas (ver 4.2 do
+        // documento de arquitetura: um AnyAsync seria auto-corretivo do jeito errado, deixando
+        // um TCC preso em Aprovado se algum dado legado já tivesse entregas). Monotônica: nada
+        // volta de EmAndamento para Aprovado. Qualquer TipoEntrega dispara (D3).
+        var iniciouAcompanhamento = tcc.Status == StatusTcc.Aprovado;
+        if (iniciouAcompanhamento)
+            tcc.Status = StatusTcc.EmAndamento;
+
         _context.Entregas.Add(entrega);
 
         try
         {
+            // Insere a Entrega e grava o novo Status do Tcc na mesma transação implícita do
+            // EF Core (mesmo DbContext, um único SaveChanges) — sem isso haveria uma janela
+            // observável de "status mudou mas a entrega não entrou". Herda os dois catch
+            // abaixo: se o INSERT falhar, o UPDATE de Status também não é persistido.
             await _context.SaveChangesAsync();
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
@@ -270,6 +290,20 @@ public class TccController : ControllerBase
             tcc.Id,
             entrega.Id,
             entrega.Tipo);
+
+        // Issue #82 (D6): única transição de Tcc.Status sem autor humano identificável (todas
+        // as outras são atos deliberados de um usuário autorizado) — por isso é a que mais
+        // precisa de trilha, não a que menos. Só ids/metadados, sem PII, mesma disciplina dos
+        // demais logs desta categoria.
+        if (iniciouAcompanhamento)
+        {
+            _auditLogger.LogInformation(
+                "TCC transicionado automaticamente para EmAndamento pela primeira entrega do aluno. TccId: {TccId}, AlunoId: {AlunoId}, EntregaId: {EntregaId}, Tipo: {Tipo}",
+                tcc.Id,
+                alunoId,
+                entrega.Id,
+                entrega.Tipo);
+        }
 
         return Ok(entrega);
     }

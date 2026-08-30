@@ -129,10 +129,15 @@ public class TccController_EnviarEntrega_Tests
         Assert.False(houveEntrega);
     }
 
-    // RF2 — bloqueio quando o TCC não está com Status = Aprovado
+    // RF2 — bloqueio quando o TCC não está em acompanhamento (nem Aprovado nem EmAndamento)
+    //
+    // Issue #82 (D4/Grupo B, seção 12 item 1): o caso [InlineData(StatusTcc.EmAndamento)] foi
+    // REMOVIDO desta Theory, e essa remoção é a mudança de sinal esperada — EmAndamento passou a
+    // ser um estado válido para upload (é justamente o estado em que o TCC fica depois da
+    // primeira entrega; mantê-lo aqui travaria o aluno na segunda). O caso positivo correspondente
+    // vive em TccController_TransicaoEmAndamento_Tests, junto com o resto do gatilho.
     [Theory]
     [InlineData(StatusTcc.Pendente)]
-    [InlineData(StatusTcc.EmAndamento)]
     [InlineData(StatusTcc.AguardandoDefesa)]
     [InlineData(StatusTcc.Finalizado)]
     public async Task RF2_TccNaoAprovado_DeveRetornarBadRequest(StatusTcc status)
@@ -156,12 +161,18 @@ public class TccController_EnviarEntrega_Tests
     }
 
     // RF3 — bloqueio de reenvio quando já existe uma Entrega Tipo=Final
+    //
+    // Issue #82 (seção 12, item 6): o seed passou de Aprovado para EmAndamento. "Aprovado COM
+    // entrega" virou um estado impossível depois desta issue (a invariante é
+    // Aprovado <=> zero Entregas), e o backfill corrige exatamente essas linhas no legado. O
+    // resultado do teste não muda — o bloqueio da Final acontece antes do gatilho —, mas o seed
+    // deixa de ser ficção.
     [Fact]
     public async Task RF3_ReenvioComEntregaFinalExistente_DeveRetornarBadRequest()
     {
         using var factory = new WebRootIsolatedApiFactory();
         var tccId = await SemearTccAsync(
-            factory, StatusTcc.Aprovado, comOrientador: true, comEntregaFinal: true);
+            factory, StatusTcc.EmAndamento, comOrientador: true, comEntregaFinal: true);
         var client = factory.CreateClientAutenticado(idAluno, "Aluno");
 
         var response = await client.PostAsync(
