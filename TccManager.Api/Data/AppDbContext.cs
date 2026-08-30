@@ -34,11 +34,21 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Entrega>(entity =>
         {
-            // Reforça no banco a invariante "no máximo 1 entrega FINAL por TCC" (RN03),
-            // como backstop atômico ao AnyAsync de aplicação em
+            // Reforça no banco a invariante "no máximo 1 entrega FINAL NÃO REJEITADA por
+            // TCC" (RN03 + issue #81), como backstop atômico ao pre-check de aplicação em
             // TccController.EnviarEntrega — que sozinho não impede duas requisições
-            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL.
-            // TipoEntrega.Final == 1 (sem HasConversion, enum persistido como int).
+            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL "ativas".
+            // TipoEntrega.Final == 1, StatusEntrega.Rejeitada == 2 (sem HasConversion, enums
+            // persistidos como int).
+            //
+            // Issue #81 (D2): o filtro passou de "[Tipo] = 1" para "[Tipo] = 1 AND [Status] <> 2"
+            // — o mecanismo de veredito por entrega permite que uma entrega Final rejeitada
+            // saia do índice para o aluno poder enviar uma nova Final no lugar (ver
+            // docs/dados/2026-08-30-reprovacao-durante-orientacao.md, seção 3). `<>` (e não
+            // `IN (0, 1)`) foi validado empiricamente contra SQL Server real e é mais robusto
+            // a um futuro valor de enum "ativo" adicional. O predicado precisa ser mantido em
+            // paridade com o pre-check de TccController.EnviarEntrega (D6) — essa igualdade é
+            // a invariante central da issue.
             //
             // Substitui o índice não-único de convenção (FK em TccId): o EF Core não
             // suporta dois índices distintos sobre o mesmo conjunto de propriedades no
@@ -47,7 +57,7 @@ public class AppDbContext : DbContext
             // registrado em docs/implementacao.
             entity.HasIndex(e => e.TccId)
                 .IsUnique()
-                .HasFilter("[Tipo] = 1")
+                .HasFilter("[Tipo] = 1 AND [Status] <> 2")
                 .HasDatabaseName("UX_Entregas_TccId_Final");
         });
 

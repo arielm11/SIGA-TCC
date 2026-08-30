@@ -24,12 +24,6 @@ public class DesignarOrientadorDto
     public int OrientadorId { get; set; }
 }
 
-public class RejeicaoDto
-{
-    [Required(ErrorMessage = "O motivo da rejeição é obrigatório!")]
-    public string Motivo { get; set; } = string.Empty;
-}
-
 public class CapacidadeProfessorDto
 {
     public int LimiteOrientandos { get; set; }

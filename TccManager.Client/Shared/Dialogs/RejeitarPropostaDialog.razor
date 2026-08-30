@@ -1,9 +1,12 @@
 @* Diálogo de rejeição de proposta (N3 Etapa 4 — originalmente Professor/Dashboard;
    issue #76/D9 — chamador passou a ser Coordenador/Dashboard).
+   Issue #81/D12: passou a ser reutilizável também para o veredito de rejeição de uma Entrega
+   (Professor/DetalhesTcc.razor) — os textos de rótulo/botão e o motivo pré-carregado são
+   parametrizáveis, com defaults que preservam exatamente o comportamento anterior (chamador
+   Coordenador/Dashboard não passa nenhum parâmetro novo).
    Aberto via DialogService.OpenAsync<RejeitarPropostaDialog>.
    Fecha retornando o motivo (string) via DialogService.Close ao confirmar, ou null ao cancelar.
-   A página chamadora é responsável pelo PUT api/coordenador/propostas/{id}/rejeitar e pelo
-   reload do dashboard. *@
+   A página chamadora é responsável pela chamada HTTP e pelo reload da tela. *@
 @using TccManager.Shared.DTOs
 @inject DialogService DialogService
 
@@ -12,7 +15,7 @@
         <DataAnnotationsValidator />
         <RadzenStack Gap="1rem">
             <div>
-                <RadzenFormField Text="Motivo da Rejeição" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenFormField Text="@RotuloMotivo" Variant="Variant.Outlined" style="width: 100%;">
                     <RadzenTextArea Name="Motivo" @bind-Value="rejeicao.Motivo" Rows="4" style="width: 100%;" />
                 </RadzenFormField>
                 <ValidationMessage For="@(() => rejeicao.Motivo)" />
@@ -20,14 +23,28 @@
 
             <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem">
                 <RadzenButton Text="Cancelar" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@Cancelar" />
-                <RadzenButton ButtonType="ButtonType.Submit" Text="Rejeitar Proposta" Icon="cancel" ButtonStyle="ButtonStyle.Danger" />
+                <RadzenButton ButtonType="ButtonType.Submit" Text="@TextoBotaoConfirmar" Icon="cancel" ButtonStyle="ButtonStyle.Danger" />
             </RadzenStack>
         </RadzenStack>
     </EditForm>
 </RadzenStack>
 
 @code {
+    [Parameter]
+    public string RotuloMotivo { get; set; } = "Motivo da Rejeição";
+
+    [Parameter]
+    public string TextoBotaoConfirmar { get; set; } = "Rejeitar Proposta";
+
+    [Parameter]
+    public string? MotivoInicial { get; set; }
+
     private RejeicaoDto rejeicao = new();
+
+    protected override void OnInitialized()
+    {
+        rejeicao.Motivo = MotivoInicial ?? "";
+    }
 
     private void Confirmar() => DialogService.Close(rejeicao.Motivo);
 

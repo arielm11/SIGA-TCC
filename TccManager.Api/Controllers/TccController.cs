@@ -151,9 +151,22 @@ public class TccController : ControllerBase
         if (tcc == null || tcc.Status != StatusTcc.Aprovado)
             return BadRequest("Seu TCC precisa estar aprovado para enviar entregas.");
 
-        var jaEnviouFinal = await _context.Entregas.AnyAsync(e => e.TccId == tcc.Id && e.Tipo == TipoEntrega.Final);
-        if (jaEnviouFinal)
-            return BadRequest("A versão FINAL já foi enviada. O ciclo de entregas está encerrado.");
+        // Issue #81 (D6): o bloqueio deixou de ser "existe qualquer Final" e passou a ser
+        // "existe uma Final NÃO rejeitada" — precisa ser o mesmo predicado do índice único
+        // filtrado UX_Entregas_TccId_Final (AppDbContext), essa igualdade é a invariante
+        // central da issue. Busca-se o Status (em vez de um AnyAsync booleano) para
+        // diferenciar as mensagens de 400 entre Final aprovada e Final ainda pendente de
+        // avaliação — só uma Final Rejeitada deixa o ciclo reabrir (o aluno pode enviar
+        // tanto Parcial quanto uma nova Final).
+        var statusFinalBloqueante = await _context.Entregas
+            .Where(e => e.TccId == tcc.Id && e.Tipo == TipoEntrega.Final && e.Status != StatusEntrega.Rejeitada)
+            .Select(e => (StatusEntrega?)e.Status)
+            .FirstOrDefaultAsync();
+
+        if (statusFinalBloqueante == StatusEntrega.Aprovada)
+            return BadRequest("A versão FINAL já foi aprovada pelo orientador. O ciclo de entregas está encerrado.");
+        if (statusFinalBloqueante == StatusEntrega.Pendente)
+            return BadRequest("Sua versão FINAL está aguardando a avaliação do orientador.");
 
         // Issue #73 (achado A10-1 da revisão de segurança,
         // docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md): tituloEntrega é

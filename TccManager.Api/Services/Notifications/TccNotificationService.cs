@@ -34,6 +34,16 @@ public class TccNotificationService : ITccNotificationService
     private const string BlocoAcessoIndisponivel =
         "<p style=\"color:#666; font-size: 13px;\">Esta mensagem é apenas informativa; o rascunho da ata fica disponível somente para o Coordenador e os avaliadores da banca.</p>";
 
+    /// <summary>
+    /// Issue #81 (D11): preenchido em {{BlocoReenvio}} de entrega-rejeitada.html apenas
+    /// quando a entrega rejeitada é do tipo Final — é o aviso de que o ciclo de entregas
+    /// reabriu e o aluno já pode enviar uma nova versão final. Vazio para entregas Parciais
+    /// rejeitadas, que não têm efeito de sistema (mesmo precedente de BlocoAcessoRascunho em
+    /// banca-agendada.html).
+    /// </summary>
+    private const string BlocoReenvioFinal =
+        "<p style=\"background-color:#fff8e1; border-left:3px solid #f9a825; padding:8px 12px;\"><strong>O ciclo de entregas foi reaberto.</strong> Acesse o SIGA-TCC para enviar uma nova versão final com as correções solicitadas.</p>";
+
     public TccNotificationService(
         AppDbContext context,
         IEmailTemplateRenderer renderer,
@@ -389,6 +399,53 @@ public class TccNotificationService : ITccNotificationService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Falha ao preparar notificação de reenvio de rascunho para Banca {BancaId}, MembroExterno {MembroExternoId}.", bancaId, membroExternoId);
+        }
+    }
+
+    public async Task NotificarVeredictoEntregaAsync(int entregaId, bool aprovada)
+    {
+        try
+        {
+            var entrega = await _context.Entregas
+                .Include(e => e.Tcc!).ThenInclude(t => t.Aluno)
+                .FirstOrDefaultAsync(e => e.Id == entregaId);
+
+            if (entrega?.Tcc == null)
+            {
+                _logger.LogWarning("NotificarVeredictoEntregaAsync: Entrega {EntregaId} ou Tcc associado não encontrado.", entregaId);
+                return;
+            }
+
+            var destinatarios = ColetarEmails(("Aluno", entrega.Tcc.Aluno?.Email));
+            if (destinatarios.Count == 0) return;
+
+            var chaveTemplate = aprovada ? "entrega-aprovada" : "entrega-rejeitada";
+            var assunto = aprovada ? "Entrega aprovada pelo orientador" : "Entrega rejeitada pelo orientador";
+
+            var valores = new Dictionary<string, string>
+            {
+                ["NomeAluno"] = Codificar(entrega.Tcc.Aluno?.Nome),
+                ["TituloTcc"] = Codificar(entrega.Tcc.Titulo),
+                ["TituloEntrega"] = Codificar(entrega.Titulo)
+            };
+
+            if (!aprovada)
+            {
+                valores["Feedback"] = Codificar(entrega.Feedback) is { Length: > 0 } feedback ? feedback : "Não informado";
+                // D11: placeholder {{BlocoReenvio}} dentro de entrega-rejeitada.html — só
+                // preenchido quando a entrega rejeitada é a Final (é ela que reabre o ciclo
+                // de entregas, ver TccController.EnviarEntrega/D6); vazio para Parcial, que
+                // não tem nenhum efeito de sistema.
+                valores["BlocoReenvio"] = entrega.Tipo == TipoEntrega.Final ? BlocoReenvioFinal : string.Empty;
+            }
+
+            var corpo = _renderer.Render(chaveTemplate, valores);
+
+            Enfileirar(destinatarios, assunto, corpo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao preparar notificação de veredito de entrega para a Entrega {EntregaId}.", entregaId);
         }
     }
 

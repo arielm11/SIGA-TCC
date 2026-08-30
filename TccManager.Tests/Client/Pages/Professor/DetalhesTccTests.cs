@@ -10,11 +10,17 @@ namespace TccManager.Tests.Client.Pages.Professor;
 /// <summary>
 /// Testes da lógica C# pura de <see cref="DetalhesTcc"/> introduzida/preservada na N3 Etapa 4.
 ///
-/// Contexto: não há infraestrutura bUnit no projeto (gap pré-existente; RNF-04 não exige teste de UI
-/// automatizado). Portanto <c>RadzenTabs</c>, <c>RadzenAccordion</c>, <c>EditForm</c>/
-/// <c>DataAnnotationsValidator</c>, o gating do botão "Dar Aceite Final" (expressão no markup),
-/// <c>DialogService.Confirm</c>, <c>NotificationService</c> e todos os fluxos HTTP NÃO são cobertos
-/// aqui — ver docs/testes/2026-07-14-migracao-radzen-blazor-etapa4.md.
+/// Contexto (à época): não havia infraestrutura bUnit no projeto. Portanto <c>RadzenTabs</c>,
+/// <c>RadzenAccordion</c>, <c>EditForm</c>/<c>DataAnnotationsValidator</c>, o gating do botão
+/// "Dar Aceite Final" (expressão no markup), <c>DialogService.Confirm</c>,
+/// <c>NotificationService</c> e todos os fluxos HTTP NÃO são cobertos aqui — ver
+/// docs/testes/2026-07-14-migracao-radzen-blazor-etapa4.md.
+///
+/// Atualização (issue #75/#81): a infraestrutura bUnit passou a existir. Os controles de veredito
+/// por entrega (badges de <c>Entrega.Status</c>, botões Aprovar/Rejeitar, gating do "Dar Aceite
+/// Final" por Final aprovada e o reuso do <c>RejeitarPropostaDialog</c>) são cobertos por
+/// renderização real em <see cref="DetalhesTccVeredictoTests"/>. Este arquivo permanece válido:
+/// os membros testados aqui não mudaram na issue #81.
 ///
 /// O que É coberto: os membros de <c>@code</c> que são transição de estado pura / mapeamento e não
 /// dependem de <c>HttpClient</c>, <c>DialogService</c> ou <c>NotificationService</c>:

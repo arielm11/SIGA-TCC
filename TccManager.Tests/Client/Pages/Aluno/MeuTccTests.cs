@@ -9,11 +9,16 @@ namespace TccManager.Tests.Client.Pages.Aluno;
 /// <summary>
 /// Testes da lógica C# pura de <see cref="MeuTcc"/> introduzida/alterada na N3 Etapa 3.
 ///
-/// Contexto: não há infraestrutura bUnit no projeto (gap pré-existente, RNF-04 não exige teste de
-/// UI automatizado), então a renderização, o roteamento de layout, o EditForm, o RadzenDataGrid, o
-/// upload multipart e as chamadas HTTP (que dependem de <c>HttpClient</c>/<c>NotificationService</c>/
-/// <c>DialogService</c> injetados e do ciclo de vida do componente) NÃO são cobertos aqui — ver
-/// docs/testes/2026-07-14-migracao-radzen-blazor-etapa3.md.
+/// Contexto (à época): não havia infraestrutura bUnit no projeto, então a renderização, o
+/// roteamento de layout, o EditForm, o RadzenDataGrid, o upload multipart e as chamadas HTTP NÃO
+/// são cobertos aqui — ver docs/testes/2026-07-14-migracao-radzen-blazor-etapa3.md.
+///
+/// Atualização (issue #75/#81): a infraestrutura bUnit passou a existir. O gate de upload da
+/// issue #81 (D13 — formulário some/volta conforme o veredito da Final) e os badges de
+/// <c>Entrega.Status</c> são cobertos por renderização real em
+/// <see cref="MeuTccGateDeUploadTests"/>. Este arquivo permanece válido: nem
+/// <c>AlternarFeedback</c> nem <c>FoiReprovadoNaBanca</c> mudaram na issue #81 (confirmado na
+/// seção 11.2 do documento de arquitetura — o mecanismo nunca altera <c>Tcc.Status</c>).
 ///
 /// O que É coberto: os dois trechos de lógica pura do <c>@code</c> que não dependem do ciclo de vida
 /// do componente nem de serviços injetados — <see cref="MeuTcc"/>.<c>AlternarFeedback</c> (alternância

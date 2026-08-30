@@ -41,4 +41,13 @@ public interface ITccNotificationService
     /// já revogou o token anterior do par).
     /// </summary>
     Task NotificarReenvioRascunhoAsync(int bancaId, int membroExternoId, string tokenBruto);
+
+    /// <summary>
+    /// Veredito do orientador sobre uma entrega (issue #81, D11) — Aluno. Disparado por
+    /// OrientadorController.AprovarEntrega/RejeitarEntrega. <paramref name="aprovada"/>
+    /// escolhe o template (entrega-aprovada vs. entrega-rejeitada); quando a entrega
+    /// rejeitada é do tipo Final, o template de rejeição inclui um bloco extra avisando o
+    /// aluno de que o ciclo de entregas reabriu e ele já pode reenviar.
+    /// </summary>
+    Task NotificarVeredictoEntregaAsync(int entregaId, bool aprovada);
 }

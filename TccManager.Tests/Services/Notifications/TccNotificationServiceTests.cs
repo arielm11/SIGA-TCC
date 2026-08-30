@@ -426,4 +426,119 @@ public class TccNotificationServiceTests
         Assert.Equal(2, destinatarios.Count);
         Assert.Single(destinatarios, d => d == "mesmo@teste.com");
     }
+
+    // ── VeredictoEntrega (issue #81, D11) ─────────────────────────────
+    // Os textos usados nas asserções de corpo são ASCII de propósito: Codificar() aplica
+    // WebUtility.HtmlEncode, que converte acentuados em entidades numéricas ("ã" -> "&#227;").
+
+    private static async Task<AppDbContext> ContextoComEntregaAsync(
+        TipoEntrega tipo,
+        string? feedback,
+        string? emailDoAluno = "aluno@teste.com")
+    {
+        var context = CriarContexto();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno Teste", emailDoAluno!, TipoUsuario.Aluno));
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC de Teste", Resumo = "r", AlunoId = 10, Status = StatusTcc.EmAndamento });
+        context.Entregas.Add(new Entrega
+        {
+            Id = 7,
+            TccId = 1,
+            Titulo = "Entrega de Teste",
+            ArquivoCaminho = "/x.pdf",
+            Tipo = tipo,
+            Feedback = feedback,
+            DataEnvio = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        return context;
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_Aprovada_EnfileiraParaOAlunoComOTemplateDeAprovacao()
+    {
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: null);
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: true);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Equal("Entrega aprovada pelo orientador", msg.Assunto);
+        Assert.Equal(new[] { "aluno@teste.com" }, msg.Destinatarios);
+        Assert.Contains("Entrega aprovada", msg.CorpoHtml);
+        Assert.Contains("Entrega de Teste", msg.CorpoHtml);
+        Assert.Contains("TCC de Teste", msg.CorpoHtml);
+        // O template de aprovação não tem (nem deve ganhar) o aviso de reenvio.
+        Assert.DoesNotContain("ciclo de entregas foi reaberto", msg.CorpoHtml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_FinalRejeitada_IncluiMotivoEBlocoDeReenvio()
+    {
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: "Refazer a analise dos resultados.");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Equal("Entrega rejeitada pelo orientador", msg.Assunto);
+        Assert.Contains("Refazer a analise dos resultados.", msg.CorpoHtml);
+        Assert.Contains("O ciclo de entregas foi reaberto.", msg.CorpoHtml);
+        Assert.DoesNotContain("{{BlocoReenvio}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_ParcialRejeitada_NaoIncluiBlocoDeReenvio()
+    {
+        // Rejeitar uma Parcial não tem efeito de sistema: o e-mail não pode sugerir que o ciclo
+        // de entregas reabriu (ele nunca fechou).
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Parcial, feedback: "Rever a fundamentacao.");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Contains("Rever a fundamentacao.", msg.CorpoHtml);
+        Assert.DoesNotContain("ciclo de entregas foi reaberto", msg.CorpoHtml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("{{BlocoReenvio}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_RejeitadaSemFeedback_UsaNaoInformado()
+    {
+        // Não deveria acontecer pelo controller (o motivo é obrigatório), mas a fachada é
+        // chamada por id e precisa degradar sem deixar o placeholder cru no e-mail.
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Parcial, feedback: null);
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Contains("Não informado", msg.CorpoHtml);
+        Assert.DoesNotContain("{{Feedback}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_EntregaInexistente_NaoEnfileiraNemLanca()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(999, aprovada: true);
+
+        Assert.Empty(queue.Mensagens);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_AlunoSemEmail_NaoEnfileiraNemLanca()
+    {
+        // Mesma disciplina defensiva dos demais eventos: sem destinatário válido, não enfileira.
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: "m", emailDoAluno: "");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        Assert.Empty(queue.Mensagens);
+    }
 }

@@ -204,39 +204,50 @@ public class OrientadorNotificacaoIntegracao_Tests
         Assert.Equal(8.5m, entrega.Nota);
     }
 
+    // ── Issue #81 (D7): DarAceiteFinal passou a exigir uma Final APROVADA ─────────────────
+    // Antes bastava existir uma entrega Final (qualquer que fosse o veredito). Sem esta guarda
+    // o Professor contornaria o próprio veredito de rejeição e a reabertura do ciclo não teria
+    // efeito prático nenhum.
+
+    private static async Task<FactoryComFilaFake> FactoryComFinalAsync(FakeEmailQueue fila, StatusEntrega statusDaFinal)
+    {
+        var factory = new FactoryComFilaFake(fila);
+
+        using var ctx = factory.CriarContextoDireto();
+        ctx.Usuarios.AddRange(
+            NovoUsuario(idAluno, "Aluno", "aluno@teste.com", TipoUsuario.Aluno),
+            NovoUsuario(idOrientador, "Orientador", "orient@teste.com", TipoUsuario.Professor),
+            NovoUsuario(idCoordenador, "Coordenador", "coord@teste.com", TipoUsuario.Coordenador));
+        ctx.Tccs.Add(new Tcc
+        {
+            Id = 1,
+            Titulo = "TCC de Teste",
+            Resumo = "Resumo",
+            AlunoId = idAluno,
+            OrientadorId = idOrientador,
+            Status = StatusTcc.EmAndamento,
+            DataCriacao = DateTime.UtcNow
+        });
+        ctx.Entregas.Add(new Entrega
+        {
+            Id = 8,
+            TccId = 1,
+            Titulo = "Versão Final",
+            ArquivoCaminho = "/final.pdf",
+            Tipo = TipoEntrega.Final,
+            Status = statusDaFinal,
+            DataEnvio = DateTime.UtcNow
+        });
+        await ctx.SaveChangesAsync();
+
+        return factory;
+    }
+
     [Fact]
-    public async Task DarAceiteFinal_ComEntregaFinal_RetornaOk_EEnfileiraNotificacaoParaAlunoECoordenadores()
+    public async Task DarAceiteFinal_ComEntregaFinalAprovada_RetornaOk_EEnfileiraNotificacaoParaAlunoECoordenadores()
     {
         var fila = new FakeEmailQueue();
-        using var factory = new FactoryComFilaFake(fila);
-
-        using (var ctx = factory.CriarContextoDireto())
-        {
-            ctx.Usuarios.AddRange(
-                NovoUsuario(idAluno, "Aluno", "aluno@teste.com", TipoUsuario.Aluno),
-                NovoUsuario(idOrientador, "Orientador", "orient@teste.com", TipoUsuario.Professor),
-                NovoUsuario(idCoordenador, "Coordenador", "coord@teste.com", TipoUsuario.Coordenador));
-            ctx.Tccs.Add(new Tcc
-            {
-                Id = 1,
-                Titulo = "TCC de Teste",
-                Resumo = "Resumo",
-                AlunoId = idAluno,
-                OrientadorId = idOrientador,
-                Status = StatusTcc.EmAndamento,
-                DataCriacao = DateTime.UtcNow
-            });
-            ctx.Entregas.Add(new Entrega
-            {
-                Id = 8,
-                TccId = 1,
-                Titulo = "Versão Final",
-                ArquivoCaminho = "/final.pdf",
-                Tipo = TipoEntrega.Final,
-                DataEnvio = DateTime.UtcNow
-            });
-            await ctx.SaveChangesAsync();
-        }
+        using var factory = await FactoryComFinalAsync(fila, StatusEntrega.Aprovada);
 
         var client = factory.CreateClientAutenticado(idOrientador, "Professor");
 
@@ -253,6 +264,52 @@ public class OrientadorNotificacaoIntegracao_Tests
         using var verifica = factory.CriarContextoDireto();
         var tcc = await verifica.Tccs.FirstAsync(t => t.Id == 1);
         Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Fact]
+    public async Task DarAceiteFinal_ComEntregaFinalPendenteDeVeredito_RetornaBadRequest_ENaoEnfileira()
+    {
+        var fila = new FakeEmailQueue();
+        using var factory = await FactoryComFinalAsync(fila, StatusEntrega.Pendente);
+
+        var client = factory.CreateClientAutenticado(idOrientador, "Professor");
+
+        var response = await client.PostAsync("/api/orientador/tcc/1/aceite-final", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "A versão final ainda não foi avaliada.",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+        Assert.Empty(fila.Mensagens);
+
+        using var verifica = factory.CriarContextoDireto();
+        var tcc = await verifica.Tccs.FirstAsync(t => t.Id == 1);
+        Assert.Equal(StatusTcc.EmAndamento, tcc.Status);
+    }
+
+    [Fact]
+    public async Task DarAceiteFinal_ComEntregaFinalRejeitada_RetornaBadRequest_ENaoEnfileira()
+    {
+        var fila = new FakeEmailQueue();
+        using var factory = await FactoryComFinalAsync(fila, StatusEntrega.Rejeitada);
+
+        var client = factory.CreateClientAutenticado(idOrientador, "Professor");
+
+        var response = await client.PostAsync("/api/orientador/tcc/1/aceite-final", null);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        // Mensagem específica do caso "todas as Finais rejeitadas" — o professor precisa saber
+        // que o próximo passo é do aluno (reenviar), não dele.
+        Assert.Contains(
+            "A versão final foi rejeitada. Aguarde o novo envio do aluno.",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+        Assert.Empty(fila.Mensagens);
+
+        using var verifica = factory.CriarContextoDireto();
+        var tcc = await verifica.Tccs.FirstAsync(t => t.Id == 1);
+        Assert.Equal(StatusTcc.EmAndamento, tcc.Status);
     }
 
     [Fact]
