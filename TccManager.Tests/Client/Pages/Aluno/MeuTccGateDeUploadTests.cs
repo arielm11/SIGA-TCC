@@ -64,12 +64,12 @@ public class MeuTccGateDeUploadTests : BunitContext
         Services.AddSingleton<DialogService>();
     }
 
-    private static Tcc TccAprovado() => new()
+    private static Tcc TccCom(StatusTcc status) => new()
     {
         Id = 1,
         Titulo = "TCC de Teste",
         Resumo = "Resumo do trabalho.",
-        Status = StatusTcc.Aprovado,
+        Status = status,
         DataCriacao = DateTime.UtcNow.AddMonths(-3)
     };
 
@@ -85,10 +85,23 @@ public class MeuTccGateDeUploadTests : BunitContext
         DataEnvio = DateTime.UtcNow.AddDays(-diasAtras)
     };
 
+    /// <summary>
+    /// Issue #82 (seção 12, item 7): o status padrão do TCC semeado passou de <c>Aprovado</c> para
+    /// <c>EmAndamento</c>. Todos os cenários deste arquivo têm PELO MENOS UMA entrega, e
+    /// "Aprovado com entregas" virou um estado impossível depois desta issue (invariante:
+    /// <c>Aprovado ⟺ zero Entregas</c>). Além de deixar o seed verdadeiro, isso converte o
+    /// arquivo inteiro em tripwire do Grupo B: as guardas <c>MeuTcc.razor:54</c> (aba de
+    /// entregas) e <c>:399</c> (disparo de <c>CarregarEntregas</c>) comparavam por igualdade
+    /// exata com <c>Aprovado</c> antes do fix — com <c>EmAndamento</c>, nem o formulário de
+    /// upload nem o histórico renderizariam e todos os testes abaixo ficariam vermelhos.
+    /// </summary>
     private HandlerMultiRota RegistrarHttp(params Entrega[] entregas)
+        => RegistrarHttp(StatusTcc.EmAndamento, entregas);
+
+    private HandlerMultiRota RegistrarHttp(StatusTcc statusTcc, params Entrega[] entregas)
     {
         var handler = new HandlerMultiRota()
-            .ComRota("/api/tcc/meu-tcc", () => Json(TccAprovado()))
+            .ComRota("/api/tcc/meu-tcc", () => Json(TccCom(statusTcc)))
             .ComRota("/api/tcc/entregas", () => Json(new PagedResult<Entrega>
             {
                 Items = entregas.OrderByDescending(e => e.DataEnvio).ToList(),
@@ -216,5 +229,57 @@ public class MeuTccGateDeUploadTests : BunitContext
 
         cut.WaitForAssertion(() => Assert.Contains("Aguardando Veredito", cut.Markup));
         Assert.Contains("Ler Feedback", cut.Markup);
+    }
+
+    // ── Grupo B da issue #82: a aba de entregas nos DOIS estados ativos ───────────────────
+
+    [Fact]
+    public void TccEmAndamento_RenderizaAAbaDeEntregasEBuscaOHistorico()
+    {
+        // B2 + B3 explicitados. Antes do fix, um TCC em EmAndamento nem entrava no bloco da aba
+        // (B2) e nem disparava CarregarEntregas (B3) — a tela ficaria no "Carregando histórico..."
+        // eterno descrito em 5.1 da arquitetura.
+        var handler = RegistrarHttp(
+            StatusTcc.EmAndamento,
+            NovaEntrega(1, TipoEntrega.Parcial, StatusEntrega.Aprovada));
+
+        var cut = Render<MeuTcc>();
+
+        cut.WaitForAssertion(() => Assert.Contains("Nova Entrega", cut.Markup));
+        Assert.Contains("Histórico de Entregas", cut.Markup);
+        Assert.DoesNotContain("Carregando histórico...", cut.Markup);
+        Assert.Contains(handler.Chamadas, c => c.StartsWith("/api/tcc/entregas", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TccAprovadoSemNenhumaEntrega_RenderizaAAbaDeEntregasComHistoricoVazio()
+    {
+        // O outro lado da guarda: Aprovado (orientador designado, zero entregas) continua
+        // exibindo o formulário de upload — é por ele que a PRIMEIRA entrega é enviada, e é ela
+        // que dispara a transição para EmAndamento no backend (D2).
+        var handler = RegistrarHttp(StatusTcc.Aprovado);
+
+        var cut = Render<MeuTcc>();
+
+        cut.WaitForAssertion(() => Assert.Contains("Nova Entrega", cut.Markup));
+        Assert.DoesNotContain("Carregando histórico...", cut.Markup);
+        Assert.DoesNotContain("Trabalho Concluído!", cut.Markup);
+        Assert.Contains(handler.Chamadas, c => c.StartsWith("/api/tcc/entregas", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TccEmAndamentoComFinalRejeitada_ContinuaReabrindoOFormulario()
+    {
+        // Interação #81 × #82: a rejeição da Final não mexe em Tcc.Status (o TCC segue em
+        // EmAndamento, que é a leitura verdadeira — o aluno já enviou algo), e o ciclo reaberto
+        // precisa continuar funcionando nesse estado.
+        RegistrarHttp(
+            StatusTcc.EmAndamento,
+            NovaEntrega(2, TipoEntrega.Final, StatusEntrega.Rejeitada, feedback: "Refazer o capítulo 4."));
+
+        var cut = Render<MeuTcc>();
+
+        cut.WaitForAssertion(() => Assert.Contains("Sua versão final foi rejeitada", cut.Markup));
+        Assert.Contains("Nova Entrega", cut.Markup);
     }
 }

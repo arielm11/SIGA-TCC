@@ -3,6 +3,7 @@
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
 @using TccManager.Shared.Enums
+@using TccManager.Shared.Formatting
 @attribute [Authorize(Roles = "Aluno")]
 @inject HttpClient Http
 @inject DialogService DialogService
@@ -35,7 +36,7 @@
         <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
             <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
                 <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Situação da Proposta</RadzenText>
-                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@tccExistente.Status.ToString()" />
+                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@StatusTccFormatter.Formatar(tccExistente.Status)" />
             </RadzenStack>
 
             <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">@tccExistente.Titulo</RadzenText>
@@ -50,11 +51,23 @@
                     Sua proposta está sendo analisada. Se precisar alterar algo, exclua a proposta acima e envie uma nova.
                 </RadzenAlert>
             }
-            else if (tccExistente.Status == StatusTcc.Aprovado)
+            else if (tccExistente.Status == StatusTcc.Aprovado || tccExistente.Status == StatusTcc.EmAndamento)
             {
-                <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
-                    Sua proposta foi aprovada e seu TCC está em andamento!
-                </RadzenAlert>
+                @* Issue #82 (D9): o alerta único ("Sua proposta foi aprovada e seu TCC está em
+                   andamento!") era falso metade do tempo depois de Aprovado/EmAndamento
+                   virarem estados reais — dividido em dois, um por estado. *@
+                @if (tccExistente.Status == StatusTcc.Aprovado)
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                        Sua proposta foi aprovada e seu orientador já foi designado. Envie sua primeira entrega abaixo para dar início ao acompanhamento.
+                    </RadzenAlert>
+                }
+                else
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                        Seu TCC está em andamento. Continue enviando suas entregas para acompanhamento do orientador.
+                    </RadzenAlert>
+                }
 
                 <RadzenTabs RenderMode="TabRenderMode.Client">
                     <Tabs>
@@ -383,7 +396,7 @@
                 else
                 {
                     tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
-                    if (tccExistente != null && tccExistente.Status == StatusTcc.Aprovado)
+                    if (tccExistente != null && (tccExistente.Status == StatusTcc.Aprovado || tccExistente.Status == StatusTcc.EmAndamento))
                     {
                         await CarregarEntregas();
                     }
