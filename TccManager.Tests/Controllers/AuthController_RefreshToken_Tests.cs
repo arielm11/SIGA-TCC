@@ -155,10 +155,19 @@ public class AuthController_RefreshToken_Tests
         Assert.NotEqual(login.RefreshToken, par.RefreshToken);
         Assert.True(par.ExpiresAtUtc > DateTime.UtcNow);
 
-        // O refresh token antigo deixa de funcionar após a rotação.
-        var reuso = await client.PostAsJsonAsync(RotaRefresh,
+        // Issue #85: reapresentar o token antigo IMEDIATAMENTE após a rotação deixou de ser 401.
+        // Essa sequência é, por definição, a corrida benigna (duas abas renovando quase juntas),
+        // e a resposta passou a ser o replay idempotente do par vigente. O token antigo continua
+        // sem produzir uma sessão nova — ele devolve exatamente o mesmo sucessor já emitido.
+        // O 401 permanece fora da janela de graça e nos demais casos de reuso real, cobertos por
+        // AuthController_RefreshJanelaDeGraca_Tests e AuthController_RefreshSeguranca_Tests.
+        var reapresentacao = await client.PostAsJsonAsync(RotaRefresh,
             new RefreshRequestDto { RefreshToken = login.RefreshToken });
-        Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reapresentacao.StatusCode);
+
+        var replay = await reapresentacao.Content.ReadFromJsonAsync<TokenPairDto>();
+        Assert.NotNull(replay);
+        Assert.Equal(par.RefreshToken, replay!.RefreshToken);
     }
 
     [Fact]
