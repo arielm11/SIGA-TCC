@@ -105,6 +105,93 @@ public class AtaPdfDocumentContentTests
         Assert.Equal(6, ContarOcorrencias(texto, "Avaliador(a)"));
     }
 
+    // ───────── Issue #83 (D11): coluna de assinatura do Aluno na ata gerada ─────────
+
+    [Fact]
+    public void AtaFinal_ContemAColunaDeAssinaturaDoAluno()
+    {
+        // O documento oficial não tinha onde o aluno assinar — só orientador e avaliadores.
+        // O rótulo é genérico ("Aluno(a)"), não o nome do aluno: as três colunas que já
+        // existiam usam rótulo de papel, e o nome já aparece em "Dados do Trabalho".
+        //
+        // Atenção ao contar: "Aluno(a)" JÁ aparecia 1x em "Dados do Trabalho"
+        // ("Aluno(a): Fulano de Tal"), então Assert.Contains sozinho seria verde mesmo sem a
+        // mudança desta issue. A contagem (1 do cabeçalho + 1 da assinatura = 2) é o que de
+        // fato prova a coluna nova — mesma técnica de
+        // AtaFinal_ContemUmaLinhaDeAssinaturaPorAvaliadorMaisOOrientador.
+        var modelo = NovoModelo(rascunho: false, notaFinal: 90.0m);
+        var pdfBytes = new AtaPdfDocument(modelo).GeneratePdf();
+
+        var texto = ExtrairTexto(pdfBytes);
+
+        Assert.Contains("Aluno(a)", texto);
+        Assert.Equal(2, ContarOcorrencias(texto, "Aluno(a)"));
+
+        // O rótulo da coluna é de PAPEL, não o nome: o nome do aluno aparece uma única vez
+        // (no cabeçalho de dados), não repetido na linha de assinaturas. Ver P-01.
+        Assert.Equal(1, ContarOcorrencias(texto, "Fulano de Tal"));
+    }
+
+    [Fact]
+    public void AtaFinal_ColunaDoAlunoVemDepoisDeTodosOsAvaliadores()
+    {
+        // Fixa a POSIÇÃO (última), não só a presença: a banca decide e assina primeiro, o
+        // aluno assina por último, reconhecendo o resultado registrado. Se alguém inserir a
+        // coluna antes do loop de avaliadores, este teste acusa.
+        var modelo = NovoModelo(rascunho: false, notaFinal: 90.0m, avaliadores: new List<AtaMembroBancaModel>
+        {
+            new("Avaliador A", null),
+            new("Avaliador B", null),
+            new("Avaliador C", null)
+        });
+        var pdfBytes = new AtaPdfDocument(modelo).GeneratePdf();
+
+        var texto = ExtrairTexto(pdfBytes);
+
+        var posicaoAluno = texto.LastIndexOf("Aluno(a)", StringComparison.Ordinal);
+        var posicaoUltimoAvaliador = texto.LastIndexOf("Avaliador(a)", StringComparison.Ordinal);
+        var posicaoOrientador = texto.LastIndexOf("Orientador(a)", StringComparison.Ordinal);
+
+        Assert.True(posicaoAluno > posicaoUltimoAvaliador,
+            "A coluna 'Aluno(a)' deve vir depois de todos os avaliadores na linha de assinaturas.");
+        Assert.True(posicaoAluno > posicaoOrientador,
+            "A coluna 'Aluno(a)' deve vir depois da coluna do orientador.");
+    }
+
+    [Fact]
+    public void AtaFinal_NaoDuplicaAColunaDoAlunoPorAvaliador()
+    {
+        // A coluna nova está FORA do foreach de avaliadores: aparece exatamente uma vez,
+        // independentemente do tamanho da banca.
+        var modelo = NovoModelo(rascunho: false, notaFinal: 90.0m, avaliadores: new List<AtaMembroBancaModel>
+        {
+            new("Avaliador A", null),
+            new("Avaliador B", null),
+            new("Avaliador C", null),
+            new("Avaliador D", null)
+        });
+        var pdfBytes = new AtaPdfDocument(modelo).GeneratePdf();
+
+        var texto = ExtrairTexto(pdfBytes);
+
+        // 1 ocorrência em "Dados do Trabalho" + 1 na linha de assinaturas, com 4 avaliadores.
+        Assert.Equal(2, ContarOcorrencias(texto, "Aluno(a)"));
+    }
+
+    [Fact]
+    public void AtaRascunho_NaoContemAColunaDeAssinaturaDoAluno()
+    {
+        // A guarda !Rascunho de ComposeConteudo não foi tocada por #83: o rascunho continua
+        // sem NENHUMA seção de assinatura, inclusive a nova. Sobra só a ocorrência de
+        // "Aluno(a): Fulano de Tal" no cabeçalho de dados.
+        var modelo = NovoModelo(rascunho: true);
+        var pdfBytes = new AtaPdfDocument(modelo).GeneratePdf();
+
+        var texto = ExtrairTexto(pdfBytes);
+
+        Assert.Equal(1, ContarOcorrencias(texto, "Aluno(a)"));
+    }
+
     [Fact]
     public void AtaRascunho_NaoContemSecaoDeResultadoNemAssinaturas()
     {

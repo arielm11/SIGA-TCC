@@ -211,6 +211,16 @@ public class AtaPdfDocument : IDocument
                     column.Item().PaddingTop(30).BorderTop(1).PaddingTop(3).AlignCenter().Text("Avaliador(a)");
                 });
             }
+
+            // Issue #83 (D11): coluna de assinatura do Aluno, última posição, após todos os
+            // avaliadores (a banca decide e assina primeiro; o aluno assina por último,
+            // reconhecendo o resultado registrado). Rótulo genérico de papel ("Aluno(a)"),
+            // sem interpolar _model.NomeAluno — consistente com as demais colunas, que usam
+            // rótulo de papel, nenhuma exibe nome (nem a do orientador). Ver P-01.
+            row.RelativeItem().Column(column =>
+            {
+                column.Item().PaddingTop(30).BorderTop(1).PaddingTop(3).AlignCenter().Text("Aluno(a)");
+            });
         });
     }
 

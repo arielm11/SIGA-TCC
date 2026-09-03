@@ -44,7 +44,11 @@
         }
 
         <div>
-            <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-2">Arquivo da Ata Assinada (PDF)</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-1">Cópia assinada da ata (PDF)</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-mb-2">
+                Documento complementar. A ata oficial é a gerada automaticamente pelo sistema; este arquivo fica
+                arquivado e disponível para download pela Coordenação.
+            </RadzenText>
             <RadzenUpload Auto="false" Multiple="false" Accept=".pdf" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
             @if (arquivoAta != null)
             {
@@ -70,7 +74,7 @@ else
     <RadzenStack Gap="1rem" AlignItems="AlignItems.Center" class="rz-p-4" style="min-width: 380px;">
         <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" style="font-size: 3rem;" />
         <RadzenText TextAlign="TextAlign.Center" class="rz-my-0">@mensagemSucesso</RadzenText>
-        <RadzenButton Text="Baixar Ata (PDF)" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
+        <RadzenButton Text="Baixar ata gerada (PDF)" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
                       IsBusy="baixandoAta" BusyText="Baixando..." Click="@BaixarAtaPdf" />
         <RadzenButton Text="Fechar" ButtonStyle="ButtonStyle.Base" Click="@Fechar" />
     </RadzenStack>
