@@ -99,6 +99,17 @@ try
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
+    // Issue #85 (achado A09-1 da revisão de segurança): AuthTokenService precisa do IP de
+    // origem nos logs de auditoria de reuso/corrida benigna de refresh token, mesmo padrão já
+    // usado em AuthController.Login — mas é um serviço, não um controller, sem acesso direto a
+    // HttpContext.
+    builder.Services.AddHttpContextAccessor();
+
+    // Issue #85: cache de curta duração (TTL = janela de graça de reuso de refresh token,
+    // Jwt:RefreshReuseGraceSeconds) usado por AuthTokenService para o replay idempotente da
+    // corrida benigna. Por processo — não é distribuído (P-02 no documento de arquitetura).
+    builder.Services.AddMemoryCache();
+
     // Configuração do Entity Framework (Banco de Dados)
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));

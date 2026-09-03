@@ -5,6 +5,7 @@ using System.Text;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Controllers;
@@ -21,9 +22,18 @@ namespace TccManager.Tests.Controllers;
 ///   o cliente legítimo já avançou na cadeia de rotação. A resposta é revogar TODAS as
 ///   sessões ativas do usuário, não apenas recusar aquela chamada.
 ///
+/// • Issue #85 — a premissa acima era ampla demais: a reapresentação de um token rotacionado
+///   também acontece em cenários benignos (corrida entre abas, resposta perdida, F5 no meio do
+///   <c>/refresh</c>). Os dois testes desta seção que reapresentavam o token IMEDIATAMENTE após
+///   a rotação descreviam, sem saber, o falso positivo — hoje isso é corrida benigna (200 com
+///   replay idempotente). Cada um foi dividido em dois: o par benigno (dentro da janela) e o par
+///   de reuso real (fora da janela, com o relógio do host avançado). O detalhamento da janela de
+///   graça vive em <see cref="AuthController_RefreshJanelaDeGraca_Tests"/>; aqui ficam apenas os
+///   pares que preservam a intenção original destes testes.
+///
 /// Isolamento: uma <see cref="TccApiFactory"/> por teste (banco InMemory e rate limiter
 /// próprios). O orçamento da política "refresh" é de 15 chamadas/janela por IP, e nenhum
-/// teste aqui passa de 4 — não há risco de 429 mascarar um 401.
+/// teste aqui passa de 5 — não há risco de 429 mascarar um 401.
 /// </summary>
 public class AuthController_RefreshSeguranca_Tests
 {
@@ -158,9 +168,13 @@ public class AuthController_RefreshSeguranca_Tests
     // ══════════════════ Issue #62 — reuse-detection ══════════════════
 
     [Fact]
-    public async Task Refresh_TokenJaRotacionadoReapresentado_Retorna401EDerrubaASessaoInteira()
+    public async Task Refresh_TokenJaRotacionadoReapresentadoForaDaJanela_Retorna401EDerrubaASessaoInteira()
     {
-        var factory = new TccApiFactory();
+        // Metade "reuso real" do teste original (issue #85). A sequência é idêntica à de antes;
+        // a única diferença é avançar o relógio do host para além da janela de graça, que é o que
+        // distingue vazamento de corrida entre abas. Sem isso, a reapresentação imediata seria
+        // classificada como benigna — e era exatamente esse falso positivo que a #85 corrigiu.
+        using var factory = new RefreshJanelaDeGracaApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
         var client = factory.CreateClient();
 
@@ -171,7 +185,9 @@ public class AuthController_RefreshSeguranca_Tests
         Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
         var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
 
-        // Reapresentação de A (revogado + ReplacedByTokenHash preenchido) = sinal de vazamento.
+        factory.Relogio.Avancar(TimeSpan.FromSeconds(31));
+
+        // Reapresentação tardia de A (revogado + ReplacedByTokenHash preenchido) = sinal de vazamento.
         var reuso = await RefreshAsync(client, login.RefreshToken);
         Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
 
@@ -187,6 +203,43 @@ public class AuthController_RefreshSeguranca_Tests
         Assert.DoesNotContain(
             context.RefreshTokens.Where(rt => rt.UsuarioId == usuario.Id).ToList(),
             rt => rt.RevokedAtUtc == null);
+    }
+
+    [Fact]
+    public async Task Refresh_TokenJaRotacionadoReapresentadoDentroDaJanela_Retorna200EMantemASessaoInteira()
+    {
+        // Metade "corrida benigna" do teste original: a MESMA sequência que antes exigia 401 hoje
+        // exige 200 com replay idempotente. A mudança de expectativa é deliberada e é o coração da
+        // issue #85 — a reapresentação imediata é a assinatura de duas abas concorrendo, não de um
+        // token vazado (seção 9.1 do documento de arquitetura: "isso não é uma regressão, é o
+        // teste descrevendo o bug").
+        using var factory = new RefreshJanelaDeGracaApiFactory();
+        var usuario = await SemearUsuarioAsync(factory);
+        var client = factory.CreateClient();
+
+        var login = await FazerLoginAsync(client);
+
+        var rotacao = await RefreshAsync(client, login.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
+        var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
+
+        var replay = await RefreshAsync(client, login.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+
+        // Idempotência: o perdedor da corrida recebe o par que a aba vencedora já tem.
+        var par = await replay.Content.ReadFromJsonAsync<TokenPairDto>();
+        Assert.NotNull(par);
+        Assert.Equal(tokenB, par!.RefreshToken);
+        Assert.False(string.IsNullOrWhiteSpace(par.Token));
+
+        // Nada foi revogado: a sessão da aba vencedora segue de pé, que é o sintoma que o
+        // usuário percebia (as duas abas deslogadas sem ter feito nada).
+        var aposReplay = await RefreshAsync(client, tokenB);
+        Assert.Equal(HttpStatusCode.OK, aposReplay.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var tokensDoUsuario = context.RefreshTokens.Where(rt => rt.UsuarioId == usuario.Id).ToList();
+        Assert.Contains(tokensDoUsuario, rt => rt.RevokedAtUtc == null);
     }
 
     [Fact]
@@ -256,11 +309,55 @@ public class AuthController_RefreshSeguranca_Tests
     }
 
     [Fact]
-    public async Task Refresh_ReusoNaoAfetaSessoesDeOutroUsuario()
+    public async Task Refresh_ReusoRealForaDaJanela_NaoAfetaSessoesDeOutroUsuario()
     {
         // A revogação em massa é escopada por UsuarioId — o alcance do "modo pânico"
-        // precisa parar na fronteira do usuário comprometido.
-        var factory = new TccApiFactory();
+        // precisa parar na fronteira do usuário comprometido. Como o reuso real só é
+        // alcançável fora da janela de graça (issue #85), o relógio do host é avançado
+        // antes da reapresentação; o resto do teste é o original.
+        using var factory = new RefreshJanelaDeGracaApiFactory();
+        var (loginVitima, loginOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
+
+        var rotacao = await RefreshAsync(client, loginVitima.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
+
+        factory.Relogio.Avancar(TimeSpan.FromSeconds(31));
+
+        var reuso = await RefreshAsync(client, loginVitima.RefreshToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
+
+        var outroSegueValido = await RefreshAsync(client, loginOutro.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, outroSegueValido.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_CorridaBenigna_NaoAfetaSessoesDeOutroUsuarioNemAPropria()
+    {
+        // Contraparte benigna: a mesma sequência dentro da janela não revoga nada de ninguém —
+        // nem do outro usuário (fronteira do escopo) nem do próprio (que era o falso positivo).
+        using var factory = new RefreshJanelaDeGracaApiFactory();
+        var (loginVitima, loginOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
+
+        var rotacao = await RefreshAsync(client, loginVitima.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
+        var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
+
+        var replay = await RefreshAsync(client, loginVitima.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(tokenB, (await replay.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken);
+
+        var outroSegueValido = await RefreshAsync(client, loginOutro.RefreshToken);
+        Assert.Equal(HttpStatusCode.OK, outroSegueValido.StatusCode);
+    }
+
+    /// <summary>
+    /// Duas contas ativas, ambas com sessão aberta pelo mesmo cliente HTTP. Devolve os dois
+    /// logins (vítima e terceiro) e o cliente usado — a fronteira entre eles é o que os dois
+    /// testes acima exercitam.
+    /// </summary>
+    private static async Task<(LoginResponseDto Vitima, LoginResponseDto Outro, HttpClient Client)>
+        SemearDoisUsuariosLogadosAsync(TccApiFactory factory)
+    {
         await SemearUsuarioAsync(factory);
 
         using (var context = factory.CriarContextoDireto())
@@ -285,13 +382,6 @@ public class AuthController_RefreshSeguranca_Tests
         Assert.Equal(HttpStatusCode.OK, respOutro.StatusCode);
         var loginOutro = (await respOutro.Content.ReadFromJsonAsync<LoginResponseDto>())!;
 
-        var rotacao = await RefreshAsync(client, loginVitima.RefreshToken);
-        Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
-
-        var reuso = await RefreshAsync(client, loginVitima.RefreshToken);
-        Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
-
-        var outroSegueValido = await RefreshAsync(client, loginOutro.RefreshToken);
-        Assert.Equal(HttpStatusCode.OK, outroSegueValido.StatusCode);
+        return (loginVitima, loginOutro, client);
     }
 }

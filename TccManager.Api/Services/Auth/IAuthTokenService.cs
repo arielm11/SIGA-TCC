@@ -20,6 +20,15 @@ public interface IAuthTokenService
     /// Valida o refresh token informado (existe, não revogado, não expirado). Em caso
     /// válido, rotaciona (revoga o apresentado, emite um novo) e retorna o novo par.
     /// Retorna <c>null</c> se o refresh token for inválido/expirado/revogado.
+    ///
+    /// Issue #85: dentro de <c>Jwt:RefreshReuseGraceSeconds</c> após a rotação, reapresentar
+    /// o token recém-substituído deixa de ser tratado automaticamente como reuso — se o
+    /// sucessor ainda for a ponta ativa da cadeia, é classificado como corrida benigna
+    /// (multi-aba, resposta perdida, F5 em voo) e responde com um replay idempotente do
+    /// mesmo par (o mesmo <c>RefreshToken</c> já emitido + um <c>Token</c> novo), sem
+    /// revogar nada. Fora da janela, ou se o sucessor já não for a ponta ativa, o
+    /// comportamento é o de sempre: reuse-detection integral, revoga todas as sessões do
+    /// usuário. Ver docs/arquitetura/2026-09-03-reuse-detection-falso-positivo-multi-aba.md.
     /// </summary>
     Task<TokenPairDto?> RefreshAsync(string refreshTokenBruto);
 

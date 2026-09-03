@@ -18,6 +18,14 @@ namespace TccManager.Tests.Client.Services;
 /// </summary>
 public class TokenRefreshCoordinatorTests
 {
+    /// <summary>
+    /// Dublê do <c>refreshToken</c> gravado por outra aba no <c>localStorage</c> compartilhado
+    /// (issue #85, D10). O responder é executado durante a chamada HTTP, ou seja, exatamente no
+    /// intervalo em que a aba vencedora gravaria o par novo.
+    /// </summary>
+    private const string RefreshTokenDeOutraAba = "refresh-gravado-por-outra-aba";
+    private const string AuthTokenDeOutraAba = "auth-gravado-por-outra-aba";
+
     private sealed class HandlerEspiao : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
@@ -185,6 +193,150 @@ public class TokenRefreshCoordinatorTests
         {
             Content = JsonContent.Create(parIncompleto)
         });
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.False(resultado);
+        Assert.Equal(1, sessionEndedHandler.Chamadas);
+    }
+
+    // ══════════ Issue #85 / D10 — falha de transporte e adoção do par de outra aba ══════════
+
+    [Fact]
+    public async Task FalhaDeRedeNaChamadaDeRefresh_NaoPropagaExcecao_EEncerraSessao()
+    {
+        // Achado confirmado pelo architect (cenário B3): não havia try/catch em volta do
+        // PostAsJsonAsync, então uma queda de rede escapava como exceção não tratada até a
+        // página. Agora precisa ser absorvida e cair no mesmo tratamento das demais falhas.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var (coordinator, espiao, sessionEndedHandler, _) = Montar(
+            storage, _ => throw new HttpRequestException("rede indisponível"));
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.False(resultado);
+        Assert.Equal(1, espiao.Chamadas);
+        Assert.Equal(1, sessionEndedHandler.Chamadas);
+        Assert.Equal("token-expirado", storage.Store["authToken"]);
+    }
+
+    [Fact]
+    public async Task FalhaDeRedeMasOutraAbaJaRenovou_AdotaOParNovoSemEncerrarSessao()
+    {
+        // Rede de segurança de D10: a exceção acontece depois de o servidor já ter rotacionado
+        // (a resposta é que se perdeu). Se outra aba gravou o par novo no localStorage
+        // compartilhado nesse meio-tempo, encerrar a sessão derrubaria as duas abas por nada.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var (coordinator, _, sessionEndedHandler, _) = Montar(storage, _ =>
+        {
+            storage.Store["authToken"] = AuthTokenDeOutraAba;
+            storage.Store["refreshToken"] = RefreshTokenDeOutraAba;
+            throw new HttpRequestException("rede indisponível");
+        });
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.True(resultado);
+        Assert.Equal(0, sessionEndedHandler.Chamadas);
+        Assert.Equal(AuthTokenDeOutraAba, storage.Store["authToken"]);
+        Assert.Equal(RefreshTokenDeOutraAba, storage.Store["refreshToken"]);
+    }
+
+    [Fact]
+    public async Task RespostaDeErroMasOutraAbaJaRenovou_AdotaOParNovoSemEncerrarSessao()
+    {
+        // Mesmo caminho para o 401 "benigno" que sobra quando a janela de graça do servidor não
+        // cobre o caso (ex.: cache miss, D6): o cliente ainda consegue se salvar relendo o
+        // storage compartilhado.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var (coordinator, _, sessionEndedHandler, _) = Montar(storage, _ =>
+        {
+            storage.Store["authToken"] = AuthTokenDeOutraAba;
+            storage.Store["refreshToken"] = RefreshTokenDeOutraAba;
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        });
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.True(resultado);
+        Assert.Equal(0, sessionEndedHandler.Chamadas);
+    }
+
+    [Fact]
+    public async Task PayloadMalformadoMasOutraAbaJaRenovou_AdotaOParNovoSemEncerrarSessao()
+    {
+        // Terceiro caminho de falha que passa pela mesma releitura: 200 com corpo incompleto.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var (coordinator, _, sessionEndedHandler, _) = Montar(storage, _ =>
+        {
+            storage.Store["authToken"] = AuthTokenDeOutraAba;
+            storage.Store["refreshToken"] = RefreshTokenDeOutraAba;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new TokenPairDto { Token = "", RefreshToken = "" })
+            };
+        });
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.True(resultado);
+        Assert.Equal(0, sessionEndedHandler.Chamadas);
+    }
+
+    [Fact]
+    public async Task AdocaoDoParDeOutraAba_NotificaOAuthStateProvider()
+    {
+        // Sem a notificação, a UI continuaria mostrando o estado anônimo/expirado mesmo com um
+        // authToken válido em storage — a sessão estaria viva, mas a página não saberia.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var espiao = new HandlerEspiao(_ =>
+        {
+            storage.Store["authToken"] = AuthTokenDeOutraAba;
+            storage.Store["refreshToken"] = RefreshTokenDeOutraAba;
+            throw new HttpRequestException("rede indisponível");
+        });
+        var factory = new FakeHttpClientFactory(new HttpClient(espiao) { BaseAddress = new Uri("https://localhost:7188/") });
+        var sessionEndedHandler = new FakeSessionEndedHandler();
+        var authStateProvider = NovoAuthStateProvider(storage);
+
+        AuthenticationState? estadoNotificado = null;
+        authStateProvider.AuthenticationStateChanged += task => estadoNotificado = task.Result;
+
+        var coordinator = new TokenRefreshCoordinator(factory, storage, sessionEndedHandler, authStateProvider);
+
+        var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
+
+        Assert.True(resultado);
+        Assert.NotNull(estadoNotificado);
+    }
+
+    [Fact]
+    public async Task FalhaDeRedeComRefreshTokenInalteradoNoStorage_EncerraSessao()
+    {
+        // Contraprova das adoções acima: se a releitura devolve o MESMO refresh token que acabou
+        // de falhar, não houve outra aba — a sessão precisa ser encerrada de fato. D10 é rede de
+        // segurança, não uma forma de nunca deslogar.
+        var storage = new FakeLocalStorageService();
+        storage.Store["authToken"] = "token-expirado";
+        storage.Store["refreshToken"] = "refresh-valido";
+
+        var (coordinator, _, sessionEndedHandler, _) = Montar(
+            storage, _ => throw new TaskCanceledException("timeout de transporte"));
 
         var resultado = await coordinator.EnsureRefreshedAsync("token-expirado");
 
