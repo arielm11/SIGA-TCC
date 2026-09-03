@@ -374,6 +374,16 @@ public class CoordenadorController : ControllerBase
         if (arquivoAta.Length > UploadLimits.MaxArquivoUploadBytes)
             return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
 
+        // Issue #83 (D6): whitelist de extensão — antes desta issue não havia nenhuma aqui
+        // (diferente de EnviarEntrega, que já tinha quatro). O campo é, por definição de
+        // produto, um PDF assinado; uma lista de um item só é suficiente, e é o que torna a
+        // checagem de magic bytes abaixo possível (a extensão declarada seleciona a
+        // assinatura esperada). Antes do UploadAsync, na mesma disciplina já comentada
+        // acima ("tudo que pode rejeitar a requisição roda antes do upload").
+        var extensaoAta = Path.GetExtension(arquivoAta.FileName).ToLowerInvariant();
+        if (extensaoAta != ".pdf")
+            return BadRequest("O documento da ata deve ser um arquivo PDF.");
+
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
         // Issue #73 (achado A10-1 da revisão de segurança,
@@ -399,10 +409,30 @@ public class CoordenadorController : ControllerBase
                 return BadRequest("O motivo da reprovação deve ter no máximo 2000 caracteres.");
         }
 
+        // Issue #83 (D5/D6): validação de assinatura binária (magic bytes), extraída de
+        // TccController para AssinaturaArquivoValidator e reusada aqui. Dentro do using,
+        // imediatamente antes do UploadAsync (precisa do stream, e é o último ponto
+        // possível antes de tocar o disco). Contrato replicado literalmente de
+        // TccController.EnviarEntrega: o validador pode devolver um stream diferente do
+        // original quando este não é seekable, e o chamador precisa descartá-lo.
         string caminho;
-        using (var stream = arquivoAta.OpenReadStream())
+        using (var streamOriginal = arquivoAta.OpenReadStream())
         {
-            caminho = await _storageService.UploadAsync(stream, arquivoAta.FileName, CategoriaArquivo.Atas);
+            var (assinaturaValida, streamParaUpload) = await AssinaturaArquivoValidator.ValidarAsync(
+                streamOriginal, extensaoAta, HttpContext.RequestAborted);
+
+            try
+            {
+                if (!assinaturaValida)
+                    return BadRequest("O arquivo enviado não é um PDF válido.");
+
+                caminho = await _storageService.UploadAsync(streamParaUpload, arquivoAta.FileName, CategoriaArquivo.Atas);
+            }
+            finally
+            {
+                if (!ReferenceEquals(streamParaUpload, streamOriginal))
+                    await streamParaUpload.DisposeAsync();
+            }
         }
 
         banca.NotaFinal = notaFinal;
@@ -468,6 +498,57 @@ public class CoordenadorController : ControllerBase
         };
     }
 
+    /// <summary>
+    /// Issue #83 (D1-D3): download autenticado da cópia assinada anexada pelo Coordenador em
+    /// RegistrarResultadoBanca (Banca.AtaCaminho) — arquivo bruto, distinto do PDF gerado via
+    /// QuestPDF servido por GetAtaPdf. Estrutura copiada de TccController.DownloadEntrega (ler
+    /// caminho persistido → AbrirLeituraAsync → tratar ausência → File → auditar), não de
+    /// GetAtaPdf: aqui não há nada para orquestrar, é só ler uma coluna e abrir um stream.
+    /// Nenhuma verificação de autorização além do [Authorize(Roles = "Coordenador")] da classe
+    /// — o único papel autorizado já vê/baixa qualquer banca via GetBancasConcluidas/GetAtaPdf.
+    /// </summary>
+    [HttpGet("banca/{idBanca}/ata-assinada")]
+    public async Task<IActionResult> GetAtaAssinada(int idBanca)
+    {
+        var banca = await _context.Banca.FirstOrDefaultAsync(b => b.Id == idBanca);
+
+        if (banca == null)
+            return NotFound("Banca não encontrada.");
+
+        if (string.IsNullOrWhiteSpace(banca.AtaCaminho))
+            return NotFound("Nenhuma cópia assinada foi anexada a esta banca.");
+
+        Stream? stream;
+        try
+        {
+            stream = await _storageService.AbrirLeituraAsync(banca.AtaCaminho, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            // Caminho persistido inconsistente (fora do diretório de uploads, ex.: legado
+            // malformado) ou arquivo bloqueado/sem permissão de leitura pelo SO — não deve
+            // virar 500. Não logar o caminho do arquivo (ex.Message do .NET costuma incluí-lo),
+            // só ids — mas o tipo da exceção (não o texto) é seguro e diferencia "caminho fora
+            // de uploads" (InvalidOperationException) de erro de I/O do SO, achado A09-1 da
+            // revisão de segurança.
+            _auditLogger.LogWarning(
+                "Falha ao abrir arquivo de ata assinada para download. BancaId: {BancaId}, TipoExcecao: {TipoExcecao}",
+                banca.Id, ex.GetType().Name);
+            return NotFound("Arquivo não encontrado.");
+        }
+
+        if (stream == null)
+            return NotFound("Arquivo não encontrado.");
+
+        var solicitanteId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Download de cópia assinada da ata concedido. Solicitante: {SolicitanteId}, BancaId: {BancaId}",
+            solicitanteId,
+            banca.Id);
+
+        return File(stream, "application/octet-stream", $"ata-assinada-{idBanca}.pdf");
+    }
+
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
     [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
     public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
@@ -525,7 +606,11 @@ public class CoordenadorController : ControllerBase
                 // Aprovado deriva do Status já persistido (fonte de verdade histórica da
                 // decisão tomada em RegistrarResultadoBanca), não recomputado a partir da
                 // nota — ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5.
-                Aprovado = b.Tcc.Status == StatusTcc.Finalizado
+                Aprovado = b.Tcc.Status == StatusTcc.Finalizado,
+                // Issue #83 (D8): AtaCaminho é NOT NULL/string.Empty por default (nunca null),
+                // então "!= """ basta e traduz para SQL sem surpresa. Permite ao Client não
+                // oferecer um download que resultaria em 404 para bancas sem cópia anexada.
+                PossuiAtaAssinada = b.AtaCaminho != ""
             })
             .ToPagedResultAsync(paginacao, cancellationToken);
 

@@ -41,12 +41,18 @@
                                  Text="@(banca.Aprovado ? "Aprovado" : "Reprovado")" />
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Ação" Sortable="false" Filterable="false" Width="160px" TextAlign="TextAlign.Center">
+            <RadzenDataGridColumn TItem="BancaConcluidaDto" Title="Ação" Sortable="false" Filterable="false" Width="280px" TextAlign="TextAlign.Center">
                 <Template Context="banca">
-                    <RadzenButton Text="Baixar PDF" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                  IsBusy="@(bancaIdBaixando == banca.BancaId)" BusyText="Baixando..."
-                                  Disabled="@(bancaIdBaixando == banca.BancaId)"
-                                  Click="@(() => BaixarAtaPdf(banca.BancaId))" />
+                    <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem" JustifyContent="JustifyContent.Center">
+                        <RadzenButton Text="Ata gerada" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      IsBusy="@(bancaIdBaixandoGerada == banca.BancaId)" BusyText="Baixando..."
+                                      Disabled="@(bancaIdBaixandoGerada == banca.BancaId)"
+                                      Click="@(() => BaixarAtaPdf(banca.BancaId))" />
+                        <RadzenButton Text="Cópia assinada" Icon="draw" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      IsBusy="@(bancaIdBaixandoAssinada == banca.BancaId)" BusyText="Baixando..."
+                                      Disabled="@(!banca.PossuiAtaAssinada || bancaIdBaixandoAssinada == banca.BancaId)"
+                                      Click="@(() => BaixarAtaAssinada(banca.BancaId))" />
+                    </RadzenStack>
                 </Template>
             </RadzenDataGridColumn>
         </Columns>
@@ -57,7 +63,8 @@
     private RadzenDataGrid<BancaConcluidaDto>? grid;
     private List<BancaConcluidaDto> bancas = new();
     private int count;
-    private int? bancaIdBaixando;
+    private int? bancaIdBaixandoGerada;
+    private int? bancaIdBaixandoAssinada;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -81,7 +88,7 @@
 
     private async Task BaixarAtaPdf(int bancaId)
     {
-        bancaIdBaixando = bancaId;
+        bancaIdBaixandoGerada = bancaId;
         try
         {
             var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-pdf");
@@ -104,6 +111,39 @@
                 });
             }
         }
-        finally { bancaIdBaixando = null; }
+        finally { bancaIdBaixandoGerada = null; }
+    }
+
+    private async Task BaixarAtaAssinada(int bancaId)
+    {
+        bancaIdBaixandoAssinada = bancaId;
+        try
+        {
+            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-assinada");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var base64 = Convert.ToBase64String(bytes);
+                // "application/octet-stream", não "application/pdf": o servidor deliberadamente
+                // não afirma que este arquivo é PDF (D2 da arquitetura — legado nunca validado,
+                // pode ser qualquer binário). O helper baixa via <a download>, nunca navega para
+                // a Object URL, então não há risco prático — mas mantém a mesma cautela do
+                // backend em vez de recontar o tipo localmente.
+                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-assinada-{bancaId}.pdf", "application/octet-stream", base64);
+            }
+            else
+            {
+                var erro = await response.Content.ReadAsStringAsync();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = $"Erro ao baixar a cópia assinada: {erro}",
+                    Duration = 6000
+                });
+            }
+        }
+        finally { bancaIdBaixandoAssinada = null; }
     }
 }

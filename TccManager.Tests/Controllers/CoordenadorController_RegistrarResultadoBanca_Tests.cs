@@ -67,8 +67,11 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         if (motivo != null)
             form.Add(new StringContent(motivo), "motivoReprovacao");
 
-        // PDF fake mínimo só para passar da validação de "arquivo obrigatório"
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 }); // "%PDF"
+        // PDF mínimo só para passar das validações de "arquivo obrigatório", extensão e
+        // magic bytes. Issue #83: precisa ser a assinatura COMPLETA "%PDF-" (5 bytes) — o
+        // literal antigo de 4 bytes ("%PDF") agora é rejeitado com 400 pelo
+        // AssinaturaArquivoValidator, o que derrubaria todos os testes deste arquivo.
+        var pdfFake = new ByteArrayContent(ConteudoArquivoTeste.AssinaturaPdf);
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata-teste.pdf");
 
@@ -474,7 +477,10 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         var form = new MultipartFormDataContent();
         form.Add(new StringContent("85.0"), "notaFinal");
         var conteudoGigante = new byte[TccManager.Api.Configuration.UploadLimits.MaxArquivoUploadBytes + 1024];
-        conteudoGigante[0] = 0x25; conteudoGigante[1] = 0x50; conteudoGigante[2] = 0x44; conteudoGigante[3] = 0x46;
+        // Issue #83: assinatura "%PDF-" completa de propósito. O teste assere a mensagem de
+        // TAMANHO, então o conteúdo precisa ser um PDF válido — se fosse inválido, o teste
+        // continuaria verde por 400, mas por um motivo diferente do que ele afirma cobrir.
+        ConteudoArquivoTeste.AssinaturaPdf.CopyTo(conteudoGigante, 0);
         var arquivo = new ByteArrayContent(conteudoGigante);
         arquivo.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(arquivo, "arquivoAta", "ata-gigante.pdf");

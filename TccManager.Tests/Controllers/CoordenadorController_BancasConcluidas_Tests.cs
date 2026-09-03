@@ -25,7 +25,12 @@ public class CoordenadorController_BancasConcluidas_Tests
         private int _seq;
         public AppDbContextSeeder(TccManager.Api.Data.AppDbContext context) => _context = context;
 
-        public async Task<int> AddBancaAsync(decimal? notaFinal, StatusTcc statusTcc, DateTime dataHora, string titulo)
+        public async Task<int> AddBancaAsync(
+            decimal? notaFinal,
+            StatusTcc statusTcc,
+            DateTime dataHora,
+            string titulo,
+            string? ataCaminho = null)
         {
             _seq++;
             var aluno = new Usuario { Nome = $"Aluno {_seq:D3}", Email = $"aluno{_seq}@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true };
@@ -50,6 +55,12 @@ public class CoordenadorController_BancasConcluidas_Tests
                 Local = "Sala",
                 NotaFinal = notaFinal
             };
+
+            // Issue #83: null mantém o default string.Empty do model — o estado real de
+            // "nenhuma cópia assinada anexada" (a coluna é NOT NULL, nunca null).
+            if (ataCaminho != null)
+                banca.AtaCaminho = ataCaminho;
+
             _context.Banca.Add(banca);
             await _context.SaveChangesAsync();
             return banca.Id;
@@ -181,5 +192,66 @@ public class CoordenadorController_BancasConcluidas_Tests
         Assert.Equal(PaginacaoQuery.DefaultPage, pagina!.CurrentPage);
         Assert.Equal(PaginacaoQuery.DefaultPageSize, pagina.PageSize);
         Assert.Equal(1, pagina.TotalCount);
+    }
+
+    // ───────────────────── Issue #83 (D8): PossuiAtaAssinada ─────────────────────
+
+    [Fact]
+    public async Task PossuiAtaAssinada_RefleteOAtaCaminhoDeCadaBanca()
+    {
+        // O flag existe para o Client não oferecer um download que resultaria em 404. A
+        // projeção é "AtaCaminho != ''" (a coluna é NOT NULL com default string.Empty, então
+        // não há caso de null a considerar).
+        var factory = new TccApiFactory();
+        using var _ = factory;
+        int comCopia, semCopia;
+        using (var context = factory.CriarContextoDireto())
+        {
+            var seeder = new AppDbContextSeeder(context);
+            comCopia = await seeder.AddBancaAsync(
+                88.0m, StatusTcc.Finalizado, DateTime.UtcNow.AddDays(-1), "Com copia assinada",
+                ataCaminho: "/uploads/atas/abc_ata-assinada.pdf");
+            semCopia = await seeder.AddBancaAsync(
+                72.0m, StatusTcc.Finalizado, DateTime.UtcNow.AddDays(-2), "Sem copia assinada");
+        }
+
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var response = await client.GetAsync("/api/coordenador/bancas-concluidas?pageSize=100");
+
+        response.EnsureSuccessStatusCode();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<BancaConcluidaDto>>();
+
+        Assert.NotNull(pagina);
+        Assert.True(pagina!.Items.Single(b => b.BancaId == comCopia).PossuiAtaAssinada);
+        Assert.False(pagina.Items.Single(b => b.BancaId == semCopia).PossuiAtaAssinada);
+    }
+
+    [Fact]
+    public async Task PossuiAtaAssinada_NaoAlteraOsDemaisCamposDaProjecao()
+    {
+        // Regressão barata: o campo novo entrou numa projeção existente; nota, título e
+        // Aprovado continuam corretos na mesma linha.
+        var factory = new TccApiFactory();
+        using var _ = factory;
+        int bancaId;
+        using (var context = factory.CriarContextoDireto())
+        {
+            var seeder = new AppDbContextSeeder(context);
+            bancaId = await seeder.AddBancaAsync(
+                67.5m, StatusTcc.Finalizado, DateTime.UtcNow, "TCC com ata anexada",
+                ataCaminho: "/uploads/atas/xyz_ata.pdf");
+        }
+
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var response = await client.GetAsync("/api/coordenador/bancas-concluidas");
+
+        response.EnsureSuccessStatusCode();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<BancaConcluidaDto>>();
+
+        var item = pagina!.Items.Single(b => b.BancaId == bancaId);
+        Assert.True(item.PossuiAtaAssinada);
+        Assert.Equal(67.5m, item.NotaFinal);
+        Assert.Equal("TCC com ata anexada", item.TccTitulo);
+        Assert.True(item.Aprovado);
     }
 }

@@ -74,4 +74,12 @@ public class BancaConcluidaDto
     public DateTime DataHora { get; set; }
     public decimal NotaFinal { get; set; }
     public bool Aprovado { get; set; }
+
+    /// <summary>
+    /// Issue #83 (D8): indica se existe cópia assinada anexada (Banca.AtaCaminho
+    /// preenchido). Falso para bancas anteriores ao mecanismo de upload e para registros
+    /// semeados sem arquivo — o Client usa isto para não oferecer um download que
+    /// resultaria em 404.
+    /// </summary>
+    public bool PossuiAtaAssinada { get; set; }
 }

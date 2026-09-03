@@ -217,7 +217,7 @@ public class TccController : ControllerBase
         string caminho;
         using (var streamOriginal = arquivo.OpenReadStream())
         {
-            var (assinaturaValida, streamParaUpload) = await ValidarAssinaturaArquivoAsync(
+            var (assinaturaValida, streamParaUpload) = await AssinaturaArquivoValidator.ValidarAsync(
                 streamOriginal, extensao, HttpContext.RequestAborted);
 
             try
@@ -307,54 +307,6 @@ public class TccController : ControllerBase
 
         return Ok(entrega);
     }
-
-    /// <summary>
-    /// RF-05/hardening: valida a assinatura binária (magic bytes) do arquivo enviado contra
-    /// a extensão declarada, para não confiar apenas no nome do arquivo. PDF exige o prefixo
-    /// "%PDF-"; DOC (legado) exige a assinatura OLE Compound File; DOCX e ZIP compartilham a
-    /// mesma assinatura de contêiner ZIP (DOCX é um pacote OOXML) — não é objetivo desta
-    /// validação diferenciar DOCX de ZIP genérico, apenas rejeitar arquivos que não são
-    /// nenhum dos tipos esperados.
-    /// </summary>
-    private static async Task<(bool AssinaturaValida, Stream StreamParaUpload)> ValidarAssinaturaArquivoAsync(
-        Stream streamOriginal, string extensao, CancellationToken cancellationToken)
-    {
-        var streamSeekavel = streamOriginal;
-
-        // arquivo.OpenReadStream() de um IFormFile é seekable no caso normal (buffer em
-        // memória/disco pelo model binding); fallback defensivo para o caso (não esperado
-        // em produção) de um stream forward-only.
-        if (!streamOriginal.CanSeek)
-        {
-            var buffer = new MemoryStream();
-            await streamOriginal.CopyToAsync(buffer, cancellationToken);
-            buffer.Seek(0, SeekOrigin.Begin);
-            streamSeekavel = buffer;
-        }
-
-        var assinaturasEsperadas = ObterAssinaturasEsperadas(extensao);
-        var tamanhoCabecalho = assinaturasEsperadas.Length == 0 ? 0 : assinaturasEsperadas.Max(a => a.Length);
-        var cabecalho = new byte[tamanhoCabecalho];
-        var totalLido = tamanhoCabecalho == 0
-            ? 0
-            : await streamSeekavel.ReadAsync(cabecalho.AsMemory(0, tamanhoCabecalho), cancellationToken);
-
-        streamSeekavel.Seek(0, SeekOrigin.Begin);
-
-        var assinaturaValida = assinaturasEsperadas.Any(assinatura =>
-            totalLido >= assinatura.Length && cabecalho.AsSpan(0, assinatura.Length).SequenceEqual(assinatura));
-
-        return (assinaturaValida, streamSeekavel);
-    }
-
-    private static byte[][] ObterAssinaturasEsperadas(string extensao) => extensao switch
-    {
-        ".pdf" => new[] { new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D } }, // "%PDF-"
-        ".docx" => new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } }, // ZIP/OOXML
-        ".zip" => new[] { new byte[] { 0x50, 0x4B, 0x03, 0x04 } }, // ZIP
-        ".doc" => new[] { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } }, // OLE Compound File
-        _ => Array.Empty<byte[]>()
-    };
 
     // Remove o arquivo já gravado em disco quando o SaveChangesAsync que persistiria a
     // Entrega falha por qualquer motivo — best-effort, nunca propaga (não pode mascarar o

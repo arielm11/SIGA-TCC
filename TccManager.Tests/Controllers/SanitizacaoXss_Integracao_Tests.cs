@@ -190,7 +190,9 @@ public class SanitizacaoXss_Integracao_Tests
         form.Add(new StringContent("40.0"), "notaFinal"); // escala 0-100: reprova, exige motivo
         form.Add(new StringContent($"Reprovado {PayloadScript} por metodologia."), "motivoReprovacao");
 
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 }); // "%PDF"
+        // Issue #83: assinatura "%PDF-" completa — sem ela a requisição pararia em 400 na
+        // validação de magic bytes e o motivo nem chegaria a ser sanitizado/persistido.
+        var pdfFake = new ByteArrayContent(ConteudoArquivoTeste.AssinaturaPdf);
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata-teste.pdf");
 
