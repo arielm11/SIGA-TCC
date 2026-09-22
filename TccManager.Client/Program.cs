@@ -27,6 +27,10 @@ builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
 builder.Services.AddScoped<ISessionEndedHandler, SessionEndedHandler>();
 builder.Services.AddScoped<ITokenRefreshCoordinator, TokenRefreshCoordinator>();
 
+// Issue #88 (D10) — carrega só o e-mail entre Login.razor e TrocarSenha.razor no fluxo de
+// troca de senha obrigatória.
+builder.Services.AddScoped<EstadoTrocaSenha>();
+
 // Registra DialogService, NotificationService, TooltipService e ContextMenuService de uma vez
 // (helper disponível no pacote Radzen.Blazor referenciado).
 builder.Services.AddRadzenComponents();

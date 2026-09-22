@@ -214,7 +214,14 @@ public class UsuarioController : ControllerBase
         }
 
         if (!string.IsNullOrEmpty(dto.Senha))
+        {
             usuario.SenhaHash = BCrypt.Net.BCrypt.HashPassword(dto.Senha);
+
+            // Issue #88 (D7): defensivo — no MVP este ramo é inalcançável para um usuário
+            // com a flag ligada (ele nunca obtém token para chegar ao PUT, D8), mas evita um
+            // estado preso caso a flag venha a ser usada em outro fluxo no futuro.
+            usuario.PrecisaTrocarSenha = false;
+        }
 
         try
         {
@@ -331,11 +338,8 @@ public class UsuarioController : ControllerBase
     // Verifica se existe apenas 1 Admin ativo no sistema no momento da chamada.
     // Usado para impedir que a API deixe o sistema sem nenhum Admin ativo
     // (auto-degradacao/desativacao ou exclusao do ultimo Admin).
-    private async Task<bool> EhUnicoAdminAtivoAsync()
-    {
-        var totalAdminsAtivos = await _context.Usuarios
-            .CountAsync(u => u.Tipo == TipoUsuario.Admin && u.Ativo);
-
-        return totalAdminsAtivos <= 1;
-    }
+    // Issue #88 (D12): delega a UsuarioQueries.ContarAdminsAtivosAsync, a mesma query usada
+    // pelo bootstrap (== 0) — uma única definição de "Admin ativo" no código.
+    private async Task<bool> EhUnicoAdminAtivoAsync() =>
+        await _context.ContarAdminsAtivosAsync() <= 1;
 }

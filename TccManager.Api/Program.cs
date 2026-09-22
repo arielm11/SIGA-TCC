@@ -197,6 +197,13 @@ try
             "e-mail aos avaliadores internos será montado com URL inválida.");
     }
 
+    // Issue #88: bootstrap do primeiro Admin (Opção C — configuração de startup). Aguardado
+    // (await) e antes do pipeline HTTP: a API não começa a atender requisições com o
+    // bootstrap em voo. Se Admin:BootstrapEmail/Admin:BootstrapSenha não estiverem
+    // configurados, é um caminho inerte (nenhum acesso a banco, nenhum log) — ver
+    // AdminBootstrapSetup.
+    await app.ExecutarBootstrapAdminAsync();
+
     if (app.Environment.IsDevelopment())
     {
         app.UseSwagger();
