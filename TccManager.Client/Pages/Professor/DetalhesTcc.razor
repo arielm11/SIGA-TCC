@@ -1,4 +1,4 @@
-﻿@page "/professor/tcc/{TccId:int}"
+@page "/professor/tcc/{TccId:int}"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.Models
 @using TccManager.Shared.DTOs
@@ -7,218 +7,214 @@
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
 @inject NavigationManager Navigation
+@inject DialogService DialogService
+@inject NotificationService NotificationService
 
-<div class="container mt-4">
-    <button class="btn btn-outline-secondary mb-3" @onclick='() => Navigation.NavigateTo("/professor/dashboard")'>
-        <i class="bi bi-arrow-left"></i> Voltar ao Dashboard
-    </button>
+<PageTitle>Detalhes do TCC</PageTitle>
+
+<RadzenStack Gap="1.5rem">
+    <RadzenButton Text="Voltar ao Dashboard" Icon="arrow_back" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined"
+                  Click='@(() => Navigation.NavigateTo("/professor/dashboard"))' style="align-self: flex-start;" />
 
     @if (carregando)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p>Carregando dados do orientando...</p>
-        </div>
+        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Carregando dados do orientando...</RadzenText>
+        </RadzenStack>
     }
     else if (tcc != null)
     {
-        <div class="card shadow-sm mb-4 border-primary">
-            <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-start">
-                <div class="mb-3 mb-md-0">
-                    <h3 class="text-primary fw-bold">@tcc.Titulo</h3>
-                    <h5 class="text-muted"><i class="bi bi-person-fill me-2"></i>Aluno: @tcc.Aluno?.Nome</h5>
-                    <hr />
-                    <p><strong>Resumo:</strong> @tcc.Resumo</p>
-                    <span class="badge bg-info text-dark">Status: @tcc.Status</span>
-                </div>
-                
-                <div class="text-md-end text-start border-start-md ps-md-4 ms-md-4">
+        <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
+            <RadzenRow Gap="1rem">
+                <RadzenColumn SizeMD="8" SizeXS="12">
+                    <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">@tcc.Titulo</RadzenText>
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.4rem" class="rz-mt-1">
+                        <RadzenIcon Icon="person" />
+                        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Aluno: @tcc.Aluno?.Nome</RadzenText>
+                    </RadzenStack>
+                    <RadzenText class="rz-mt-3 rz-mb-3"><strong>Resumo:</strong> @tcc.Resumo</RadzenText>
+                    <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@($"Status: {tcc.Status}")" />
+                </RadzenColumn>
+
+                <RadzenColumn SizeMD="4" SizeXS="12" class="rz-text-align-end">
                     @if (tcc.Status == StatusTcc.Aprovado || tcc.Status == StatusTcc.EmAndamento)
                     {
                         var temEntregaFinal = tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
-                        
-                        <button class="btn btn-success btn-lg shadow-sm" disabled="@(!temEntregaFinal || processandoAceite)" @onclick="DarAceiteFinal">
-                            @if (processandoAceite)
-                            {
-                                <span class="spinner-border spinner-border-sm me-2"></span>
-                            }
-                            <i class="bi bi-award-fill me-2"></i> Dar Aceite Final
-                        </button>
-                        
+
+                        <RadzenButton Text="Dar Aceite Final" Icon="workspace_premium" ButtonStyle="ButtonStyle.Success" Size="ButtonSize.Large"
+                                      Disabled="@(!temEntregaFinal || processandoAceite)" IsBusy="processandoAceite" BusyText="Processando..."
+                                      Click="@DarAceiteFinal" />
+
                         @if (!temEntregaFinal)
                         {
-                            <p class="text-muted small mt-2 mb-0">
-                                <i class="bi bi-info-circle me-1"></i> Aguardando envio da Versão Final pelo aluno.
-                            </p>
+                            <RadzenText TextStyle="TextStyle.Caption" class="rz-mt-2 rz-mb-0">
+                                Aguardando envio da Versão Final pelo aluno.
+                            </RadzenText>
                         }
                     }
                     else if (tcc.Status == StatusTcc.AguardandoDefesa)
                     {
-                        <div class="alert alert-success py-2 px-3 mb-0 fw-bold border-success shadow-sm">
-                            <i class="bi bi-check-circle-fill me-2"></i> Aceite Final Concedido
-                        </div>
+                        <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true">
+                            Aceite Final Concedido
+                        </RadzenAlert>
                     }
-                </div>
-            </div>
-        </div>
+                </RadzenColumn>
+            </RadzenRow>
+        </RadzenCard>
 
-        <ul class="nav nav-tabs mb-4">
-            <li class="nav-item">
-                <button class="nav-link @(abaAtiva == "entregas" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "entregas"'>
-                    <i class="bi bi-folder2-open me-2"></i> Entregas do Aluno
-                </button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link @(abaAtiva == "acompanhamentos" ? "active fw-bold" : "")" @onclick='() => abaAtiva = "acompanhamentos"'>
-                    <i class="bi bi-calendar-event me-2"></i> Registo de Reuniões
-                </button>
-            </li>
-        </ul>
-
-        @if (abaAtiva == "entregas")
-        {
-            @if (!tcc.Entregas.Any())
-            {
-                <div class="alert alert-secondary">Este aluno ainda não enviou nenhum arquivo.</div>
-            }
-            else
-            {
-                <div class="row">
-                    @foreach (var entrega in tcc.Entregas)
+        <RadzenTabs RenderMode="TabRenderMode.Client">
+            <Tabs>
+                <RadzenTabsItem Text="Entregas do Aluno" Icon="folder_open">
+                    @if (!tcc.Entregas.Any())
                     {
-                        <div class="col-12 mb-3">
-                            <div class="card shadow-sm">
-                                <div class="card-body d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h5 class="mb-1">@entrega.Titulo <span class="badge bg-secondary ms-2">@entrega.Tipo</span></h5>
-                                        <p class="text-muted small mb-0">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
-                                        
-                                        @if (!string.IsNullOrEmpty(entrega.Feedback))
-                                        {
-                                            <div class="mt-2 text-success fw-bold"><i class="bi bi-check-all me-1"></i> Avaliado (Nota: @(entrega.Nota?.ToString() ?? "N/A"))</div>
-                                        }
-                                        else
-                                        {
-                                            <div class="mt-2 text-warning fw-bold"><i class="bi bi-clock-history me-1"></i> Aguardando Avaliação</div>
-                                        }
-                                    </div>
-                                    <div class="text-end">
-                                        <a href="@($"{Http.BaseAddress?.ToString().TrimEnd('/')}{entrega.ArquivoCaminho}")" target="_blank" class="btn btn-outline-primary me-2">
-                                            <i class="bi bi-download"></i> Baixar Arquivo
-                                        </a>
-                                        <button class="btn btn-success" @onclick="() => AbrirModalFeedback(entrega)">
-                                            <i class="bi bi-chat-square-text"></i> @(string.IsNullOrEmpty(entrega.Feedback) ? "Avaliar" : "Editar Avaliação")
-                                        </button>
-                                    </div>
-                                </div>
-
-                                @if (entregaEmAvaliacao == entrega.Id)
-                                {
-                                    <div class="card-footer bg-light border-top p-3 animate__animated animate__fadeIn">
-                                        <EditForm Model="feedbackAtual" OnValidSubmit="() => SalvarFeedback(entrega.Id)">
-                                            <DataAnnotationsValidator />
-                                            <div class="row">
-                                                <div class="col-md-3 mb-3">
-                                                    <label class="form-label fw-bold">Nota (Opcional)</label>
-                                                    <InputNumber class="form-control" @bind-Value="feedbackAtual.Nota" />
-                                                </div>
-                                                <div class="col-md-9 mb-3">
-                                                    <label class="form-label fw-bold">Comentários / Parecer</label>
-                                                    <InputTextArea class="form-control" @bind-Value="feedbackAtual.Feedback" rows="3" />
-                                                    <ValidationMessage For="@(() => feedbackAtual.Feedback)" class="text-danger" />
-                                                </div>
-                                            </div>
-                                            <div class="d-flex justify-content-end gap-2">
-                                                <button type="button" class="btn btn-secondary" @onclick="FecharModalFeedback">Cancelar</button>
-                                                <button type="submit" class="btn btn-success" disabled="@salvando">Salvar Feedback</button>
-                                            </div>
-                                        </EditForm>
-                                    </div>
-                                }
-                            </div>
-                        </div>
+                        <RadzenAlert AlertStyle="AlertStyle.Secondary" Variant="Variant.Flat" ShowIcon="true">
+                            Este aluno ainda não enviou nenhum arquivo.
+                        </RadzenAlert>
                     }
-                </div>
-            }
-        }
-
-        @if (abaAtiva == "acompanhamentos")
-        {
-            <div class="card shadow-sm mb-4 border-@(acompanhamentoEmEdicaoId.HasValue ? "warning" : "light")">
-                <div class="card-header bg-@(acompanhamentoEmEdicaoId.HasValue ? "warning text-dark" : "light text-dark") fw-bold">
-                    <i class="bi @(acompanhamentoEmEdicaoId.HasValue ? "bi-pencil-square" : "bi-plus-circle") me-2"></i>
-                    @(acompanhamentoEmEdicaoId.HasValue ? "Editar Ata de Reunião" : "Nova Ata de Reunião")
-                </div>
-                <div class="card-body">
-                    <EditForm Model="novoAcompanhamento" OnValidSubmit="SalvarAcompanhamento">
-                        <div class="row">
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label fw-bold">Data da Reunião</label>
-                                <InputDate class="form-control" @bind-Value="novoAcompanhamento.DataReuniao" />
-                                <ValidationMessage For="@(() => novoAcompanhamento.DataReuniao)" />
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">Ata / Assuntos Discutidos</label>
-                            <InputTextArea class="form-control" @bind-Value="novoAcompanhamento.Ata" rows="4" />
-                            <ValidationMessage For="@(() => novoAcompanhamento.Ata)" />
-                        </div>
-
-                        <div class="text-end">
-                            @if (acompanhamentoEmEdicaoId.HasValue)
+                    else
+                    {
+                        <RadzenStack Gap="1rem">
+                            @foreach (var entrega in tcc.Entregas)
                             {
-                                <button type="button" class="btn btn-secondary me-2" @onclick="CancelarEdicaoAcompanhamento">Cancelar Edição</button>
-                            }
-                            <button type="submit" class="btn btn-primary" disabled="@salvandoAcompanhamento">
-                                @if (salvandoAcompanhamento)
-                                {
-                                    <span class="spinner-border spinner-border-sm me-2"></span>
-                                }
-                                <i class="bi bi-save me-1"></i> @(acompanhamentoEmEdicaoId.HasValue ? "Salvar Alterações" : "Gravar Registo")
-                            </button>
-                        </div>
-                    </EditForm>
-                </div>
-            </div>
+                                <RadzenCard Variant="Variant.Outlined">
+                                    <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start" Gap="1rem">
+                                        <RadzenStack Gap="0.25rem">
+                                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                                                <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-my-0">@entrega.Titulo</RadzenText>
+                                                <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@entrega.Tipo.ToString()" />
+                                            </RadzenStack>
+                                            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</RadzenText>
 
-            <h5 class="fw-bold mb-3"><i class="bi bi-journal-text me-2"></i> Histórico de Reuniões</h5>
-            @if (!tcc.Acompanhamentos.Any())
-            {
-                <div class="alert alert-secondary">Nenhum registo de acompanhamento efetuado até ao momento.</div>
-            }
-            else
-            {
-                <div class="accordion" id="accordionAcompanhamentos">
-                    @foreach (var ata in tcc.Acompanhamentos)
-                    {
-                        <div class="accordion-item mb-2 border rounded shadow-sm">
-                            <h2 class="accordion-header" id="heading_@ata.Id">
-                                <button class="accordion-button collapsed bg-light text-dark fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapse_@ata.Id">
-                                    <i class="bi bi-calendar2-check text-primary me-2"></i>
-                                    Reunião de @ata.DataReuniao.ToLocalTime().ToString("dd/MM/yyyy")
-                                </button>
-                            </h2>
-                            <div id="collapse_@ata.Id" class="accordion-collapse collapse" data-bs-parent="#accordionAcompanhamentos">
-                                <div class="accordion-body">
-                                    <div style="white-space: pre-line;">@ata.Ata</div>
-                                    
-                                    <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
-                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => PrepararEdicaoAcompanhamento(ata)">
-                                            <i class="bi bi-pencil"></i> Editar
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirAcompanhamento(ata.Id)">
-                                            <i class="bi bi-trash"></i> Excluir
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                                            @if (!string.IsNullOrEmpty(entrega.Feedback))
+                                            {
+                                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mt-1">
+                                                    <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" />
+                                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Avaliado (Nota: @(entrega.Nota?.ToString() ?? "N/A"))</RadzenText>
+                                                </RadzenStack>
+                                            }
+                                            else
+                                            {
+                                                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.25rem" class="rz-mt-1">
+                                                    <RadzenIcon Icon="schedule" IconColor="var(--rz-warning)" />
+                                                    <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Aguardando Avaliação</RadzenText>
+                                                </RadzenStack>
+                                            }
+                                        </RadzenStack>
+
+                                        <RadzenStack Orientation="Orientation.Horizontal" Gap="0.5rem">
+                                            <a href="@UrlArquivo(entrega.ArquivoCaminho)" target="_blank" rel="noopener"
+                                               style="display:inline-flex; align-items:center; gap:0.4rem; padding: 0.35rem 0.9rem; border: 1px solid var(--rz-primary); border-radius: 4px; color: var(--rz-primary); text-decoration:none; font-weight:500; white-space:nowrap;">
+                                                <RadzenIcon Icon="download" />
+                                                Baixar Arquivo
+                                            </a>
+                                            <RadzenButton Text="@(string.IsNullOrEmpty(entrega.Feedback) ? "Avaliar" : "Editar Avaliação")" Icon="chat"
+                                                          ButtonStyle="ButtonStyle.Success" Click="@(() => AbrirFormFeedback(entrega))" />
+                                        </RadzenStack>
+                                    </RadzenStack>
+
+                                    @if (entregaEmAvaliacao == entrega.Id)
+                                    {
+                                        <RadzenCard Variant="Variant.Flat" class="rz-mt-3">
+                                            <EditForm Model="feedbackAtual" OnValidSubmit="() => SalvarFeedback(entrega.Id)">
+                                                <DataAnnotationsValidator />
+                                                <RadzenRow Gap="1rem">
+                                                    <RadzenColumn SizeMD="3" SizeXS="12">
+                                                        <RadzenFormField Text="Nota (Opcional)" Variant="Variant.Outlined" style="width: 100%;">
+                                                            <RadzenNumeric TValue="decimal?" @bind-Value="feedbackAtual.Nota" style="width: 100%;" />
+                                                        </RadzenFormField>
+                                                    </RadzenColumn>
+                                                    <RadzenColumn SizeMD="9" SizeXS="12">
+                                                        <RadzenFormField Text="Comentários / Parecer" Variant="Variant.Outlined" style="width: 100%;">
+                                                            <RadzenTextArea @bind-Value="feedbackAtual.Feedback" Rows="3" style="width: 100%;" />
+                                                        </RadzenFormField>
+                                                        <ValidationMessage For="@(() => feedbackAtual.Feedback)" />
+                                                    </RadzenColumn>
+                                                </RadzenRow>
+                                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" class="rz-mt-2">
+                                                    <RadzenButton Text="Cancelar" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@FecharFormFeedback" />
+                                                    <RadzenButton ButtonType="ButtonType.Submit" Text="Salvar Feedback" Icon="save" ButtonStyle="ButtonStyle.Success"
+                                                                  IsBusy="salvando" BusyText="Salvando..." Disabled="@salvando" />
+                                                </RadzenStack>
+                                            </EditForm>
+                                        </RadzenCard>
+                                    }
+                                </RadzenCard>
+                            }
+                        </RadzenStack>
                     }
-                </div>
-            }
-        }
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Registo de Reuniões" Icon="event">
+                    <RadzenCard Variant="Variant.Outlined" class="@(acompanhamentoEmEdicaoId.HasValue ? "rz-border-color-warning" : "")">
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-3">
+                            <RadzenIcon Icon="@(acompanhamentoEmEdicaoId.HasValue ? "edit_note" : "add_circle")" />
+                            <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">@(acompanhamentoEmEdicaoId.HasValue ? "Editar Ata de Reunião" : "Nova Ata de Reunião")</RadzenText>
+                        </RadzenStack>
+
+                        <EditForm Model="novoAcompanhamento" OnValidSubmit="SalvarAcompanhamento">
+                            <DataAnnotationsValidator />
+                            <RadzenRow Gap="1rem">
+                                <RadzenColumn SizeMD="4" SizeXS="12">
+                                    <RadzenFormField Text="Data da Reunião" Variant="Variant.Outlined" style="width: 100%;">
+                                        <RadzenDatePicker TValue="DateTime" @bind-Value="novoAcompanhamento.DataReuniao" ShowTime="false"
+                                                          DateFormat="dd/MM/yyyy" style="width: 100%;" />
+                                    </RadzenFormField>
+                                    <ValidationMessage For="@(() => novoAcompanhamento.DataReuniao)" />
+                                </RadzenColumn>
+                            </RadzenRow>
+                            <div class="rz-mt-3">
+                                <RadzenFormField Text="Ata / Assuntos Discutidos" Variant="Variant.Outlined" style="width: 100%;">
+                                    <RadzenTextArea @bind-Value="novoAcompanhamento.Ata" Rows="4" style="width: 100%;" />
+                                </RadzenFormField>
+                                <ValidationMessage For="@(() => novoAcompanhamento.Ata)" />
+                            </div>
+
+                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" class="rz-mt-3">
+                                @if (acompanhamentoEmEdicaoId.HasValue)
+                                {
+                                    <RadzenButton Text="Cancelar Edição" ButtonStyle="ButtonStyle.Base" Variant="Variant.Outlined" Click="@CancelarEdicaoAcompanhamento" />
+                                }
+                                <RadzenButton ButtonType="ButtonType.Submit" Text="@(acompanhamentoEmEdicaoId.HasValue ? "Salvar Alterações" : "Gravar Registo")" Icon="save"
+                                              ButtonStyle="ButtonStyle.Primary" IsBusy="salvandoAcompanhamento" BusyText="Salvando..." Disabled="@salvandoAcompanhamento" />
+                            </RadzenStack>
+                        </EditForm>
+                    </RadzenCard>
+
+                    <RadzenText TextStyle="TextStyle.H6" class="rz-mt-4 rz-mb-2">
+                        <RadzenIcon Icon="history_edu" /> Histórico de Reuniões
+                    </RadzenText>
+
+                    @if (!tcc.Acompanhamentos.Any())
+                    {
+                        <RadzenAlert AlertStyle="AlertStyle.Secondary" Variant="Variant.Flat" ShowIcon="true">
+                            Nenhum registo de acompanhamento efetuado até ao momento.
+                        </RadzenAlert>
+                    }
+                    else
+                    {
+                        <RadzenAccordion>
+                            <Items>
+                                @foreach (var ata in tcc.Acompanhamentos)
+                                {
+                                    <RadzenAccordionItem Text="@($"Reunião de {ata.DataReuniao.ToLocalTime():dd/MM/yyyy}")" Icon="event_available">
+                                        <p style="white-space: pre-line;">@ata.Ata</p>
+                                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" class="rz-mt-2">
+                                            <RadzenButton Text="Editar" Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                          Click="@(() => PrepararEdicaoAcompanhamento(ata))" />
+                                            <RadzenButton Text="Excluir" Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                          Click="@(() => ExcluirAcompanhamento(ata.Id))" />
+                                        </RadzenStack>
+                                    </RadzenAccordionItem>
+                                }
+                            </Items>
+                        </RadzenAccordion>
+                    }
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
     }
-</div>
+</RadzenStack>
 
 @code {
     [Parameter]
@@ -227,11 +223,10 @@
     private bool carregando = true;
     private bool salvando = false;
     private Tcc? tcc;
-    
+
     private int? entregaEmAvaliacao;
     private FeedbackDto feedbackAtual = new();
 
-    private string abaAtiva = "entregas";
     private AcompanhamentoDto novoAcompanhamento = new();
     private bool salvandoAcompanhamento = false;
     private int? acompanhamentoEmEdicaoId = null;
@@ -243,6 +238,8 @@
         await CarregarTcc();
     }
 
+    private string UrlArquivo(string caminho) => $"{Http.BaseAddress?.ToString().TrimEnd('/')}{caminho}";
+
     private async Task CarregarTcc()
     {
         carregando = true;
@@ -250,11 +247,20 @@
         {
             tcc = await Http.GetFromJsonAsync<Tcc>($"api/orientador/tcc/{TccId}");
         }
-        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro ao carregar os dados."); }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro",
+                Detail = "Erro ao carregar os dados.",
+                Duration = 5000
+            });
+        }
         finally { carregando = false; }
     }
 
-    private void AbrirModalFeedback(Entrega entrega)
+    private void AbrirFormFeedback(Entrega entrega)
     {
         entregaEmAvaliacao = entrega.Id;
 
@@ -265,7 +271,7 @@
         };
     }
 
-    private void FecharModalFeedback()
+    private void FecharFormFeedback()
     {
         entregaEmAvaliacao = null;
         feedbackAtual = new();
@@ -277,16 +283,28 @@
         try
         {
             var response = await Http.PostAsJsonAsync($"api/orientador/entregas/{idEntrega}/feedback", feedbackAtual);
-            
+
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Avaliação salva com sucesso!");
-                FecharModalFeedback();
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Avaliação salva",
+                    Detail = "Avaliação salva com sucesso!",
+                    Duration = 4000
+                });
+                FecharFormFeedback();
                 await CarregarTcc();
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro ao salvar a avaliação.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao salvar a avaliação.",
+                    Duration = 5000
+                });
             }
         }
         finally { salvando = false; }
@@ -309,16 +327,28 @@
                 // Criação (POST)
                 response = await Http.PostAsJsonAsync($"api/orientador/tcc/{TccId}/acompanhamentos", novoAcompanhamento);
             }
-            
+
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Ata de reunião salva com sucesso!");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Ata salva",
+                    Detail = "Ata de reunião salva com sucesso!",
+                    Duration = 4000
+                });
                 CancelarEdicaoAcompanhamento();
                 await CarregarTcc();
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro ao guardar o acompanhamento.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao guardar o acompanhamento.",
+                    Duration = 5000
+                });
             }
         }
         finally { salvandoAcompanhamento = false; }
@@ -332,8 +362,9 @@
             DataReuniao = ata.DataReuniao,
             Ata = ata.Ata
         };
-        
-        JSRuntime.InvokeVoidAsync("window.scrollTo", 0, 0);
+
+        // Cosmético (preservado da versão anterior): rola a página para o topo ao abrir a edição.
+        _ = JSRuntime.InvokeVoidAsync("window.scrollTo", 0, 0);
     }
 
     private void CancelarEdicaoAcompanhamento()
@@ -344,44 +375,79 @@
 
     private async Task ExcluirAcompanhamento(int idAcompanhamento)
     {
-        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja excluir esta ata? Esta ação não pode ser desfeita.");
-        if (!confirm) return;
+        var confirmado = await DialogService.Confirm(
+            "Tem certeza que deseja excluir esta ata? Esta ação não pode ser desfeita.",
+            "Excluir ata",
+            new ConfirmOptions { OkButtonText = "Excluir", CancelButtonText = "Cancelar" });
+
+        if (confirmado != true) return;
 
         try
         {
             var response = await Http.DeleteAsync($"api/orientador/tcc/{TccId}/acompanhamentos/{idAcompanhamento}");
-            
+
             if (response.IsSuccessStatusCode)
             {
                 await CarregarTcc();
             }
             else
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Erro ao excluir o acompanhamento.");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = "Erro ao excluir o acompanhamento.",
+                    Duration = 5000
+                });
             }
         }
-        catch { await JSRuntime.InvokeVoidAsync("alert", "Erro de conexão ao excluir."); }
+        catch
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Erro de conexão ao excluir.",
+                Duration = 5000
+            });
+        }
     }
 
     private async Task DarAceiteFinal()
     {
-        bool confirm = await JSRuntime.InvokeAsync<bool>("confirm", "Tem certeza que deseja dar o Aceite Final? Isso enviará o TCC para a Coordenação agendar a Banca.");
-        if (!confirm) return;
+        var confirmado = await DialogService.Confirm(
+            "Tem certeza que deseja dar o Aceite Final? Isso enviará o TCC para a Coordenação agendar a Banca.",
+            "Dar aceite final",
+            new ConfirmOptions { OkButtonText = "Confirmar", CancelButtonText = "Cancelar" });
+
+        if (confirmado != true) return;
 
         processandoAceite = true;
         try
         {
             var response = await Http.PostAsync($"api/orientador/tcc/{TccId}/aceite-final", null);
-            
+
             if (response.IsSuccessStatusCode)
             {
-                await JSRuntime.InvokeVoidAsync("alert", "Aceite final concedido com sucesso!");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Success,
+                    Summary = "Aceite concedido",
+                    Detail = "Aceite final concedido com sucesso!",
+                    Duration = 5000
+                });
                 await CarregarTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                await JSRuntime.InvokeVoidAsync("alert", $"Erro: {erro}");
+                NotificationService.Notify(new NotificationMessage
+                {
+                    Severity = NotificationSeverity.Error,
+                    Summary = "Erro",
+                    Detail = erro,
+                    Duration = 6000
+                });
             }
         }
         finally { processandoAceite = false; }
