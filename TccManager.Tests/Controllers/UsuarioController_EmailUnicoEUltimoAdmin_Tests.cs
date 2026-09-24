@@ -14,8 +14,11 @@ namespace TccManager.Tests.Controllers;
 /// (#65) PUT /api/usuario/{id} passou a rejeitar e-mail ja usado por OUTRO usuario
 ///       ("Email já cadastrado", 400), com reforco de indice unico em usuarios.Email;
 /// (#67) o sistema nao pode ficar sem nenhum Admin ativo — DELETE recusa excluir o
-///       ultimo Admin ativo (400) e PUT bloqueia silenciosamente a mudanca de
-///       Tipo/Ativo do ultimo Admin ativo (200, campos sensiveis preservados).
+///       ultimo Admin ativo (400) e PUT bloqueia a mudanca de Tipo/Ativo do ultimo
+///       Admin ativo, preservando os campos sensiveis;
+/// (#89) o bloqueio do PUT acima passou de 200 OK silencioso para 409 Conflict
+///       explicito (os demais campos da requisicao, fora Tipo/Ativo, continuam sendo
+///       salvos normalmente).
 /// </summary>
 public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 {
@@ -454,8 +457,10 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoVirarAluno_MantemTipoAdminEAplicaDemaisCampos()
+    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoVirarAluno_Retorna409EAplicaDemaisCampos()
     {
+        // Issue #89: o bloqueio do ultimo Admin passou de 200 silencioso para 409
+        // explicito. Os demais campos da requisicao continuam sendo salvos normalmente.
         using var factory = await CriarFactoryComUnicoAdminAtivoAsync();
         var client = factory.CreateClientAutenticado(IdAdmin, "Admin");
 
@@ -471,13 +476,10 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         var response = await client.PutAsJsonAsync($"/api/usuario/{IdAdmin}", dto);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
-        Assert.Equal(TipoUsuario.Admin, retornado!.Tipo);
-        Assert.True(retornado.Ativo);
-        Assert.Equal("Admin Rebaixado", retornado.Nome);
-        Assert.Equal("admin-rebaixado@teste.com", retornado.Email);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("único Admin ativo", corpo, StringComparison.Ordinal);
 
         using var context = factory.CriarContextoDireto();
         var persistido = await context.Usuarios.FindAsync(IdAdmin);
@@ -489,7 +491,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
     }
 
     [Fact]
-    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoSeDesativar_MantemAtivoTrue()
+    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoSeDesativar_Retorna409EMantemAtivoTrue()
     {
         using var factory = await CriarFactoryComUnicoAdminAtivoAsync();
         var client = factory.CreateClientAutenticado(IdAdmin, "Admin");
@@ -506,11 +508,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         var response = await client.PutAsJsonAsync($"/api/usuario/{IdAdmin}", dto);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
-        Assert.True(retornado!.Ativo);
-        Assert.Equal(TipoUsuario.Admin, retornado.Tipo);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
         using var context = factory.CriarContextoDireto();
         var persistido = await context.Usuarios.FindAsync(IdAdmin);
@@ -520,7 +518,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
     }
 
     [Fact]
-    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoRebaixarEDesativar_MantemAmbosOsCampos()
+    public async Task UpdateUsuario_UnicoAdminAtivo_TentandoRebaixarEDesativar_Retorna409EMantemAmbosOsCampos()
     {
         // Combinacao dos dois campos sensiveis na mesma request.
         using var factory = await CriarFactoryComUnicoAdminAtivoAsync();
@@ -538,7 +536,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         var response = await client.PutAsJsonAsync($"/api/usuario/{IdAdmin}", dto);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
         using var context = factory.CriarContextoDireto();
         var persistido = await context.Usuarios.FindAsync(IdAdmin);
@@ -547,7 +545,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
     }
 
     [Fact]
-    public async Task UpdateUsuario_UnicoAdminAtivo_OutroAdminTentaRebaixaLo_MantemTipoAdmin()
+    public async Task UpdateUsuario_UnicoAdminAtivo_OutroAdminTentaRebaixaLo_Retorna409EMantemTipoAdmin()
     {
         // O bloqueio olha o ALVO, nao o solicitante: um Admin inativo (ou qualquer
         // token com role Admin) tambem nao consegue rebaixar o ultimo Admin ativo.
@@ -574,7 +572,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         var response = await client.PutAsJsonAsync($"/api/usuario/{IdAdmin}", dto);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
 
         using var context = factory.CriarContextoDireto();
         var persistido = await context.Usuarios.FindAsync(IdAdmin);
