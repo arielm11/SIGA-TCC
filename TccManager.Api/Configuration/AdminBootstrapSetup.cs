@@ -129,8 +129,17 @@ public static class AdminBootstrapSetup
         }
     }
 
-    // Mesma regra já usada por UsuarioDtoValidator para UsuarioDto.Email: MailboxAddress.TryParse
-    // (MimeKit) + teto de 450 caracteres alinhado a Usuario.Email.
-    private static bool EmailValido(string email) =>
-        email.Length <= EmailMaxLength && MailboxAddress.TryParse(email, out _);
+    // Mesma regra de UsuarioDtoValidator para UsuarioDto.Email: EmailAddress() do FluentValidation
+    // (um único '@', nem no início nem no fim) + MailboxAddress.TryParse (MimeKit, que sozinho
+    // aceita endereço sem '@') + teto de 450 caracteres alinhado a Usuario.Email.
+    private static bool EmailValido(string email)
+    {
+        var indiceArroba = email.IndexOf('@');
+
+        return email.Length <= EmailMaxLength
+            && indiceArroba > 0
+            && indiceArroba < email.Length - 1
+            && indiceArroba == email.LastIndexOf('@')
+            && MailboxAddress.TryParse(email, out _);
+    }
 }
