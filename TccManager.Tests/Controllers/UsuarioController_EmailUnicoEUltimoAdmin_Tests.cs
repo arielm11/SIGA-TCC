@@ -305,10 +305,18 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
     {
         // Documenta explicitamente a limitacao do harness: o EF Core InMemory ignora
         // indices unicos, portanto a "segunda linha de defesa" (constraint do banco)
-        // NAO e exercitavel aqui — quem protege nesta suite e a validacao de aplicacao
+        // NAO e exercitavel aqui atraves de uma insercao direta — quem protege nesta
+        // suite contra duplicidade "normal" e a validacao de aplicacao
         // (CreateUsuario/UpdateUsuario). Se a suite migrar para um provider relacional,
         // este teste falha de proposito e deve ser convertido em
-        // Assert.Throws<DbUpdateException>. Verificacao em banco real: pendencia de QA.
+        // Assert.Throws<DbUpdateException>.
+        //
+        // Issue #91 (achado A08-1): o CATCH que trata essa violacao no controller (a
+        // corrida entre duas requisicoes concorrentes, nao esta insercao direta) JA tem
+        // cobertura, via SqlException fabricada por reflexao — ver
+        // UsuarioController_FalhasRelacionaisSimuladas_Tests. A limitacao real do
+        // InMemory descrita aqui e so sobre a constraint em si, nao sobre o codigo de
+        // tratamento dela.
         using var factory = await CriarFactoryComUnicoAdminAtivoAsync();
         using var context = factory.CriarContextoDireto();
 
