@@ -348,6 +348,7 @@ public class CoordenadorController : ControllerBase
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
     [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
+    [EnableRateLimiting(RateLimitingSetup.UploadPolicyName)]
     public async Task<IActionResult> RegistrarResultadoBanca(
         int idBanca,
         [FromForm] decimal notaFinal,
@@ -426,7 +427,8 @@ public class CoordenadorController : ControllerBase
                 if (!assinaturaValida)
                     return BadRequest("O arquivo enviado não é um PDF válido.");
 
-                caminho = await _storageService.UploadAsync(streamParaUpload, arquivoAta.FileName, CategoriaArquivo.Atas);
+                caminho = await _storageService.UploadAsync(
+                    streamParaUpload, arquivoAta.FileName, CategoriaArquivo.Atas, HttpContext.RequestAborted);
             }
             finally
             {
@@ -449,7 +451,19 @@ public class CoordenadorController : ControllerBase
             banca.Tcc.MotivoRejeicao = motivoSanitizado;
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception)
+        {
+            // Issue #105: mesma disciplina de TccController.EnviarEntrega — o arquivo da ata
+            // já foi gravado em disco antes do SaveChanges (não há transação distribuída
+            // entre disco e banco), então uma falha aqui deixaria o arquivo órfão em
+            // wwwroot/uploads/atas sem esta compensação.
+            await CompensarUploadOrfaoAsync(caminho, idBanca, "falha ao salvar resultado da banca no banco de dados");
+            throw;
+        }
 
         await _notificationService.NotificarResultadoBancaAsync(banca.Id, aprovado);
 
@@ -459,6 +473,21 @@ public class CoordenadorController : ControllerBase
 
         return Ok(mensagem);
     }
+
+    // Issue #105: mesmo helper compartilhado usado por TccController.CompensarUploadOrfaoAsync
+    // (CompensacaoUploadOrfao) — só as propriedades estruturadas (BancaId) mudam.
+    private Task CompensarUploadOrfaoAsync(string caminho, int bancaId, string motivo) =>
+        CompensacaoUploadOrfao.ExecutarAsync(
+            _storageService,
+            caminho,
+            logSucesso: () => _auditLogger.LogInformation(
+                "Arquivo de ata removido por compensação após falha ao salvar no banco. BancaId: {BancaId}, Motivo: {Motivo}",
+                bancaId,
+                motivo),
+            logFalha: () => _auditLogger.LogWarning(
+                "Falha ao remover arquivo órfão em compensação de upload de ata. BancaId: {BancaId}, Motivo: {Motivo}",
+                bancaId,
+                motivo));
 
     // Issue #72: mesmo achado do GlobalExceptionHandler (issue #71) — o corpo diz "contate o
     // suporte" mas sem correlationId o suporte não teria como localizar a linha de log com o

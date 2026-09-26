@@ -3,10 +3,12 @@ namespace TccManager.Api.Services.Storage;
 public class LocalStorageService : IStorageService
 {
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<LocalStorageService> _logger;
 
-    public LocalStorageService(IWebHostEnvironment env)
+    public LocalStorageService(IWebHostEnvironment env, ILogger<LocalStorageService> logger)
     {
         _env = env;
+        _logger = logger;
     }
 
     public async Task<string> UploadAsync(
@@ -25,9 +27,35 @@ public class LocalStorageService : IStorageService
         var fileName = $"{Guid.NewGuid()}_{nomeSaneado}";
         var filePath = Path.Combine(uploadsFolder, fileName);
 
-        await using (var stream = new FileStream(filePath, FileMode.Create))
+        try
         {
-            await conteudo.CopyToAsync(stream, cancellationToken);
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await conteudo.CopyToAsync(stream, cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // Issue #97 (achado A06-2): a compensação de upload órfão dos controllers
+            // (CompensacaoUploadOrfao) só cobre falha DEPOIS que UploadAsync retorna — se a
+            // própria escrita falhar no meio (cliente desconecta, disco cheio, IOException),
+            // o controller nunca chega a ter um "caminho" para compensar, e o arquivo parcial
+            // ficaria órfão aqui dentro. Best-effort, nunca mascara a exceção original: só
+            // tenta apagar o que foi escrito até agora e relança.
+            try
+            {
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+            }
+            catch (Exception exLimpeza)
+            {
+                _logger.LogWarning(
+                    exLimpeza,
+                    "Falha ao remover arquivo parcial após erro de escrita em UploadAsync. Categoria: {Categoria}",
+                    pastaCategoria);
+            }
+
+            throw;
         }
 
         return $"/uploads/{pastaCategoria}/{fileName}";

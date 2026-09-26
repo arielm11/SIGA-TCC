@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Logging.Abstractions;
 using TccManager.Api.Services.Storage;
 
 namespace TccManager.Tests.Services.Storage;
@@ -25,7 +26,7 @@ public class LocalStorageServiceTests : IDisposable
             Guid.NewGuid().ToString());
         Directory.CreateDirectory(_webRootTemp);
 
-        _sut = new LocalStorageService(new FakeWebHostEnvironment(_webRootTemp));
+        _sut = new LocalStorageService(new FakeWebHostEnvironment(_webRootTemp), NullLogger<LocalStorageService>.Instance);
     }
 
     private static Stream ConteudoDe(string texto) => new MemoryStream(Encoding.UTF8.GetBytes(texto));
@@ -162,6 +163,59 @@ public class LocalStorageServiceTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.DeleteAsync(caminhoMalicioso));
 
         Assert.True(File.Exists(caminhoForaDoUploads), "DeleteAsync não deveria ter alcançado um arquivo fora de wwwroot/uploads.");
+    }
+
+    [Fact]
+    public async Task UploadAsync_FalhaNaEscritaAMeioDoCopyToAsync_RemoveArquivoParcialERelancaAExcecao()
+    {
+        // Issue #97 (achado A06-2): a compensação de upload órfão dos controllers só cobre
+        // falha DEPOIS que UploadAsync retorna — se a própria escrita falhar no meio (aqui
+        // simulada por um Stream que lança na segunda leitura), o arquivo parcial gravado até
+        // então precisa ser removido pelo próprio LocalStorageService, e a exceção original
+        // precisa continuar se propagando (nunca mascarada).
+        await using var streamQueFalhaAMeio = new StreamQueFalhaAposNBytes(bytesAntesDaFalha: 4);
+
+        var excecao = await Assert.ThrowsAsync<IOException>(
+            () => _sut.UploadAsync(streamQueFalhaAMeio, "monografia.pdf", CategoriaArquivo.Entregas));
+
+        Assert.Equal("falha simulada de disco", excecao.Message);
+
+        var pastaEntregas = Path.Combine(_webRootTemp, "uploads", "entregas");
+        Assert.True(
+            !Directory.Exists(pastaEntregas) || Directory.GetFiles(pastaEntregas).Length == 0,
+            "O arquivo parcial gravado antes da falha deveria ter sido removido.");
+    }
+
+    /// <summary>Stream de leitura que grava alguns bytes normalmente e depois lança IOException.</summary>
+    private sealed class StreamQueFalhaAposNBytes : Stream
+    {
+        private readonly int _bytesAntesDaFalha;
+        private int _totalLido;
+
+        public StreamQueFalhaAposNBytes(int bytesAntesDaFalha) => _bytesAntesDaFalha = bytesAntesDaFalha;
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_totalLido >= _bytesAntesDaFalha)
+                throw new IOException("falha simulada de disco");
+
+            var aLer = Math.Min(count, _bytesAntesDaFalha - _totalLido);
+            for (var i = 0; i < aLer; i++)
+                buffer[offset + i] = 0x41; // conteúdo irrelevante
+
+            _totalLido += aLer;
+            return aLer;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]

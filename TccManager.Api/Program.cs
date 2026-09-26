@@ -24,6 +24,21 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
+    // Issue #105 (achado da revisão de #73): sem nenhum MaxRequestBodySize configurado, todo
+    // endpoint — inclusive os que só recebem JSON — herdava o default do Kestrel (~28,6 MB via
+    // KestrelServerLimits, ver UploadLimits). Um payload de dezenas de MB ainda seria lido e
+    // desserializado inteiro na memória antes do FluentValidation rejeitar por comprimento — os
+    // limites de #73 protegem o banco (comprimento de string), não o custo de processar o
+    // corpo em si. 1 MB cobre com folga qualquer DTO JSON deste sistema (o maior campo de texto
+    // livre é Resumo, 4000 caracteres). Os dois endpoints de upload de arquivo continuam com
+    // [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)] próprio, que sobrescreve este
+    // default por ação — não é afetado por este teto mais baixo. Inerte no TestServer em
+    // memória (mesma limitação já documentada em UploadLimits/EnviarEntrega).
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.Limits.MaxRequestBodySize = 1 * 1024 * 1024; // 1 MB
+    });
+
     builder.ConfigureLogging();
 
     builder.Services.AddControllers(options =>
