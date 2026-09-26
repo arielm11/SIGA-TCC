@@ -140,12 +140,24 @@
                 }
                 else
                 {
+                    // Issue #89: 400/409 trazem o motivo de negocio especifico (ultimo
+                    // Admin ativo, vinculo com TCC/banca) — repassar em vez de esconder
+                    // atras de uma mensagem generica que nao ajuda o Admin a entender.
+                    var detalhe = "Erro ao excluir usuário.";
+
+                    if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+                    {
+                        var corpo = await response.Content.ReadAsStringAsync();
+                        if (!string.IsNullOrWhiteSpace(corpo))
+                            detalhe = corpo;
+                    }
+
                     NotificationService.Notify(new NotificationMessage
                     {
                         Severity = NotificationSeverity.Error,
                         Summary = "Erro ao excluir",
-                        Detail = "Erro ao excluir usuário.",
-                        Duration = 5000
+                        Detail = detalhe,
+                        Duration = 6000
                     });
                 }
             }
