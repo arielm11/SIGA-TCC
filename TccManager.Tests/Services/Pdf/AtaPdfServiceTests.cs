@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using QuestPDF.Infrastructure;
@@ -35,14 +36,29 @@ public class AtaPdfServiceTests
         return new AppDbContext(options);
     }
 
-    private static AtaPdfService NovoServico(AppDbContext context)
+    private static AtaPdfService NovoServico(AppDbContext context) =>
+        NovoServico(context, NullLogger<AtaPdfService>.Instance);
+
+    private static AtaPdfService NovoServico(AppDbContext context, ILogger<AtaPdfService> logger)
     {
         var options = Options.Create(new AtaInstitucionalOptions
         {
             Instituicao = "Instituto de Teste",
             Curso = "Ciência da Computação"
         });
-        return new AtaPdfService(context, options, NullLogger<AtaPdfService>.Instance);
+        return new AtaPdfService(context, options, logger);
+    }
+
+    /// <summary>Fake de ILogger que captura os registros para inspeção (issue #103).</summary>
+    private sealed class LoggerCapturado : ILogger<AtaPdfService>
+    {
+        public List<(LogLevel Level, string Mensagem)> Registros { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Registros.Add((logLevel, formatter(state, exception)));
     }
 
     private static async Task<int> SemearBancaAsync(
@@ -192,6 +208,29 @@ public class AtaPdfServiceTests
 
         Assert.Equal(AtaPdfResultadoStatus.DadosInconsistentes, resultado.Status);
         Assert.Null(resultado.PdfBytes);
+    }
+
+    [Fact]
+    public async Task GerarAtaFinal_AvaliadorComProfessorOrfao_LogaRelacaoEntidadeIdEFkIdEstruturados()
+    {
+        // Issue #103 (achado A09-1): o motivo da inconsistência precisa ser logado como
+        // propriedades estruturadas (Relacao/EntidadeId/FkId), não uma string com os ids já
+        // interpolados dentro do texto.
+        using var context = NovoContexto();
+        var bancaId = await SemearBancaAsync(context, notaFinal: 85m, statusTcc: StatusTcc.Finalizado);
+        var avaliador = new BancaAvaliador { BancaId = bancaId, ProfessorId = 999 };
+        context.BancaAvaliadores.Add(avaliador);
+        await context.SaveChangesAsync();
+        var logger = new LoggerCapturado();
+        var servico = NovoServico(context, logger);
+
+        await servico.GerarAtaFinalAsync(bancaId);
+
+        var registro = Assert.Single(logger.Registros);
+        Assert.Equal(LogLevel.Error, registro.Level);
+        Assert.Contains("BancaAvaliador.Professor", registro.Mensagem, StringComparison.Ordinal);
+        Assert.Contains($"EntidadeId={avaliador.Id}", registro.Mensagem, StringComparison.Ordinal);
+        Assert.Contains("FkId=999", registro.Mensagem, StringComparison.Ordinal);
     }
 
     [Fact]

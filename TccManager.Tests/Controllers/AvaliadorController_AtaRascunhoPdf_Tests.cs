@@ -131,4 +131,32 @@ public class AvaliadorController_AtaRascunhoPdf_Tests
 
         Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
     }
+
+    [Fact]
+    public async Task BancaComOutroAvaliadorOrfao_Retorna500ComCorrelationIdNoCorpo()
+    {
+        // Issue #103 (achado do qa-agent): ErroDadosInconsistentesAtaPdf (extraído para
+        // ControllerBaseExtensions) precisa produzir o mesmo formato aqui — antes desta issue
+        // só a cópia de CoordenadorController tinha teste cobrindo isso.
+        using var factory = new WebRootIsolatedApiFactory();
+        var s = await SemearBancaAsync(factory);
+        using (var context = factory.CriarContextoDireto())
+        {
+            context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = s.BancaId, ProfessorId = 999999 });
+            await context.SaveChangesAsync();
+        }
+        var client = factory.CreateClientAutenticado(s.AvaliadorId, "Professor");
+
+        var response = await client.GetAsync($"/api/avaliador/banca/{s.BancaId}/ata-rascunho-pdf");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+
+        var corpo = await response.Content.ReadAsStringAsync();
+        using var documento = System.Text.Json.JsonDocument.Parse(corpo);
+        var correlationId = documento.RootElement.GetProperty("correlationId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(correlationId));
+        Assert.Equal(response.Headers.GetValues("X-Correlation-Id").Single(), correlationId);
+        Assert.DoesNotContain("999999", corpo, StringComparison.Ordinal);
+    }
 }

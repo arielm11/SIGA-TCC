@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
-using TccManager.Api.Middleware;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
 using TccManager.Api.Services.Pdf;
@@ -503,24 +502,6 @@ public class CoordenadorController : ControllerBase
                 bancaId,
                 motivo));
 
-    // Issue #72: mesmo achado do GlobalExceptionHandler (issue #71) — o corpo diz "contate o
-    // suporte" mas sem correlationId o suporte não teria como localizar a linha de log com o
-    // motivo específico da inconsistência (que fica só no servidor, nunca no corpo). Lido de
-    // HttpContext.Items (não do header) pelo mesmo motivo documentado em
-    // GlobalExceptionHandler: sobrevive mesmo que algo no meio do caminho já tenha limpo a
-    // resposta.
-    private ObjectResult ErroDadosInconsistentesAtaPdf()
-    {
-        var correlationId = HttpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
-        return StatusCode(StatusCodes.Status500InternalServerError, new ProblemDetails
-        {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = "Não foi possível gerar a ata.",
-            Detail = "Dados da banca inconsistentes. Contate o suporte.",
-            Extensions = { ["correlationId"] = correlationId }
-        });
-    }
-
     [HttpGet("banca/{idBanca}/ata-pdf")]
     [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
     public async Task<IActionResult> GetAtaPdf(int idBanca)
@@ -536,7 +517,7 @@ public class CoordenadorController : ControllerBase
             AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-defesa-{idBanca}.pdf"),
             AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
             AtaPdfResultadoStatus.ResultadoNaoRegistrado => Conflict("O resultado desta banca ainda não foi registrado. Gere a ata após registrar a nota final."),
-            AtaPdfResultadoStatus.DadosInconsistentes => ErroDadosInconsistentesAtaPdf(),
+            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
             _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
         };
     }
@@ -603,7 +584,7 @@ public class CoordenadorController : ControllerBase
             AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf"),
             AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
             AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
-            AtaPdfResultadoStatus.DadosInconsistentes => ErroDadosInconsistentesAtaPdf(),
+            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
             _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
         };
     }
