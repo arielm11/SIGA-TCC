@@ -19,7 +19,13 @@ public class AuthTokenHandler : DelegatingHandler
     {
         "api/auth/login",
         "api/auth/refresh",
-        "api/auth/logout"
+        "api/auth/logout",
+        // Issue #88: [AllowAnonymous], sem token de sessão em jogo. Um 401 aqui significa
+        // "senha atual incorreta"/"credenciais inválidas" (AuthController), não uma sessão
+        // expirada — sem o bypass, o interceptor tentaria renovar via refreshToken (que este
+        // fluxo nunca teve, por construção: D8) e acabaria encerrando a "sessão" inexistente,
+        // mascarando o erro real com um redirect para /login?expirado=1.
+        "api/auth/trocar-senha-obrigatoria"
     };
 
     private readonly ILocalStorageService _localStorage;

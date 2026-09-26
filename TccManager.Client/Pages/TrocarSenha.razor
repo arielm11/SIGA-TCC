@@ -1,0 +1,254 @@
+@page "/trocar-senha"
+@layout LoginLayout
+@using System.Text.Json
+@using TccManager.Shared.DTOs
+@using TccManager.Shared.Validation
+@using TccManager.Client.Providers
+@using Blazored.LocalStorage
+@inject HttpClient Http
+@inject NavigationManager Navigation
+@inject ILocalStorageService LocalStorage
+@inject CustomAuthStateProvider AuthStateProvider
+@inject NotificationService NotificationService
+@inject EstadoTrocaSenha EstadoTrocaSenha
+
+<PageTitle>Trocar senha</PageTitle>
+
+<RadzenCard Variant="Variant.Filled" class="rz-shadow-2" style="width: 100%; max-width: 420px;">
+    <RadzenStack Gap="0.25rem" AlignItems="AlignItems.Center" class="rz-mb-4">
+        <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">Troca de senha obrigatória</RadzenText>
+        <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0" style="text-align: center;">
+            Esta conta foi criada com uma senha temporária. Defina uma nova senha para continuar.
+        </RadzenText>
+    </RadzenStack>
+
+    <EditForm Model="model" OnValidSubmit="HandleTrocarSenha">
+        <DataAnnotationsValidator />
+
+        <RadzenStack Gap="1rem">
+            <RadzenFormField Text="Email" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenTextBox Name="Email" @bind-Value="model.Email" Placeholder="seu@email.com" style="width: 100%;" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="Senha temporária" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenPassword Name="SenhaAtual" @bind-Value="model.SenhaAtual" Placeholder="Senha recebida na configuração" style="width: 100%;" />
+            </RadzenFormField>
+
+            <RadzenFormField Text="Nova senha" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenPassword Name="NovaSenha" @bind-Value="model.NovaSenha" Placeholder="Mínimo de 12 caracteres" style="width: 100%;" />
+            </RadzenFormField>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">
+                Mínimo de @PoliticaSenha.MinimoCaracteres caracteres, diferente do e-mail e da senha temporária.
+            </RadzenText>
+
+            <RadzenFormField Text="Confirmar nova senha" Variant="Variant.Outlined" style="width: 100%;">
+                <RadzenPassword Name="ConfirmarNovaSenha" @bind-Value="model.ConfirmarNovaSenha" Placeholder="Digite a nova senha novamente" style="width: 100%;" />
+            </RadzenFormField>
+
+            <RadzenButton ButtonType="ButtonType.Submit"
+                          Text="Trocar senha e entrar"
+                          IsBusy="carregando"
+                          BusyText="Trocando senha..."
+                          ButtonStyle="ButtonStyle.Primary"
+                          style="width: 100%;" />
+
+            <RadzenButton Text="Voltar para o login"
+                          ButtonStyle="ButtonStyle.Base"
+                          Variant="Variant.Text"
+                          Disabled="carregando"
+                          Click="@(() => Navigation.NavigateTo("/login"))"
+                          style="width: 100%;" />
+        </RadzenStack>
+    </EditForm>
+</RadzenCard>
+
+@code {
+    private class TrocarSenhaFormModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string SenhaAtual { get; set; } = string.Empty;
+        public string NovaSenha { get; set; } = string.Empty;
+        public string ConfirmarNovaSenha { get; set; } = string.Empty;
+    }
+
+    private TrocarSenhaFormModel model = new();
+    private bool carregando = false;
+
+    protected override void OnInitialized()
+    {
+        // E-mail pré-preenchido pelo estado deixado por Login.razor (403), mas SEMPRE editável
+        // — nunca travado: alguém pode ter digitado errado na tela de login, ou ter chegado
+        // aqui direto (F5/link), caso em que o estado Scoped já foi perdido e o campo fica
+        // vazio para digitação manual.
+        if (!string.IsNullOrWhiteSpace(EstadoTrocaSenha.Email))
+        {
+            model.Email = EstadoTrocaSenha.Email;
+        }
+    }
+
+    private async Task HandleTrocarSenha()
+    {
+        if (model.NovaSenha != model.ConfirmarNovaSenha)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Warning,
+                Summary = "Senhas não coincidem",
+                Detail = "A nova senha e a confirmação precisam ser iguais.",
+                Duration = 5000
+            });
+            return;
+        }
+
+        // Validação de UX (D6/D10): replica a política do servidor para dar feedback imediato
+        // sem round-trip. O servidor continua sendo a autoridade — TrocarSenhaObrigatoriaDtoValidator
+        // aplica exatamente a mesma regra do lado da API.
+        if (!PoliticaSenha.Valida(model.NovaSenha, model.Email, model.SenhaAtual, out var motivo))
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Warning,
+                Summary = "Senha inválida",
+                Detail = motivo ?? "A nova senha não atende aos requisitos mínimos.",
+                Duration = 6000
+            });
+            return;
+        }
+
+        carregando = true;
+        try
+        {
+            var dto = new TrocarSenhaObrigatoriaDto
+            {
+                Email = model.Email,
+                SenhaAtual = model.SenhaAtual,
+                NovaSenha = model.NovaSenha
+            };
+
+            var response = await Http.PostAsJsonAsync("api/auth/trocar-senha-obrigatoria", dto);
+
+            if (response.IsSuccessStatusCode)
+            {
+                // A troca já foi efetivada no servidor a partir daqui, independentemente do
+                // que acontecer abaixo (D10). Limpa o estado de e-mail entre páginas.
+                var email = model.Email;
+                var novaSenha = model.NovaSenha;
+                EstadoTrocaSenha.Email = null;
+
+                await TentarLoginAutomaticoAsync(email, novaSenha);
+                return;
+            }
+
+            var mensagem = await ExtrairMensagemErroAsync(response);
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Não foi possível trocar a senha",
+                Detail = mensagem,
+                Duration = 6000
+            });
+        }
+        catch (Exception)
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Error,
+                Summary = "Erro de conexão",
+                Detail = "Não foi possível comunicar com o servidor. Tente novamente em instantes.",
+                Duration = 5000
+            });
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    /// <summary>
+    /// Pós-204 (D10): login automático com a senha nova, reusando o mesmo fluxo de
+    /// Login.razor. Se falhar por qualquer motivo, cai para /login com uma notificação de
+    /// sucesso — a troca de senha já foi efetivada de qualquer forma, então isso nunca deixa o
+    /// usuário travado, só pede um login manual a mais.
+    /// </summary>
+    private async Task TentarLoginAutomaticoAsync(string email, string novaSenha)
+    {
+        try
+        {
+            var loginResponse = await Http.PostAsJsonAsync("api/auth/login", new LoginDto
+            {
+                Email = email,
+                Senha = novaSenha
+            });
+
+            if (loginResponse.IsSuccessStatusCode)
+            {
+                var resultado = await loginResponse.Content.ReadFromJsonAsync<LoginResponseDto>();
+                if (resultado != null)
+                {
+                    await LocalStorage.SetItemAsync("authToken", resultado.Token);
+                    await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
+                    AuthStateProvider.NotifyUserAuthentication(resultado.Token);
+
+                    NotificationService.Notify(new NotificationMessage
+                    {
+                        Severity = NotificationSeverity.Success,
+                        Summary = "Senha alterada",
+                        Detail = "Sua senha foi alterada com sucesso.",
+                        Duration = 5000
+                    });
+
+                    Navigation.NavigateTo("/");
+                    return;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Cai para o fallback abaixo — a troca de senha já foi efetivada no servidor.
+        }
+
+        Navigation.NavigateTo("/login?senhaAlterada=1");
+    }
+
+    /// <summary>
+    /// AuthController devolve erros deste endpoint tanto como texto puro (Unauthorized/BadRequest
+    /// com string) quanto como ValidationProblemDetails em JSON (FluentValidationActionFilter,
+    /// quando a nova senha viola PoliticaSenha). Tenta extrair as mensagens de "errors" antes de
+    /// cair para o corpo bruto, para não expor JSON cru no toast.
+    /// </summary>
+    private static async Task<string> ExtrairMensagemErroAsync(HttpResponseMessage response)
+    {
+        var corpo = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(corpo))
+            return "Não foi possível trocar a senha. Tente novamente.";
+
+        try
+        {
+            using var documento = JsonDocument.Parse(corpo);
+            if (documento.RootElement.TryGetProperty("errors", out var errosElemento) && errosElemento.ValueKind == JsonValueKind.Object)
+            {
+                var mensagens = new List<string>();
+                foreach (var propriedade in errosElemento.EnumerateObject())
+                {
+                    if (propriedade.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in propriedade.Value.EnumerateArray())
+                        {
+                            if (item.ValueKind == JsonValueKind.String)
+                                mensagens.Add(item.GetString()!);
+                        }
+                    }
+                }
+
+                if (mensagens.Count > 0)
+                    return string.Join(" ", mensagens);
+            }
+        }
+        catch (JsonException)
+        {
+            // Corpo não é JSON (Unauthorized/BadRequest com string simples) — usa o texto puro.
+        }
+
+        return corpo;
+    }
+}

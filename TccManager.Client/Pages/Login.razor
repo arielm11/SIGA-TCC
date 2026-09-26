@@ -1,5 +1,6 @@
 @page "/login"
 @layout LoginLayout
+@using System.Net
 @using TccManager.Shared.DTOs
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
@@ -8,6 +9,7 @@
 @inject ILocalStorageService LocalStorage
 @inject CustomAuthStateProvider AuthStateProvider
 @inject NotificationService NotificationService
+@inject EstadoTrocaSenha EstadoTrocaSenha
 
 <PageTitle>Login</PageTitle>
 
@@ -44,6 +46,13 @@
     [Parameter]
     public string? Expirado { get; set; }
 
+    // Issue #88 — fallback de TrocarSenha.razor quando o login automático pós-troca falha por
+    // qualquer motivo (a troca em si já foi efetivada no servidor nesse caso; só o login
+    // automático não completou).
+    [SupplyParameterFromQuery(Name = "senhaAlterada")]
+    [Parameter]
+    public string? SenhaAlterada { get; set; }
+
     private LoginDto loginModel = new();
     private bool carregando = false;
 
@@ -56,6 +65,17 @@
                 Severity = NotificationSeverity.Warning,
                 Summary = "Sessão expirada",
                 Detail = "Sua sessão expirou. Faça login novamente.",
+                Duration = 6000
+            });
+        }
+
+        if (SenhaAlterada == "1")
+        {
+            NotificationService.Notify(new NotificationMessage
+            {
+                Severity = NotificationSeverity.Success,
+                Summary = "Senha alterada",
+                Detail = "Sua senha foi alterada com sucesso. Faça login com a nova senha.",
                 Duration = 6000
             });
         }
@@ -75,6 +95,16 @@
                 AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
                 Navigation.NavigateTo("/");
+            }
+            else if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                // Issue #88 (D8): credenciais válidas, mas o Admin foi criado por bootstrap e
+                // precisa trocar a senha temporária antes de continuar. Nenhum token veio no
+                // corpo (a barreira é estrutural) — nada é gravado em localStorage aqui. Só o
+                // e-mail já digitado segue para a página de troca, para não pedir de novo; a
+                // senha atual é redigitada lá.
+                EstadoTrocaSenha.Email = loginModel.Email;
+                Navigation.NavigateTo("/trocar-senha");
             }
             else
             {

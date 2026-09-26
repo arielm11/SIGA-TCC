@@ -25,6 +25,7 @@ public static class RateLimitingSetup
     public const string RascunhoPublicoPolicyName = "rascunho-publico";
     public const string GeracaoPdfPolicyName = "geracao-pdf";
     public const string ListagemPaginadaPolicyName = "listagem-paginada";
+    public const string TrocaSenhaPolicyName = "troca-senha";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -38,6 +39,13 @@ public static class RateLimitingSetup
         var refreshPermitLimit = configuration.GetValue<int?>("RateLimiting:Refresh:PermitLimit") ?? 15;
         var refreshWindowSeconds = configuration.GetValue<int?>("RateLimiting:Refresh:WindowSeconds") ?? 60;
         var refreshQueueLimit = configuration.GetValue<int?>("RateLimiting:Refresh:QueueLimit") ?? 0;
+
+        // Issue #88 (D9/RNF-02): endpoint anônimo que aceita senha (SenhaAtual/NovaSenha) por
+        // requisição — mesma classe de superfície de força bruta que "login", mesmo limite
+        // conservador, particionado por IP (pré-autenticação, sem usuário resolvido ainda).
+        var trocaSenhaPermitLimit = configuration.GetValue<int?>("RateLimiting:TrocaSenha:PermitLimit") ?? 5;
+        var trocaSenhaWindowSeconds = configuration.GetValue<int?>("RateLimiting:TrocaSenha:WindowSeconds") ?? 60;
+        var trocaSenhaQueueLimit = configuration.GetValue<int?>("RateLimiting:TrocaSenha:QueueLimit") ?? 0;
 
         // O membro externo pode legitimamente recarregar/reabrir o link do rascunho
         // (RF-04/RF-05) — janela um pouco mais folgada que a de "login".
@@ -102,6 +110,16 @@ public static class RateLimitingSetup
                         PermitLimit = refreshPermitLimit,
                         Window = TimeSpan.FromSeconds(refreshWindowSeconds),
                         QueueLimit = refreshQueueLimit
+                    }));
+
+            options.AddPolicy(TrocaSenhaPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = trocaSenhaPermitLimit,
+                        Window = TimeSpan.FromSeconds(trocaSenhaWindowSeconds),
+                        QueueLimit = trocaSenhaQueueLimit
                     }));
 
             options.AddPolicy(RascunhoPublicoPolicyName, context =>
