@@ -265,4 +265,18 @@ public class MembroExternoDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Email)
                                          && e.ErrorMessage == "O email é obrigatório.");
     }
+
+    // Issue #99 (achado do QA do lote #70) — mesma checagem de UsuarioDtoValidatorTests.
+    [Fact]
+    public void EmailComFormaDeDisplayName_DeveFalhar()
+    {
+        var dto = DtoValido();
+        dto.Email = "Joao Silva <joao@teste.com>";
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(MembroExternoDto.Email)
+                                         && e.ErrorMessage == "O email deve conter apenas o endereço, sem nome de exibição (ex.: \"nome@dominio.com\", não \"Nome <nome@dominio.com>\").");
+    }
 }

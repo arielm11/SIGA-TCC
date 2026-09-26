@@ -78,12 +78,24 @@
             }
             else
             {
+                // Issue #99 (achado A06-2): 400/409 trazem o motivo especifico (campo invalido,
+                // e-mail duplicado) — repassar em vez de esconder atras de uma mensagem
+                // generica que nao ajuda o Coordenador a entender o que corrigir.
+                var detalhe = "Erro ao atualizar avaliador.";
+
+                if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+                {
+                    var corpo = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(corpo))
+                        detalhe = corpo;
+                }
+
                 NotificationService.Notify(new NotificationMessage
                 {
                     Severity = NotificationSeverity.Error,
                     Summary = "Erro ao atualizar",
-                    Detail = "Erro ao atualizar avaliador.",
-                    Duration = 5000
+                    Detail = detalhe,
+                    Duration = 6000
                 });
             }
         }
