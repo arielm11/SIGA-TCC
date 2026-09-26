@@ -137,6 +137,7 @@ public class TccController : ControllerBase
     [HttpPost("entregas")]
     [Authorize(Roles = "Aluno")]
     [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
+    [EnableRateLimiting(RateLimitingSetup.UploadPolicyName)]
     public async Task<IActionResult> EnviarEntrega(
         [FromForm] string tituloEntrega,
         [FromForm] TipoEntrega tipo,
@@ -225,7 +226,8 @@ public class TccController : ControllerBase
                 if (!assinaturaValida)
                     return BadRequest("Conteúdo do arquivo não corresponde à extensão informada.");
 
-                caminho = await _storageService.UploadAsync(streamParaUpload, arquivo.FileName, CategoriaArquivo.Entregas);
+                caminho = await _storageService.UploadAsync(
+                    streamParaUpload, arquivo.FileName, CategoriaArquivo.Entregas, HttpContext.RequestAborted);
             }
             finally
             {
@@ -312,24 +314,23 @@ public class TccController : ControllerBase
     // Entrega falha por qualquer motivo — best-effort, nunca propaga (não pode mascarar o
     // erro original que causou a chamada). Log de auditoria sem PII: apenas ids/metadados,
     // nunca o nome original do arquivo.
-    private async Task CompensarUploadOrfaoAsync(string caminho, int tccId, string motivo)
-    {
-        try
-        {
-            await _storageService.DeleteAsync(caminho);
-            _auditLogger.LogInformation(
+    //
+    // Issue #105: a mecânica de "apagar e logar o resultado" foi extraída para
+    // CompensacaoUploadOrfao, compartilhada com CoordenadorController.RegistrarResultadoBanca
+    // — este método continua existindo só para fixar as propriedades estruturadas (TccId)
+    // específicas de entrega.
+    private Task CompensarUploadOrfaoAsync(string caminho, int tccId, string motivo) =>
+        CompensacaoUploadOrfao.ExecutarAsync(
+            _storageService,
+            caminho,
+            logSucesso: () => _auditLogger.LogInformation(
                 "Arquivo de entrega removido por compensação após falha ao salvar no banco. TccId: {TccId}, Motivo: {Motivo}",
                 tccId,
-                motivo);
-        }
-        catch (Exception)
-        {
-            _auditLogger.LogWarning(
+                motivo),
+            logFalha: () => _auditLogger.LogWarning(
                 "Falha ao remover arquivo órfão em compensação de upload de entrega. TccId: {TccId}, Motivo: {Motivo}",
                 tccId,
-                motivo);
-        }
-    }
+                motivo));
 
     /// <summary>
     /// Download autenticado do arquivo da entrega (substitui o acesso direto e sem

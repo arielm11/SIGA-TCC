@@ -139,4 +139,49 @@ public class AgendarBancaDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.Local)
                                          && e.ErrorMessage == "O local ou link deve ter no máximo 300 caracteres.");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Issue #105 — teto de contagem nas listas de avaliadores
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ProfessoresIdsComExatamente10_DevePassar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.ProfessoresIds = Enumerable.Range(1, 10).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ProfessoresIdsComMaisDe10_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.ProfessoresIds = Enumerable.Range(1, 11).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.ProfessoresIds));
+    }
+
+    [Fact]
+    public void MembrosExternosIdsComMaisDe10_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.MembrosExternosIds = Enumerable.Range(1, 11).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.MembrosExternosIds));
+    }
 }

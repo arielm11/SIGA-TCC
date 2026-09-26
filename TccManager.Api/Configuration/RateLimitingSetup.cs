@@ -26,6 +26,7 @@ public static class RateLimitingSetup
     public const string GeracaoPdfPolicyName = "geracao-pdf";
     public const string ListagemPaginadaPolicyName = "listagem-paginada";
     public const string TrocaSenhaPolicyName = "troca-senha";
+    public const string UploadPolicyName = "upload";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -87,6 +88,21 @@ public static class RateLimitingSetup
         // antes de ser rejeitada com 401. Fica mais restritivo que o limite por usuário, e
         // nunca compartilha a partição de um usuário legítimo.
         var listagemPaginadaPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:PermitLimitAnonimo") ?? 10;
+
+        // Issue #97 (achado A06-1): POST /api/tcc/entregas e POST
+        // /coordenador/banca/{id}/registrar-resultado não tinham nenhum rate limiting —
+        // combinado com o teto de tamanho já existente (UploadLimits, 50 MB), um usuário
+        // autenticado sem limite de requisições podia gravar dezenas de MB por chamada,
+        // indefinidamente, até esgotar o disco do servidor (que também hospeda a API).
+        // Mais restritivo que "geracao-pdf" (I/O de disco é mais caro que renderizar um PDF
+        // e o dano de exaustão de disco é mais sério que CPU) e particionado por usuário,
+        // não por IP — mesmo raciocínio de "geracao-pdf"/"listagem-paginada" (achado A02-2):
+        // ambos os endpoints exigem autenticação, e a rede de origem típica é um campus
+        // universitário atrás de NAT/proxy compartilhado.
+        var uploadPermitLimit = configuration.GetValue<int?>("RateLimiting:Upload:PermitLimit") ?? 10;
+        var uploadWindowSeconds = configuration.GetValue<int?>("RateLimiting:Upload:WindowSeconds") ?? 3600;
+        var uploadQueueLimit = configuration.GetValue<int?>("RateLimiting:Upload:QueueLimit") ?? 0;
+        var uploadPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:Upload:PermitLimitAnonimo") ?? 5;
 
         services.AddRateLimiter(options =>
         {
@@ -185,6 +201,30 @@ public static class RateLimitingSetup
                         {
                             PermitLimit = listagemPaginadaPermitLimitAnonimo,
                             Window = TimeSpan.FromSeconds(listagemPaginadaWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
+            // Mesmo particionamento por usuário de "geracao-pdf"/"listagem-paginada".
+            options.AddPolicy(UploadPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = uploadPermitLimit,
+                            Window = TimeSpan.FromSeconds(uploadWindowSeconds),
+                            QueueLimit = uploadQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = uploadPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(uploadWindowSeconds),
                             QueueLimit = 0
                         });
             });
