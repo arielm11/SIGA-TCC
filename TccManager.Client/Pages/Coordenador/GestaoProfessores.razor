@@ -242,12 +242,24 @@
         }
         else
         {
+            // Issue #99 (achado A06-2): mesmo tratamento de EditarMembroExternoDialog —
+            // repassar o motivo especifico do 400/409 em vez de esconder atras de uma
+            // mensagem generica.
+            var detalhe = "Erro ao adicionar avaliador externo.";
+
+            if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+            {
+                var corpo = await response.Content.ReadAsStringAsync();
+                if (!string.IsNullOrWhiteSpace(corpo))
+                    detalhe = corpo;
+            }
+
             NotificationService.Notify(new NotificationMessage
             {
                 Severity = NotificationSeverity.Error,
                 Summary = "Erro",
-                Detail = "Erro ao adicionar avaliador externo.",
-                Duration = 5000
+                Detail = detalhe,
+                Duration = 6000
             });
         }
     }

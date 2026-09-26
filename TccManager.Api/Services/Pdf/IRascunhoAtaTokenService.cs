@@ -51,4 +51,12 @@ public interface IRascunhoAtaTokenService
 
     /// <summary>Revoga o token vigente do par, se houver. Usado isoladamente pelo reenvio (RF-06).</summary>
     Task RevogarTokenAtualAsync(int bancaId, int membroExternoId);
+
+    /// <summary>
+    /// Revoga TODOS os tokens ativos do membro externo, em qualquer banca — não só um par
+    /// específico. Issue #99 (achado A01-1): ao corrigir/trocar o e-mail de um MembroExterno,
+    /// quem controla o endereço ANTIGO não pode continuar com acesso ao(s) rascunho(s) já
+    /// enviado(s), independente de quantas bancas esse membro compõe.
+    /// </summary>
+    Task RevogarTodosTokensDoMembroAsync(int membroExternoId);
 }

@@ -259,4 +259,56 @@ public class RascunhoAtaTokenServiceTests
 
         Assert.Empty(context.RascunhoAtaTokens);
     }
+
+    // ── RevogarTodosTokensDoMembroAsync (issue #99, achado A01-1) ──────
+
+    [Fact]
+    public async Task RevogarTodosTokensDoMembroAsync_RevogaTokensDeMultiplasBancas()
+    {
+        // Núcleo do achado: um MembroExterno pode compor mais de uma banca ao mesmo tempo —
+        // corrigir o e-mail dele precisa revogar TODOS os tokens ativos, não só um par.
+        using var context = NovoContexto();
+        var bancaA = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var bancaB = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(5));
+        var membroId = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokenA = await servico.GerarTokenAsync(bancaA.Id, membroId);
+        var tokenB = await servico.GerarTokenAsync(bancaB.Id, membroId);
+
+        await servico.RevogarTodosTokensDoMembroAsync(membroId);
+
+        Assert.Equal(RascunhoTokenValidacaoStatus.Invalido, (await servico.ValidarAsync(tokenA)).Status);
+        Assert.Equal(RascunhoTokenValidacaoStatus.Invalido, (await servico.ValidarAsync(tokenB)).Status);
+    }
+
+    [Fact]
+    public async Task RevogarTodosTokensDoMembroAsync_NaoAfetaTokenDeOutroMembro()
+    {
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var membroAlvo = await SemearMembroExternoAsync(context);
+        var outroMembro = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokenAlvo = await servico.GerarTokenAsync(banca.Id, membroAlvo);
+        var tokenOutro = await servico.GerarTokenAsync(banca.Id, outroMembro);
+
+        await servico.RevogarTodosTokensDoMembroAsync(membroAlvo);
+
+        Assert.Equal(RascunhoTokenValidacaoStatus.Invalido, (await servico.ValidarAsync(tokenAlvo)).Status);
+        Assert.Equal(RascunhoTokenValidacaoStatus.Valido, (await servico.ValidarAsync(tokenOutro)).Status);
+    }
+
+    [Fact]
+    public async Task RevogarTodosTokensDoMembroAsync_SemTokenAtivo_NaoLanca()
+    {
+        using var context = NovoContexto();
+        var membroId = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        await servico.RevogarTodosTokensDoMembroAsync(membroId);
+
+        Assert.Empty(context.RascunhoAtaTokens);
+    }
 }

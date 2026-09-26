@@ -30,7 +30,13 @@ public class MembroExternoDtoValidator : AbstractValidator<MembroExternoDto>
             // e-mail passa na validação e só falha silenciosamente na hora de enviar
             // (ParseException, descartado com um warning). Mesmo parser nas duas pontas.
             .Must(email => MailboxAddress.TryParse(email, out _))
-                .WithMessage("O email informado não é aceito pelo servidor de e-mail.");
+                .WithMessage("O email informado não é aceito pelo servidor de e-mail.")
+            // Issue #99 (achado do QA do lote #70): mesma checagem de UsuarioDtoValidator —
+            // MailboxAddress.TryParse aceita a forma de display-name. Menos crítico aqui
+            // (MembroExterno não faz login por senha, só recebe tokens de rascunho por
+            // e-mail), mas mesmo assim vale rejeitar por consistência com o outro validator.
+            .Must(email => !MailboxAddress.TryParse(email, out var endereco) || endereco!.Address == email)
+                .WithMessage("O email deve conter apenas o endereço, sem nome de exibição (ex.: \"nome@dominio.com\", não \"Nome <nome@dominio.com>\").");
 
         RuleFor(dto => dto.Instituicao)
             .NotEmpty().WithMessage("A instituição é obrigatória.")

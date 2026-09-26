@@ -109,6 +109,27 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
             await _context.SaveChangesAsync();
     }
 
+    public async Task RevogarTodosTokensDoMembroAsync(int membroExternoId)
+    {
+        // Sem filtro de BancaId (diferente de RevogarAtivosSemSalvarAsync): um MembroExterno
+        // pode compor mais de uma banca ao mesmo tempo, e todos os tokens ativos dele
+        // precisam cair quando o e-mail é corrigido — não só o de uma banca específica.
+        var tokensAtivos = await _context.RascunhoAtaTokens
+            .Where(t => t.MembroExternoId == membroExternoId && t.RevokedAtUtc == null)
+            .ToListAsync();
+
+        if (tokensAtivos.Count == 0)
+            return;
+
+        var agora = DateTime.UtcNow;
+        foreach (var token in tokensAtivos)
+        {
+            token.RevokedAtUtc = agora;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
     /// <summary>
     /// Carrega os tokens ativos do par via change tracker (não <c>ExecuteUpdateAsync</c> —
     /// o provider EF Core InMemory da suíte de testes não o suporta, mesmo motivo já

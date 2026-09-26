@@ -92,4 +92,36 @@ public class UsuarioDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(UsuarioDto.Email)
                                          && e.ErrorMessage == "O email é obrigatório.");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Issue #99 (achado do QA do lote #70): MailboxAddress.TryParse aceita a forma RFC de
+    // display-name — sem rejeitar isso, o login (que compara e-mail literal) nunca bateria
+    // com o que o usuário de fato digitaria.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Joao Silva <joao@teste.com>")]
+    [InlineData("\"Joao Silva\" <joao@teste.com>")]
+    public void EmailComFormaDeDisplayName_DeveFalhar(string email)
+    {
+        var dto = DtoValido();
+        dto.Email = email;
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(UsuarioDto.Email)
+                                         && e.ErrorMessage == "O email deve conter apenas o endereço, sem nome de exibição (ex.: \"nome@dominio.com\", não \"Nome <nome@dominio.com>\").");
+    }
+
+    [Fact]
+    public void EmailApenasOEndereco_SemDisplayName_DevePassar()
+    {
+        var dto = DtoValido();
+        dto.Email = "joao@teste.com";
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
 }

@@ -237,11 +237,25 @@ public class CoordenadorController : ControllerBase
         if (membro == null)
             return NotFound("Membro externo não encontrado");
 
+        // Issue #99 (achado A01-1): o token de rascunho é uma credencial de portador válida
+        // até a data da banca — se o e-mail do membro é corrigido, quem controla o endereço
+        // ANTIGO não pode continuar com acesso ao rascunho já enviado para lá. Compara ANTES
+        // de sobrescrever membro.Email.
+        var trocouEmail = dto.Email != membro.Email;
+
         membro.Nome = _sanitizerService.Sanitizar(dto.Nome)!;
         membro.Email = dto.Email;
         membro.Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!;
 
         await _context.SaveChangesAsync();
+
+        if (trocouEmail)
+        {
+            await _rascunhoTokenService.RevogarTodosTokensDoMembroAsync(id);
+            _auditLogger.LogWarning(
+                "Tokens de rascunho revogados após troca de e-mail de MembroExterno. MembroExternoId: {MembroExternoId}",
+                id);
+        }
 
         return Ok(membro);
     }
