@@ -41,14 +41,20 @@ builder.Services.AddTransient(sp => new AuthTokenHandler(
     sp.GetRequiredService<ITokenRefreshCoordinator>(),
     new Uri(apiBaseUrl)));
 
+// Issue #107 (achado F-10): trata 429 centralmente para os endpoints de listagem, com a
+// mensagem amigável usando o Retry-After que a API já emite — em vez de cada tela repetir
+// essa lógica.
+builder.Services.AddTransient(sp => new RateLimitHandler(sp.GetRequiredService<NotificationService>()));
+
 // Cliente "cru", sem o AuthTokenHandler — usado exclusivamente pelo handler/coordenador
 // para chamar /api/auth/refresh e /api/auth/logout, evitando recursão (§6.1 da
 // arquitetura: um 401 vindo do próprio /refresh nunca reentra no interceptor).
 builder.Services.AddHttpClient("AuthRaw", c => c.BaseAddress = new Uri(apiBaseUrl));
 
-// Cliente "Api", com o AuthTokenHandler no pipeline.
+// Cliente "Api", com o AuthTokenHandler e o RateLimitHandler no pipeline.
 builder.Services.AddHttpClient("Api", c => c.BaseAddress = new Uri(apiBaseUrl))
-    .AddHttpMessageHandler<AuthTokenHandler>();
+    .AddHttpMessageHandler<AuthTokenHandler>()
+    .AddHttpMessageHandler<RateLimitHandler>();
 
 // Mantém "@inject HttpClient" funcionando em todas as páginas, agora já com o handler
 // no pipeline por trás (nenhuma página precisa ser alterada).

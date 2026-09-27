@@ -9,13 +9,16 @@ public static class QueryablePagingExtensions
     /// Issue #74: <c>cancellationToken</c> propagado para <c>CountAsync</c>/<c>ToListAsync</c>
     /// — sem isso, uma requisição de listagem paginada cancelada pelo cliente (aba fechada,
     /// navegação, timeout) continuava executando as duas queries no servidor até o fim, sem
-    /// nenhum benefício (a resposta nunca seria entregue). O parâmetro é opcional
-    /// (<c>default</c>) para não quebrar nenhum chamador existente que ainda não propague um
-    /// token — mas todo controller desta base já tem acesso a
-    /// <c>HttpContext.RequestAborted</c> e deveria passá-lo.
+    /// nenhum benefício (a resposta nunca seria entregue).
+    ///
+    /// Issue #107 (achado F-06): o parâmetro era opcional (<c>default</c>) para não quebrar
+    /// chamadores existentes, mas isso deixava a proteção reversível em silêncio — um futuro
+    /// endpoint paginado que esquecesse o argumento voltaria ao comportamento pré-#74 sem
+    /// nenhum aviso do compilador. Tornado obrigatório: os 4 call sites de produção já
+    /// propagavam <c>HttpContext.RequestAborted</c> corretamente.
     /// </summary>
     public static async Task<PagedResult<T>> ToPagedResultAsync<T>(
-        this IQueryable<T> query, PaginacaoQuery paginacao, CancellationToken cancellationToken = default)
+        this IQueryable<T> query, PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var pageSize = paginacao.PageSize <= 0 ? 1 : paginacao.PageSize;
         var totalCount = await query.CountAsync(cancellationToken);
