@@ -5,6 +5,11 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  schedule:
+    # Issue #94 (achado A03-7): mesma cadência do codeql.yml — pega um advisory divulgado
+    # depois do último push, mesmo sem nenhum PR novo (Dependabot cobre o lock file; isto
+    # cobre o build/teste/gate completo rodando direto em dev).
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 env:
@@ -44,30 +49,38 @@ jobs:
         # continue-on-error: true por enquanto — troque para "false" quando
         # o time estiver confortável com o gate de formatação bloqueando PRs.
 
-      - name: Scan de vulnerabilidades em pacotes
+      - name: Relatório de vulnerabilidades em pacotes
+        # Issue #94 (achados A03-1/A03-2): o GATE de verdade agora é o "Restore dependencies"
+        # acima — NuGetAudit (Directory.Build.props: NuGetAuditMode=all, NuGetAuditLevel=low,
+        # WarningsAsErrors em NU1901-4) faz o restore falhar de cara ao encontrar um advisory
+        # conhecido, sem depender de parsing de saída (não chega a este step se isso
+        # acontecer). Este step é só um RELATÓRIO legível na aba Summary do run — não bloqueia
+        # nada por si só, e roda sempre (mesmo sem achado, para deixar visível que o scan
+        # rodou e voltou limpo).
+        if: always()
+        continue-on-error: true
+        # Puramente informativo — se o Restore acima já falhou (advisory bloqueado pelo
+        # NuGetAudit), este step pode não ter nada pra listar; nunca deve mascarar nem
+        # duplicar o motivo real da falha do job.
         run: |
           set -o pipefail
           dotnet list TccManager.sln package --vulnerable --include-transitive --no-restore \
             | tee vulnerable-packages.txt
           {
-            echo "## Scan de vulnerabilidades de pacotes"
+            echo "## Relatório de vulnerabilidades de pacotes"
             echo ""
             echo '```'
             cat vulnerable-packages.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          if grep -q "https://github.com/advisories" vulnerable-packages.txt; then
-            echo "::warning::Pacote(s) com vulnerabilidade conhecida — veja a aba Summary deste run."
-            exit 1
-          fi
-        continue-on-error: true
-        # continue-on-error: true por enquanto — o step existe para VISIBILIDADE
-        # (o resultado aparece no log e na aba Summary do run) enquanto os achados
-        # já conhecidos não são resolvidos: AngleSharp transitivo via HtmlSanitizer,
-        # severidade Moderate, rastreado na issue #95. Troque para "false" quando
-        # esses achados estiverem resolvidos, para o scan passar a bloquear PRs.
-        # Obs.: "dotnet list package --vulnerable" retorna exit code 0 mesmo com
-        # achados — por isso o grep acima é o que marca o step como falho.
+
+      - name: Publicar relatório de vulnerabilidades
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulnerable-packages-report
+          path: vulnerable-packages.txt
+          if-no-files-found: ignore
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
