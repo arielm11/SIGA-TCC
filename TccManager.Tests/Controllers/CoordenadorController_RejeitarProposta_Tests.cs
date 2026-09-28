@@ -307,10 +307,10 @@ public class CoordenadorController_RejeitarProposta_Tests
         var response = await client.GetAsync("/api/coordenador/propostas-pendentes");
 
         response.EnsureSuccessStatusCode();
-        var pendentes = await response.Content.ReadFromJsonAsync<List<TccResumoDto>>();
+        var pendentes = await response.Content.ReadFromJsonAsync<PagedResult<TccResumoDto>>();
 
         Assert.NotNull(pendentes);
-        var proposta = Assert.Single(pendentes!);
+        var proposta = Assert.Single(pendentes!.Items);
         Assert.Equal("Resumo da proposta submetida pelo aluno.", proposta.Resumo);
         Assert.Equal("TCC de Teste", proposta.Titulo);
         Assert.Equal("Aluno", proposta.NomeAluno);
@@ -331,10 +331,10 @@ public class CoordenadorController_RejeitarProposta_Tests
 
         var response = await client.GetAsync("/api/coordenador/propostas-pendentes");
         response.EnsureSuccessStatusCode();
-        var pendentes = await response.Content.ReadFromJsonAsync<List<TccResumoDto>>();
+        var pendentes = await response.Content.ReadFromJsonAsync<PagedResult<TccResumoDto>>();
 
         Assert.NotNull(pendentes);
-        Assert.Empty(pendentes!);
+        Assert.Empty(pendentes!.Items);
     }
 
     // ── Achado A09-2 da revisão de segurança: trava de regressão para o log de auditoria ──

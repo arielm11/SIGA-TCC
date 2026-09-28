@@ -150,7 +150,8 @@
         try
         {
             stats = await Http.GetFromJsonAsync<DashboardCoordenadorDto>("api/coordenador/dashboard-stats");
-            pendentes = await Http.GetFromJsonAsync<List<TccResumoDto>>("api/coordenador/propostas-pendentes");
+            var pendentesPaginado = await Http.GetFromJsonAsync<PagedResult<TccResumoDto>>($"api/coordenador/propostas-pendentes?pageSize={PaginacaoQuery.MaxPageSize}");
+            pendentes = pendentesPaginado?.Items;
             var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
             professores = professoresPaginado?.Items;
             professoresOptions = (professores ?? new()).Select(p => new ProfessorOpcao

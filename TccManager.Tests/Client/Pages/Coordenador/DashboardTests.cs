@@ -88,18 +88,25 @@ public class DashboardTests : BunitContext
                 AguardandoBanca = 3,
                 TccsConcluidos = 7
             }))
-            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new List<TccResumoDto>
+            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new PagedResult<TccResumoDto>
             {
-                new()
+                Items = new List<TccResumoDto>
                 {
-                    Id = 1,
-                    Titulo = "Proposta de Teste",
-                    // Issue #76 (P-05): GetPropostasPendentes passou a projetar Resumo, para o
-                    // Coordenador conseguir ler a proposta antes de designar ou rejeitar.
-                    Resumo = "Resumo completo da proposta submetida.",
-                    NomeAluno = "Aluno Um",
-                    DataCriacao = DateTime.UtcNow
-                }
+                    new()
+                    {
+                        Id = 1,
+                        Titulo = "Proposta de Teste",
+                        // Issue #76 (P-05): GetPropostasPendentes passou a projetar Resumo, para o
+                        // Coordenador conseguir ler a proposta antes de designar ou rejeitar.
+                        Resumo = "Resumo completo da proposta submetida.",
+                        NomeAluno = "Aluno Um",
+                        DataCriacao = DateTime.UtcNow
+                    }
+                },
+                TotalCount = 1,
+                TotalPages = 1,
+                CurrentPage = 1,
+                PageSize = 100
             }))
             .ComRota("/api/coordenador/propostas/", () => new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -176,9 +183,16 @@ public class DashboardTests : BunitContext
         var payload = "<script>alert(1)</script>";
         var handler = new HandlerMultiRota()
             .ComRota("/api/coordenador/dashboard-stats", () => Json(new DashboardCoordenadorDto()))
-            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new List<TccResumoDto>
+            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new PagedResult<TccResumoDto>
             {
-                new() { Id = 1, Titulo = "Proposta", NomeAluno = payload, DataCriacao = DateTime.UtcNow }
+                Items = new List<TccResumoDto>
+                {
+                    new() { Id = 1, Titulo = "Proposta", NomeAluno = payload, DataCriacao = DateTime.UtcNow }
+                },
+                TotalCount = 1,
+                TotalPages = 1,
+                CurrentPage = 1,
+                PageSize = 100
             }))
             .ComRota("/api/coordenador/professores", () => Json(new PagedResult<ProfessorResumoDto>
             {
@@ -328,9 +342,16 @@ public class DashboardTests : BunitContext
     {
         var handler = new HandlerMultiRota()
             .ComRota("/api/coordenador/dashboard-stats", () => Json(new DashboardCoordenadorDto()))
-            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new List<TccResumoDto>
+            .ComRota("/api/coordenador/propostas-pendentes", () => Json(new PagedResult<TccResumoDto>
             {
-                new() { Id = 1, Titulo = "Proposta de Teste", Resumo = "R", NomeAluno = "Aluno Um", DataCriacao = DateTime.UtcNow }
+                Items = new List<TccResumoDto>
+                {
+                    new() { Id = 1, Titulo = "Proposta de Teste", Resumo = "R", NomeAluno = "Aluno Um", DataCriacao = DateTime.UtcNow }
+                },
+                TotalCount = 1,
+                TotalPages = 1,
+                CurrentPage = 1,
+                PageSize = 100
             }))
             .ComRota("/api/coordenador/propostas/", () => new HttpResponseMessage(HttpStatusCode.NotFound))
             .ComRota("/api/coordenador/professores", () => Json(new PagedResult<ProfessorResumoDto>
