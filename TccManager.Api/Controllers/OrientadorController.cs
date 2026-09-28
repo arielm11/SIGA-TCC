@@ -297,6 +297,15 @@ public class OrientadorController : ControllerBase
 
         if (tcc == null) return NotFound("TCC não encontrado ou sem permissão.");
 
+        // Issue #120: sem esta guarda, DarAceiteFinal aceitava um TCC já Finalizado/Reprovado
+        // (a Entrega Final aprovada continua lá) e o devolvia para AguardandoDefesa — rearmando
+        // um TCC que RegistrarResultadoBanca já tinha concluído, permitindo sobrescrever a nota
+        // final e a ata já registradas. Mesma guarda dupla (Aprovado/EmAndamento) já usada nos
+        // outros 8 pontos do sistema que fazem essa checagem (a UI, DetalhesTcc.razor, já
+        // assume isso implicitamente).
+        if (tcc.Status != StatusTcc.Aprovado && tcc.Status != StatusTcc.EmAndamento)
+            return BadRequest("Não é possível dar o aceite final: o TCC não está em andamento de orientação (RN03).");
+
         // Issue #81 (D7): passa a exigir que a Final mais recente esteja Aprovada, não
         // apenas presente — sem isso o Professor contornaria o próprio veredito de rejeição
         // e a reabertura do ciclo não teria efeito prático nenhum. Três mensagens distintas
