@@ -88,12 +88,19 @@ public class CoordenadorController : ControllerBase
         return Ok(professores);
     }
 
+    // Issue #113 (achado A06-2): antes, este endpoint materializava todas as propostas
+    // pendentes de uma vez, sem paginação nem rate limiting — diferente de GetProfessores no
+    // mesmo controller (issue #74), que já usa os dois. #76 aumentou o tamanho da resposta ao
+    // acrescentar Resumo à projeção (necessário para o Coordenador decidir). Alinhado ao
+    // mesmo padrão.
     [HttpGet("propostas-pendentes")]
-    public async Task<IActionResult> GetPropostasPendentes()
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetPropostasPendentes([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var pendentes = await _context.Tccs
             .Include(t => t.Aluno)
             .Where(t => t.Status == StatusTcc.Pendente)
+            .OrderBy(t => t.DataCriacao)
             .Select(t => new TccResumoDto
             {
                 Id = t.Id,
@@ -102,7 +109,8 @@ public class CoordenadorController : ControllerBase
                 NomeAluno = t.Aluno!.Nome,
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
-            }).ToListAsync();
+            })
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(pendentes);
     }
@@ -119,7 +127,21 @@ public class CoordenadorController : ControllerBase
         tcc.OrientadorId = dto.OrientadorId;
         tcc.Status = StatusTcc.Aprovado;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #113 (achado A06-1): outro Coordenador já decidiu sobre esta mesma
+            // proposta (RowVersion mudou entre o read e este write) — TOCTOU sem bypass de
+            // autorização, os dois atores são legítimos. 409, não 500: é um conflito de
+            // concorrência esperado, não um erro do servidor.
+            _auditLogger.LogWarning(
+                "Designação de orientador recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
 
         // Auditoria (RNF-01, achado A09-1 da revisão de segurança da issue #76): mesma
         // disciplina de RejeitarProposta — designar orientador é igualmente uma decisão
@@ -156,7 +178,18 @@ public class CoordenadorController : ControllerBase
         // sanitizado, mas o sanitizador é reaplicado aqui, não reaproveitado do validador).
         tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #113 (achado A06-1): mesma proteção de DesignarOrientador.
+            _auditLogger.LogWarning(
+                "Rejeição de proposta recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
 
         // Auditoria (RNF-01): só ids, nunca o texto do motivo (campo livre preenchido por
         // humano — duplicá-lo no log espalharia conteúdo potencialmente sensível para fora do
