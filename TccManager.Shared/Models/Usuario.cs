@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using TccManager.Shared.Enums;
 
 namespace TccManager.Shared.Models;
@@ -17,6 +18,14 @@ public class Usuario
     [MaxLength(450)]
     public string Email { get; set; } = string.Empty;
 
+    // Achado de segurança (2026-09-28, descoberto durante a arquitetura do #112): controllers
+    // que devolvem a entidade Usuario/Tcc crua (ex.: OrientadorController.GetDetalhesTcc, que
+    // faz .Include(t => t.Aluno) e retorna Ok(tcc)) serializavam este campo sem nenhuma
+    // proteção — qualquer requisição autorizada a ver o TCC recebia o hash bcrypt da senha do
+    // Aluno/Orientador junto. [JsonIgnore] é a defesa em profundidade: mesmo que um endpoint
+    // futuro (ou um dos já existentes) volte a serializar a entidade inteira em vez de um DTO
+    // projetado, o hash nunca sai do servidor.
+    [JsonIgnore]
     public string SenhaHash { get; set; } = string.Empty;
 
     public TipoUsuario Tipo { get; set; } = TipoUsuario.Aluno;
