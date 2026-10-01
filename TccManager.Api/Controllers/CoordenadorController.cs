@@ -68,20 +68,14 @@ public class CoordenadorController : ControllerBase
         return Ok(stats);
     }
 
+    // Issue #112 (P4 da arquitetura / seção 6 da modelagem): projeção extraída para
+    // UsuarioQueries.ProfessoresAtivosComCarga, reaproveitada também por
+    // TccController.GetProfessores (Aluno) — refactor puro, mesma saída/rota/autorização.
     [HttpGet("professores")]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
-        var professores = await _context.Usuarios
-            .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
-            .Select(u => new ProfessorResumoDto
-            {
-                Id = u.Id,
-                Nome = u.Nome,
-                LimiteOrientandos = u.LimiteOrientandos,
-                AceitandoOrientandos = u.AceitandoOrientandos,
-                CargaAtual = _context.Tccs.Count(t => t.OrientadorId == u.Id && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
-            })
+        var professores = await _context.ProfessoresAtivosComCarga()
             .OrderBy(p => p.Nome)
             .ToPagedResultAsync(paginacao, cancellationToken);
 

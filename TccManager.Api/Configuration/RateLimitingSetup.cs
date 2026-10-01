@@ -177,8 +177,9 @@ public static class RateLimitingSetup
                         });
             });
 
-            // Mesmo raciocínio de particionamento de "geracao-pdf" (achado A02-2): os 6
-            // endpoints desta política exigem autenticação, então particiona por usuário
+            // Mesmo raciocínio de particionamento de "geracao-pdf" (achado A02-2): os 9
+            // endpoints desta política (issue #112 acrescentou GET api/tcc/professores e
+            // GET api/orientador/propostas-solicitadas) exigem autenticação, então particiona por usuário
             // (Claim NameIdentifier), não por IP — a rede de origem típica é um campus
             // universitário, e particionar por IP faria usuários diferentes atrás do mesmo
             // NAT/proxy compartilharem uma única cota.

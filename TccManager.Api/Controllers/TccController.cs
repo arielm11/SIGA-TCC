@@ -8,6 +8,7 @@ using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Notifications;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -23,6 +24,7 @@ public class TccController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ISanitizerService _sanitizerService;
     private readonly IStorageService _storageService;
+    private readonly ITccNotificationService _notificationService;
     private readonly ILogger<TccController> _logger;
 
     // Categoria dedicada de auditoria (upload/compensação/download de entrega): o
@@ -36,12 +38,14 @@ public class TccController : ControllerBase
         AppDbContext context,
         ISanitizerService sanitizerService,
         IStorageService storageService,
+        ITccNotificationService notificationService,
         ILogger<TccController> logger,
         ILoggerFactory loggerFactory)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _storageService = storageService;
+        _notificationService = notificationService;
         _logger = logger;
         _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
@@ -63,7 +67,35 @@ public class TccController : ControllerBase
         if (tcc == null)
             return NoContent();
 
+        // Issue #112 (RF04/D7): nome do professor solicitado, via consulta projetada — nunca
+        // via Include(t => t.OrientadorSolicitado) (D6: evita popular a navegação, que fica
+        // sempre [JsonIgnore] como defesa em profundidade, mas a projeção também não carrega a
+        // entidade Usuario rastreada). Um único round-trip extra, só quando aplicável.
+        if (tcc.OrientadorSolicitadoId != null)
+        {
+            tcc.NomeOrientadorSolicitado = await _context.Usuarios
+                .Where(u => u.Id == tcc.OrientadorSolicitadoId)
+                .Select(u => u.Nome)
+                .FirstOrDefaultAsync();
+        }
+
         return Ok(tcc);
+    }
+
+    [HttpGet("professores")]
+    [Authorize(Roles = "Aluno")]
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
+    {
+        // Issue #112 (RF02/D4): mesma projeção de CoordenadorController.GetProfessores
+        // (UsuarioQueries.ProfessoresAtivosComCarga) — só informativa aqui (decisão de produto
+        // 4.1: nada bloqueia a escolha do aluno), não um endpoint compartilhado com o
+        // Coordenador (rota/autorização do Coordenador continuam intocadas).
+        var professores = await _context.ProfessoresAtivosComCarga()
+            .OrderBy(p => p.Nome)
+            .ToPagedResultAsync(paginacao, cancellationToken);
+
+        return Ok(professores);
     }
 
     [HttpPost("proposta")]
@@ -78,17 +110,47 @@ public class TccController : ControllerBase
         if (existeTccAtivo)
             return BadRequest("Você já possui um TCC ativo. Não é possível submeter outra proposta.");
 
+        // Issue #112 (RF01/RF02, campo opcional — P1): mesma validação de "professor válido" já
+        // usada em DesignarOrientador, mais Ativo (decisão de produto: "Professor ativo" para a
+        // submissão — divergência deliberada, DesignarOrientador não muda). AnyAsync, nunca
+        // FindAsync/FirstOrDefaultAsync (D6): evita relationship fix-up popular
+        // tcc.OrientadorSolicitado com uma entidade Usuario rastreada.
+        if (dto.OrientadorSolicitadoId.HasValue)
+        {
+            var professorValido = await _context.Usuarios.AnyAsync(u =>
+                u.Id == dto.OrientadorSolicitadoId.Value && u.Tipo == TipoUsuario.Professor && u.Ativo);
+            if (!professorValido)
+                return BadRequest("Professor inválido.");
+        }
+
         var tcc = new Tcc
         {
             Titulo = _sanitizerService.Sanitizar(dto.Titulo)!,
             Resumo = _sanitizerService.Sanitizar(dto.Resumo)!,
             AlunoId = alunoId,
+            OrientadorSolicitadoId = dto.OrientadorSolicitadoId,
             Status = StatusTcc.Pendente,
             DataCriacao = DateTime.UtcNow
         };
 
         _context.Tccs.Add(tcc);
         await _context.SaveChangesAsync();
+
+        // Auditoria (D10, recomendado — RNF-01): evento que concede a um Professor autoridade
+        // sobre a proposta, relevante para investigar qualquer questão de RBAC depois.
+        if (tcc.OrientadorSolicitadoId != null)
+        {
+            _auditLogger.LogInformation(
+                "Proposta submetida com professor solicitado. TccId: {TccId}, AlunoId: {AlunoId}, OrientadorSolicitadoId: {OrientadorSolicitadoId}",
+                tcc.Id,
+                alunoId,
+                tcc.OrientadorSolicitadoId);
+        }
+
+        // D8: disparado depois do SaveChanges, só quando há professor solicitado — nunca lança
+        // (fachada best-effort).
+        if (tcc.OrientadorSolicitadoId != null)
+            await _notificationService.NotificarPropostaSolicitadaAsync(tcc.Id);
 
         return Ok(tcc);
     }

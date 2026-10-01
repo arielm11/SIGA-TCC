@@ -27,5 +27,12 @@ public class PropostaTccDtoValidator : AbstractValidator<PropostaTccDto>
             .NotEmpty().WithMessage("O resumo é obrigatório.")
             .Must(resumo => (sanitizerService.Sanitizar(resumo)?.Length ?? 0) <= 4000)
                 .WithMessage("O resumo deve ter no máximo 4000 caracteres.");
+
+        // Issue #112 (P1): campo opcional — só valida formato (> 0) quando informado.
+        // Existência/papel/ativo do professor são checados no controller (validadores não
+        // consultam banco, mesmo racional de DesignarOrientadorDto).
+        RuleFor(dto => dto.OrientadorSolicitadoId)
+            .GreaterThan(0).WithMessage("Professor solicitado inválido.")
+            .When(dto => dto.OrientadorSolicitadoId.HasValue);
     }
 }
