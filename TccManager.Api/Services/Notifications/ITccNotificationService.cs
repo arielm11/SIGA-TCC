@@ -9,14 +9,25 @@ namespace TccManager.Api.Services.Notifications;
 /// </summary>
 public interface ITccNotificationService
 {
-    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado por DesignarOrientador (issue #76: a
-    /// aprovação autônoma do Professor foi removida — atribuir orientador é a única forma de
-    /// aprovar uma proposta, exclusiva do Coordenador).</summary>
+    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado por
+    /// CoordenadorController.DesignarOrientador e, desde a issue #112, também por
+    /// OrientadorController.AprovarPropostaSolicitada (o professor solicitado voltou a ter
+    /// autonomia real, corretamente escopada ao próprio vínculo — issue #76 tinha centralizado
+    /// essa decisão exclusivamente no Coordenador).</summary>
     Task NotificarPropostaAprovadaAsync(int tccId);
 
     /// <summary>Proposta rejeitada (RF8) — Aluno, com motivo. Disparado por
-    /// CoordenadorController.RejeitarProposta (issue #76 — migrou de OrientadorController).</summary>
+    /// CoordenadorController.RejeitarProposta e, desde a issue #112, também por
+    /// OrientadorController.RejeitarPropostaSolicitada (mesmo racional de
+    /// NotificarPropostaAprovadaAsync).</summary>
     Task NotificarPropostaRejeitadaAsync(int tccId);
+
+    /// <summary>
+    /// Proposta solicitada (issue #112, RF-novo/D8) — Professor solicitado pelo Aluno na
+    /// submissão. Disparado por TccController.SubmeterProposta, depois do SaveChangesAsync,
+    /// só quando <c>OrientadorSolicitadoId</c> foi informado.
+    /// </summary>
+    Task NotificarPropostaSolicitadaAsync(int tccId);
 
     /// <summary>Banca agendada (RF9) — Aluno, Orientador e avaliadores (internos e externos).</summary>
     Task NotificarBancaAgendadaAsync(int bancaId);

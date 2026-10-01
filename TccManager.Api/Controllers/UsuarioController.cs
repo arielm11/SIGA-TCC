@@ -349,7 +349,12 @@ public class UsuarioController : ControllerBase
 
             // Professor orientando TCC ou compondo banca tem FK NO ACTION/Restrict para
             // usuarios: excluir sem checar antes derruba em DbUpdateException (500).
+            // Issue #112 (P9 da modelagem de dados): OrientadorSolicitadoId tem a mesma FK
+            // NO ACTION (nunca reescrita após a submissão — ver Tcc.cs) e a mesma política de
+            // "sem filtrar por Status" de OrientadorId: um professor já solicitado, mesmo em
+            // proposta já rejeitada/finalizada, também não pode ser excluído fisicamente.
             var possuiVinculos = await _context.Tccs.AnyAsync(t => t.OrientadorId == id)
+                || await _context.Tccs.AnyAsync(t => t.OrientadorSolicitadoId == id)
                 || await _context.BancaAvaliadores.AnyAsync(b => b.ProfessorId == id);
 
             if (possuiVinculos)

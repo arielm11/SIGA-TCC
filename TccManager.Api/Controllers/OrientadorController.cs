@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services;
 using TccManager.Api.Services.Notifications;
 using TccManager.Shared.DTOs;
@@ -343,5 +344,139 @@ public class OrientadorController : ControllerBase
         await _notificationService.NotificarAceiteFinalAsync(tcc.Id);
 
         return Ok("Aceite final registrado com sucesso. O TCC agora aguarda o agendamento da Banca.");
+    }
+
+    // ── Issue #112: devolve ao Professor autonomia real, corretamente escopada ao próprio
+    // vínculo, para decidir sobre a proposta que o solicita (D1-D5 do documento de arquitetura).
+    // Prefixo de rota "propostas-solicitadas" (D2): distinto de "propostas/{id}/..." para não
+    // colidir com as rotas removidas por #76 (POST .../propostas/{id}/aprovar|rejeitar, que
+    // continuam 404 de roteamento — travado por OrientadorNotificacaoIntegracao_Tests).
+
+    /// <summary>
+    /// Issue #112 (D1/RNF04): propostas Pendentes em que o Professor autenticado é o
+    /// OrientadorSolicitadoId — vínculo no próprio WHERE da query, nunca checagem posterior.
+    /// </summary>
+    [HttpGet("propostas-solicitadas")]
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetPropostasSolicitadas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var propostas = await _context.Tccs
+            .Include(t => t.Aluno)
+            .Where(t => t.Status == StatusTcc.Pendente && t.OrientadorSolicitadoId == profId)
+            .OrderBy(t => t.DataCriacao)
+            .Select(t => new TccResumoDto
+            {
+                Id = t.Id,
+                Titulo = t.Titulo,
+                Resumo = t.Resumo,
+                NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconhecido",
+                DataCriacao = t.DataCriacao,
+                Status = t.Status
+            })
+            .ToPagedResultAsync(paginacao, cancellationToken);
+
+        return Ok(propostas);
+    }
+
+    /// <summary>
+    /// Issue #112 (D1/D5): aprovação pelo Professor solicitado — mesmo efeito de
+    /// CoordenadorController.DesignarOrientador (OrientadorId = profId, Status = Aprovado),
+    /// mas sem receber id de professor por corpo/URL (o vínculo já é o próprio profId
+    /// autenticado). Resposta uniforme (404) para inexistente/já processada/sem vínculo —
+    /// nunca 403, mesmo racional de TccController.DownloadEntrega (D1 da arquitetura).
+    /// </summary>
+    [HttpPut("propostas-solicitadas/{id}/aprovar")]
+    public async Task<IActionResult> AprovarPropostaSolicitada(int id)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t =>
+            t.Id == id && t.Status == StatusTcc.Pendente && t.OrientadorSolicitadoId == profId);
+
+        if (tcc == null)
+            return NotFound("Proposta não encontrada, já processada ou você não tem permissão para acessá-la.");
+
+        tcc.OrientadorId = profId;
+        tcc.Status = StatusTcc.Aprovado;
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // D5: mesma proteção de DesignarOrientador — outro ator (Coordenador ou o próprio
+            // professor em outra aba) já decidiu sobre esta proposta entre o read e este write.
+            _auditLogger.LogWarning(
+                "Aprovação de proposta solicitada recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
+
+        // Auditoria (D10/RF07): logo após o SaveChanges, antes da notificação (best-effort).
+        _auditLogger.LogInformation(
+            "Proposta aprovada pelo Professor solicitado. TccId: {TccId}, AlunoId: {AlunoId}, OrientadorId: {OrientadorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            tcc.OrientadorId);
+
+        // Reusa a mesma notificação de DesignarOrientador (RF7) — o aluno não distingue quem
+        // decidiu, só que a proposta foi aprovada.
+        await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
+
+        return Ok("Proposta aprovada com sucesso.");
+    }
+
+    /// <summary>
+    /// Issue #112 (D1/D5/D9): rejeição pelo Professor solicitado — mesmo efeito de
+    /// CoordenadorController.RejeitarProposta (Status = Reprovado, MotivoRejeicao sanitizado).
+    /// D9: o sistema não guarda quem rejeitou (Professor ou Coordenador), exceto no log de
+    /// auditoria — texto neutro no Client (MeuTcc.razor), não escopo desta API.
+    /// </summary>
+    [HttpPut("propostas-solicitadas/{id}/rejeitar")]
+    public async Task<IActionResult> RejeitarPropostaSolicitada(int id, [FromBody] RejeicaoDto dto)
+    {
+        var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
+            return Unauthorized();
+
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t =>
+            t.Id == id && t.Status == StatusTcc.Pendente && t.OrientadorSolicitadoId == profId);
+
+        if (tcc == null)
+            return NotFound("Proposta não encontrada, já processada ou você não tem permissão para acessá-la.");
+
+        tcc.Status = StatusTcc.Reprovado;
+        tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            _auditLogger.LogWarning(
+                "Rejeição de proposta solicitada recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
+
+        // Auditoria (D10/RF07): só ids, nunca o texto do motivo — mesma disciplina de
+        // CoordenadorController.RejeitarProposta.
+        _auditLogger.LogInformation(
+            "Proposta rejeitada pelo Professor solicitado. TccId: {TccId}, AlunoId: {AlunoId}, ProfessorId: {ProfessorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            profId);
+
+        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
+
+        return Ok("Proposta rejeitada com sucesso.");
     }
 }

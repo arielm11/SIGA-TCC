@@ -125,6 +125,40 @@ public class TccNotificationService : ITccNotificationService
         }
     }
 
+    public async Task NotificarPropostaSolicitadaAsync(int tccId)
+    {
+        try
+        {
+            var tcc = await _context.Tccs
+                .Include(t => t.Aluno)
+                .Include(t => t.OrientadorSolicitado)
+                .FirstOrDefaultAsync(t => t.Id == tccId);
+
+            if (tcc?.OrientadorSolicitado == null)
+            {
+                _logger.LogWarning("NotificarPropostaSolicitadaAsync: Tcc {TccId} ou professor solicitado não encontrado.", tccId);
+                return;
+            }
+
+            var destinatarios = ColetarEmails(("Professor solicitado", tcc.OrientadorSolicitado.Email));
+            if (destinatarios.Count == 0) return;
+
+            var corpo = _renderer.Render("proposta-solicitada", new Dictionary<string, string>
+            {
+                ["NomeProfessor"] = Codificar(tcc.OrientadorSolicitado.Nome),
+                ["NomeAluno"] = Codificar(tcc.Aluno?.Nome),
+                ["TituloTcc"] = Codificar(tcc.Titulo),
+                ["LinkDashboard"] = WebUtility.HtmlEncode(MontarLinkDashboardProfessor())
+            });
+
+            Enfileirar(destinatarios, "Nova proposta de TCC aguardando sua decisão", corpo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao preparar notificação de proposta solicitada para o Tcc {TccId}.", tccId);
+        }
+    }
+
     public async Task NotificarBancaAgendadaAsync(int bancaId)
     {
         try
@@ -466,6 +500,11 @@ public class TccNotificationService : ITccNotificationService
 
     private string MontarLinkAtalhoInterno() =>
         $"{_appUrls.ClientBaseUrl?.TrimEnd('/')}/avaliador/convites";
+
+    // Issue #112 (D8/P8 da arquitetura): rota do Client onde a lista de "propostas aguardando
+    // sua decisão" vai morar (Professor/Dashboard.razor) — mesmo padrão de MontarLinkAtalhoInterno.
+    private string MontarLinkDashboardProfessor() =>
+        $"{_appUrls.ClientBaseUrl?.TrimEnd('/')}/professor/dashboard";
 
     private static string BlocoAcessoExterno(string link) =>
         $"<p><a href=\"{WebUtility.HtmlEncode(link)}\">Acessar rascunho da ata</a></p>";

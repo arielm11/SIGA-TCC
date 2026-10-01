@@ -129,4 +129,45 @@ public class PropostaTccDtoValidatorTests
         Assert.Contains(result.Errors, e => e.PropertyName == nameof(PropostaTccDto.Titulo)
                                          && e.ErrorMessage == "O título deve ter no máximo 200 caracteres.");
     }
+
+    // ── Issue #112 (RF01/P1): OrientadorSolicitadoId é opcional; só valida formato (> 0)
+    // quando informado — existência/papel/ativo é checado no controller (sem acesso a banco
+    // aqui).
+
+    [Fact]
+    public void OrientadorSolicitadoIdAusente_DevePassar()
+    {
+        var dto = DtoValido();
+        dto.OrientadorSolicitadoId = null;
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void OrientadorSolicitadoIdPositivo_DevePassar()
+    {
+        var dto = DtoValido();
+        dto.OrientadorSolicitadoId = 42;
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void OrientadorSolicitadoIdZeroOuNegativo_DeveFalhar(int valor)
+    {
+        var dto = DtoValido();
+        dto.OrientadorSolicitadoId = valor;
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(PropostaTccDto.OrientadorSolicitadoId)
+                                         && e.ErrorMessage == "Professor solicitado inválido.");
+    }
 }
