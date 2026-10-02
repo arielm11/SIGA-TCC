@@ -86,6 +86,13 @@ public class AuthController : ControllerBase
 
         var par = await _authTokenService.LoginAsync(usuario);
 
+        // Issue #143 (achado M6): login bem-sucedido não tinha nenhum registro de auditoria
+        // (só as falhas, acima, no logger genérico) — sem isso, não dá pra responder "quem
+        // acessou o sistema e quando" a partir do canal de auditoria. Nunca o e-mail (LGPD).
+        _auditLogger.LogInformation(
+            "Login bem-sucedido. UsuarioId: {UsuarioId}, Tipo: {Tipo}, IP de origem: {RemoteIp}",
+            usuario.Id, usuario.Tipo, HttpContext.Connection.RemoteIpAddress);
+
         return Ok(new LoginResponseDto
         {
             Token = par.Token,

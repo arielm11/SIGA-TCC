@@ -210,6 +210,12 @@ public class TccController : ControllerBase
             return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a página e tente novamente.");
         }
 
+        // Issue #143 (achado M6): exclusão de proposta não tinha nenhum registro de
+        // auditoria.
+        _auditLogger.LogInformation(
+            "Proposta excluída pelo próprio Aluno. TccId: {TccId}, AlunoId: {AlunoId}",
+            id, alunoId);
+
         return Ok("Proposta excluída com sucesso.");
     }
 

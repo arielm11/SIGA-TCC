@@ -215,6 +215,14 @@ public class CoordenadorController : ControllerBase
         professor.AceitandoOrientandos = dto.AceitandoOrientandos;
 
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6/D4): única escrita deste controller sem trilha de
+        // auditoria — afeta diretamente quais professores aparecem como opção de
+        // orientador para o Aluno (GetProfessores/ProfessoresAtivosComCarga).
+        _auditLogger.LogInformation(
+            "Capacidade de orientação atualizada. ProfessorId: {ProfessorId}, LimiteOrientandos: {LimiteOrientandos}, AceitandoOrientandos: {AceitandoOrientandos}",
+            id, dto.LimiteOrientandos, dto.AceitandoOrientandos);
+
         return Ok("Capacidade do professor atualizada com sucesso.");
     }
 
@@ -253,6 +261,11 @@ public class CoordenadorController : ControllerBase
 
         _context.MembrosExternos.Add(membro);
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6): criação de membro externo não tinha nenhum registro de
+        // auditoria. Nunca loga e-mail (LGPD), só o id gerado.
+        _auditLogger.LogInformation("Membro externo criado. MembroExternoId: {MembroExternoId}", membro.Id);
+
         return Ok(membro);
     }
 
@@ -310,6 +323,11 @@ public class CoordenadorController : ControllerBase
 
         _context.MembrosExternos.Remove(membro);
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6/D4): exclusão bem-sucedida não tinha nenhum registro de
+        // auditoria.
+        _auditLogger.LogInformation("Membro externo removido com sucesso. MembroExternoId: {MembroExternoId}", id);
+
         return Ok("Membro externo removido com sucesso.");
     }
 
@@ -380,6 +398,12 @@ public class CoordenadorController : ControllerBase
                 idTcc);
             return Conflict("Já existe uma banca agendada para este TCC.");
         }
+
+        // Issue #143 (achado M6): agendamento de banca (data/avaliadores) não tinha nenhum
+        // registro de auditoria.
+        _auditLogger.LogInformation(
+            "Banca agendada. TccId: {TccId}, BancaId: {BancaId}, QtdProfessores: {QtdProfessores}, QtdMembrosExternos: {QtdMembrosExternos}",
+            idTcc, banca.Id, professoresIds.Count, membrosExternosIds.Count);
 
         // Disparo após o SaveChanges que persiste os BancaAvaliador, para que a lista
         // de avaliadores já esteja completa na resolução de destinatários (RF9).
@@ -567,6 +591,12 @@ public class CoordenadorController : ControllerBase
             throw;
         }
 
+        // Issue #143 (achado M6): nota final e decisão terminal do TCC (Finalizado/Reprovado)
+        // não tinham nenhum registro de auditoria.
+        _auditLogger.LogInformation(
+            "Resultado de banca registrado. BancaId: {BancaId}, TccId: {TccId}, AlunoId: {AlunoId}, Aprovado: {Aprovado}, NotaFinal: {NotaFinal}",
+            banca.Id, banca.Tcc.Id, banca.Tcc.AlunoId, aprovado, notaFinal);
+
         await _notificationService.NotificarResultadoBancaAsync(banca.Id, aprovado);
 
         var mensagem = aprovado
@@ -696,6 +726,13 @@ public class CoordenadorController : ControllerBase
             return StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado; não é possível reenviar o rascunho.");
 
         var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(idBanca, idMembroExterno);
+
+        // Issue #143 (achado M6): emissão de uma nova credencial de portador (acesso ao
+        // rascunho da ata sem conta) não tinha nenhum registro de auditoria. Nunca o token
+        // bruto, só os ids.
+        _auditLogger.LogInformation(
+            "Novo token de rascunho de ata emitido (reenvio). BancaId: {BancaId}, MembroExternoId: {MembroExternoId}",
+            idBanca, idMembroExterno);
 
         await _notificationService.NotificarReenvioRascunhoAsync(idBanca, idMembroExterno, tokenBruto);
 
