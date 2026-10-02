@@ -180,6 +180,7 @@ try
     });
 
     builder.Services.ConfigureRateLimiting(builder.Configuration);
+    builder.Services.ConfigureForwardedHeaders(builder.Configuration);
 
     builder.Services.AddSingleton<ISanitizerService, HtmlSanitizerService>();
     builder.Services.AddSingleton<IStorageService, LocalStorageService>();
@@ -228,6 +229,13 @@ try
             options.RoutePrefix = string.Empty;
         });
     }
+
+    // Issue #142 (achado M2): precisa ser o PRIMEIRO middleware — tudo depois enxerga
+    // Connection.RemoteIpAddress/Request.Scheme já reescritos a partir de X-Forwarded-For/
+    // X-Forwarded-Proto quando vêm de um proxy configurado como confiável. Non-op (não
+    // registra nada) enquanto ForwardedHeaders:Enabled não estiver true — ver
+    // ForwardedHeadersSetup para a configuração completa antes de implantar atrás de proxy.
+    app.UseConfiguredForwardedHeaders(app.Configuration);
 
     app.UseMiddleware<CorrelationIdMiddleware>();
 
