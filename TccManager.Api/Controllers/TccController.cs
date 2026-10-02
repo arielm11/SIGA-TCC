@@ -138,7 +138,22 @@ public class TccController : ControllerBase
         };
 
         _context.Tccs.Add(tcc);
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Issue #145 (achado B11): backstop atômico do índice único filtrado
+            // (UX_Tccs_AlunoId_Ativo) contra o pre-check de aplicação acima (existeTccAtivo),
+            // que sozinho não impede duas requisições concorrentes de passarem no pre-check e
+            // criarem 2 TCCs ativos para o mesmo Aluno.
+            _auditLogger.LogWarning(
+                "Falha ao submeter proposta: possível violação da restrição de unicidade de TCC ativo por Aluno. AlunoId: {AlunoId}",
+                alunoId);
+            return Conflict("Você já possui um TCC ativo. Não é possível submeter outra proposta.");
+        }
 
         // Auditoria (D10, recomendado — RNF-01): evento que concede a um Professor autoridade
         // sobre a proposta, relevante para investigar qualquer questão de RBAC depois.
@@ -177,7 +192,23 @@ public class TccController : ControllerBase
             return BadRequest("Apenas propostas pendentes podem ser excluídas.");
 
         _context.Tccs.Remove(tcc);
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado D6): mesma corrida já tratada em DesignarOrientador/
+            // RejeitarProposta/AprovarPropostaSolicitada/RejeitarPropostaSolicitada — o
+            // Coordenador (ou o professor solicitado) decidiu sobre esta proposta entre o
+            // read e este DELETE (RowVersion mudou), e o EF inclui RowVersion no WHERE do
+            // DELETE também.
+            _auditLogger.LogWarning(
+                "Exclusão de proposta recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a página e tente novamente.");
+        }
 
         return Ok("Proposta excluída com sucesso.");
     }

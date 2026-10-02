@@ -293,6 +293,21 @@ public class CoordenadorController : ControllerBase
         var membro = await _context.MembrosExternos.FindAsync(id);
         if (membro == null) return NotFound("Membro externo não encontrado.");
 
+        // Issue #145 (achado B12): as FKs BancaAvaliador.MembroExterno (NO ACTION) e
+        // RascunhoAtaToken.MembroExterno (Restrict) bloqueiam a exclusão quando há vínculo —
+        // sem checar antes, a DbUpdateException resultante virava 500 em vez de um 409 claro
+        // (mesmo padrão já usado em UsuarioController.DeleteUsuario).
+        var possuiVinculos = await _context.BancaAvaliadores.AnyAsync(b => b.MembroExternoId == id)
+            || await _context.RascunhoAtaTokens.AnyAsync(t => t.MembroExternoId == id);
+
+        if (possuiVinculos)
+        {
+            _auditLogger.LogWarning(
+                "Exclusão de membro externo recusada: possui vínculo com banca ou token de rascunho. MembroExternoId: {MembroExternoId}",
+                id);
+            return Conflict("Não é possível excluir este membro externo: ele está vinculado a uma banca ou possui um token de rascunho de ata. Considere removê-lo apenas das bancas futuras.");
+        }
+
         _context.MembrosExternos.Remove(membro);
         await _context.SaveChangesAsync();
         return Ok("Membro externo removido com sucesso.");
@@ -530,6 +545,17 @@ public class CoordenadorController : ControllerBase
         try
         {
             await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado B1): o RowVersion de Tcc (#113) já protegia esta escrita
+            // (banca.Tcc.Status é alterado no mesmo SaveChanges), mas a exceção caía no catch
+            // genérico abaixo e virava 500 em vez de 409 — mesmo arquivo da ata já gravado em
+            // disco, mesma compensação necessária.
+            await CompensarUploadOrfaoAsync(caminho, idBanca, "conflito de concorrência ao salvar resultado da banca");
+            _auditLogger.LogWarning(
+                "Conflito de concorrência ao registrar resultado de banca. BancaId: {BancaId}", idBanca);
+            return Conflict("O resultado desta banca já foi registrado por outra ação simultânea. Atualize a página e tente novamente.");
         }
         catch (Exception)
         {

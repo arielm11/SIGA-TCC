@@ -30,4 +30,11 @@ public class Entrega
     public int TccId { get; set; }
     [ForeignKey("TccId")]
     public Tcc? Tcc { get; set; }
+
+    // Issue #145 (achado B2): mesmo mecanismo já usado em Tcc.RowVersion (#113) — sem isso,
+    // RegistrarFeedback e RejeitarEntrega/AprovarEntrega podiam ler-então-escrever a mesma
+    // Entrega concorrentemente (duas abas) e um sobrescrever o outro em silêncio, incluindo
+    // apagar o motivo de uma rejeição recém-registrada.
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }
