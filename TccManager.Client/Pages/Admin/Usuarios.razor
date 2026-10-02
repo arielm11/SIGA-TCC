@@ -5,7 +5,6 @@
 @using TccManager.Shared.Enums
 @attribute [Authorize(Roles = "Admin")]
 @inject AuthenticationStateProvider AuthStateProvider
-@inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject DialogService DialogService
@@ -85,13 +84,11 @@
     {
         try
         {
-            var token = await LocalStorage.GetItemAsStringAsync("authToken");
-            if (!string.IsNullOrWhiteSpace(token))
-            {
-                token = token.Replace("\"", "");
-                Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-            }
-
+            // Issue #158 (achado D12): AuthTokenHandler já anexa o Bearer em toda requisição
+            // via DelegatingHandler (fonte única documentada) — setar
+            // Http.DefaultRequestHeaders.Authorization aqui era redundante e, por Http ser um
+            // HttpClient de escopo efetivamente singleton em Blazor WASM, podia manter um
+            // token antigo sendo enviado após logout/troca de usuário na mesma aba.
             usuarios = await Http.GetFromJsonAsync<List<UsuarioDto>>("api/usuario");
         }
         catch (Exception ex)
