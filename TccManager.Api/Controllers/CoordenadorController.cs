@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
@@ -304,8 +305,33 @@ public class CoordenadorController : ControllerBase
         if (tcc == null || tcc.Status != StatusTcc.AguardandoDefesa)
             return BadRequest("O TCC deve estar com status 'Aguardando Defesa' para agendar a banca.");
 
-        int totalMembros = dto.ProfessoresIds.Count + dto.MembrosExternosIds.Count;
-        if (totalMembros < 2)
+        // Issue #139 (achado M1): deduplicar e excluir o próprio Aluno/Orientador do TCC —
+        // antes disso era possível montar uma "banca" com um único avaliador real (lista com
+        // ids repetidos) ou dar a um Aluno qualquer, ou ao próprio orientador, acesso de
+        // avaliador (BancaAvaliador.ProfessorId sem checagem de papel/vínculo).
+        var professoresIds = dto.ProfessoresIds
+            .Distinct()
+            .Where(id => id != tcc.AlunoId && id != tcc.OrientadorId)
+            .ToList();
+        var membrosExternosIds = dto.MembrosExternosIds.Distinct().ToList();
+
+        if (professoresIds.Count > 0)
+        {
+            var professoresValidos = await _context.Usuarios.CountAsync(u =>
+                professoresIds.Contains(u.Id) && u.Tipo == TipoUsuario.Professor && u.Ativo);
+            if (professoresValidos != professoresIds.Count)
+                return BadRequest("Um ou mais professores avaliadores são inválidos, estão inativos ou não existem.");
+        }
+
+        if (membrosExternosIds.Count > 0)
+        {
+            var membrosValidos = await _context.MembrosExternos.CountAsync(m => membrosExternosIds.Contains(m.Id));
+            if (membrosValidos != membrosExternosIds.Count)
+                return BadRequest("Um ou mais membros externos avaliadores são inválidos ou não existem.");
+        }
+
+        // RN05 sobre os ids distintos e válidos, não o tamanho bruto das listas recebidas.
+        if (professoresIds.Count + membrosExternosIds.Count < 2)
             return BadRequest("A banca deve ter no mínimo 2 membros avaliadores além do orientador (RN05).");
 
         var banca = new Banca
@@ -315,20 +341,30 @@ public class CoordenadorController : ControllerBase
             Local = dto.Local
         };
 
+        // Issue #139 (achado B3): um único SaveChanges para Banca + BancaAvaliadores (via
+        // navegação, não BancaId direto — o Id da Banca só existe depois do SaveChanges, e o
+        // EF Core resolve a FK automaticamente dentro da mesma transação). Antes, um id de FK
+        // inválido no segundo SaveChanges deixava a Banca gravada sem avaliadores.
+        banca.Avaliadores = professoresIds.Select(id => new BancaAvaliador { Banca = banca, ProfessorId = id })
+            .Concat(membrosExternosIds.Select(id => new BancaAvaliador { Banca = banca, MembroExternoId = id }))
+            .ToList();
+
         _context.Banca.Add(banca);
-        await _context.SaveChangesAsync(); // Salva para gerar o Id da Banca
 
-        foreach (var profId in dto.ProfessoresIds)
+        try
         {
-            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = profId });
+            await _context.SaveChangesAsync();
         }
-
-        foreach (var extId in dto.MembrosExternosIds)
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
         {
-            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, MembroExternoId = extId });
+            // Issue #139 (achado M3): backstop atômico do índice único em Banca.TccId contra
+            // o pre-check de Status acima, que sozinho não impede duas requisições
+            // concorrentes de agendarem 2 bancas para o mesmo TCC.
+            _auditLogger.LogWarning(
+                "Falha ao agendar banca: possível violação da restrição de unicidade de Banca.TccId. TccId: {TccId}",
+                idTcc);
+            return Conflict("Já existe uma banca agendada para este TCC.");
         }
-
-        await _context.SaveChangesAsync();
 
         // Disparo após o SaveChanges que persiste os BancaAvaliador, para que a lista
         // de avaliadores já esteja completa na resolução de destinatários (RF9).

@@ -244,6 +244,30 @@ public class TccController_DownloadEntrega_Tests
     }
 
     [Fact]
+    public async Task AlunoComLinhaDeBancaAvaliadorApontandoParaEle_Retorna404()
+    {
+        // Issue #139: defesa em profundidade contra dado inconsistente (ex.: legado, ou uma
+        // falha futura na validação de AgendarBanca) — mesmo que exista uma linha em
+        // BancaAvaliadores com ProfessorId == id de um Aluno, o papel "Professor" no token é
+        // exigido antes de aceitar esse vínculo como autorização.
+        using var factory = new WebRootIsolatedApiFactory();
+        var s = await SemearAsync(factory);
+
+        using (var context = factory.CriarContextoDireto())
+        {
+            var banca = context.Banca.Single(b => b.TccId == s.TccId);
+            context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = IdAlunoDeOutroTcc });
+            await context.SaveChangesAsync();
+        }
+
+        var client = factory.CreateClientAutenticado(IdAlunoDeOutroTcc, "Aluno");
+
+        var response = await client.GetAsync($"/api/tcc/entregas/{s.EntregaId}/download");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ProfessorAvaliador_TentandoBaixarEntregaDeTccDeOutraBanca_Retorna404()
     {
         // O vínculo é verificado contra o TCC da entrega pedida (ba.Banca.TccId == tcc.Id),

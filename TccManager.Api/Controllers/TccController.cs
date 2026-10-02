@@ -418,10 +418,15 @@ public class TccController : ControllerBase
 
         var tcc = entrega.Tcc;
 
+        // Issue #139: defesa em profundidade além da validação de avaliadores em
+        // AgendarBanca — mesmo que um BancaAvaliador.ProfessorId inválido chegue a existir no
+        // banco (ex.: dado legado), exigir o papel de Professor aqui impede que ele seja
+        // usado para dar a um Aluno acesso de download de entregas de outro Aluno.
         var autorizado = tcc.AlunoId == usuarioId
             || tcc.OrientadorId == usuarioId
             || User.IsInRole("Coordenador")
-            || await _context.BancaAvaliadores.AnyAsync(ba => ba.ProfessorId == usuarioId && ba.Banca!.TccId == tcc.Id);
+            || (User.IsInRole("Professor")
+                && await _context.BancaAvaliadores.AnyAsync(ba => ba.ProfessorId == usuarioId && ba.Banca!.TccId == tcc.Id));
 
         if (!autorizado)
         {
