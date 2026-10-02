@@ -34,6 +34,18 @@
 SET NOCOUNT ON;
 SET QUOTED_IDENTIFIER ON;
 
+-- Issue #149 (achado B10): a senha de todos os usuários deste script é documentada em texto
+-- claro acima, de propósito (é um script de dados de TESTE). Se executado por engano contra um
+-- banco com dados reais, isso cria/reseta uma conta Admin com senha publicamente conhecida.
+-- Backstop: aborta ANTES de qualquer DELETE/INSERT se detectar qualquer usuário fora do
+-- domínio @seed.local já cadastrado — um banco de teste recém-criado (ou já semeado por este
+-- mesmo script) só tem usuários @seed.local ou nenhum usuário.
+IF EXISTS (SELECT 1 FROM usuarios WHERE Email NOT LIKE '%@seed.local')
+BEGIN
+    RAISERROR(N'Abortado: este script só pode rodar contra um banco de dados de teste. Foram encontrados usuários fora do domínio @seed.local — se este for mesmo um banco de teste sem dados reais, apague-os manualmente antes de reexecutar.', 16, 1);
+    RETURN;
+END
+
 BEGIN TRANSACTION;
 
 DECLARE @senhaHash NVARCHAR(200) = N'$2a$11$5y01BwbO7KfW3MKGts0h2uMzNgY85VtC.7PLWZfN5mnmHIdNF5giq';
