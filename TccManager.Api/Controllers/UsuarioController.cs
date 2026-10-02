@@ -428,6 +428,19 @@ public class UsuarioController : ControllerBase
             if (possuiVinculos)
                 return Conflict("Não é possível excluir: o usuário orienta TCC(s) e/ou participa de banca(s) avaliadora(s).");
 
+            // Issue #147 (achado B6): Tcc→Aluno é Cascade no model — excluir um Aluno com
+            // qualquer Tcc (inclusive já Finalizado) apagava em cascata Tcc/Entregas/Banca/
+            // BancaAvaliadores/tokens, perdendo o histórico acadêmico, e os arquivos em
+            // wwwroot/uploads/{entregas,atas} ficavam órfãos em disco (retenção de dados sem
+            // controle, possível PII no nome do arquivo). Bloqueia a exclusão em vez de
+            // apagar os arquivos: o histórico de um Aluno formado é um registro que o
+            // Coordenador pode legitimamente precisar depois (ex.: emissão de declaração).
+            var alunoComTcc = usuario.Tipo == TipoUsuario.Aluno
+                && await _context.Tccs.AnyAsync(t => t.AlunoId == id);
+
+            if (alunoComTcc)
+                return Conflict("Não é possível excluir: o Aluno possui TCC registrado (histórico acadêmico). Considere desativar a conta em vez de excluí-la.");
+
             _context.Usuarios.Remove(usuario);
 
             try
