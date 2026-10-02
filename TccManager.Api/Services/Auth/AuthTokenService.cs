@@ -213,6 +213,12 @@ public class AuthTokenService : IAuthTokenService
         await _context.SaveChangesAsync();
     }
 
+    public async Task RevokeAllSessionsAsync(int usuarioId)
+    {
+        await RevokeAllForUserAsync(usuarioId, _timeProvider.GetUtcNow().UtcDateTime);
+        await _context.SaveChangesAsync();
+    }
+
     /// <summary>
     /// Revogação em massa (RF04), usada internamente pelo login. O documento de dados
     /// recomenda <c>ExecuteUpdateAsync</c> (set-based, sem materializar entidades); na

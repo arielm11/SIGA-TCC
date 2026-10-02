@@ -69,6 +69,14 @@
                         </RadzenColumn>
                     </RadzenRow>
 
+                    <RadzenRow Gap="1rem">
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="Senha Atual" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenPassword Name="SenhaAtual" @bind-Value="usuario.SenhaAtual" Placeholder="Necessária para alterar e-mail ou senha" style="width: 100%;" />
+                            </RadzenFormField>
+                        </RadzenColumn>
+                    </RadzenRow>
+
                     <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
                         <RadzenButton ButtonType="ButtonType.Submit"
                                       Text="Salvar Alterações"

@@ -134,6 +134,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
             Nome = "Aluno Com Nome Novo",
             Email = "aluno@teste.com", // inalterado
             Senha = "nova-senha-do-aluno-987",
+            SenhaAtual = SenhaOriginal,
             Tipo = TipoUsuario.Aluno,
             Ativo = true
         };
@@ -167,6 +168,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
             Nome = "Admin Renomeado",
             Email = "admin@teste.com", // inalterado
             Senha = "nova-senha-do-admin-654",
+            SenhaAtual = SenhaOriginal + "-admin",
             Tipo = TipoUsuario.Admin,
             Ativo = true
         };
@@ -478,6 +480,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
             Nome = "Admin Rebaixado",
             Email = "admin-rebaixado@teste.com",
             Senha = string.Empty,
+            SenhaAtual = SenhaOriginal + "-admin",
             Tipo = TipoUsuario.Aluno, // deve ser ignorado
             Ativo = true
         };
@@ -659,6 +662,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
             Nome = "Admin Atualizado",
             Email = "admin-atualizado@teste.com",
             Senha = "senha-admin-nova-321",
+            SenhaAtual = SenhaOriginal + "-admin",
             Tipo = TipoUsuario.Admin,
             Ativo = true
         };
@@ -768,6 +772,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
             Nome = "Aluno Teste",
             Email = emailNoLimite,
             Senha = string.Empty,
+            SenhaAtual = SenhaOriginal,
             Tipo = TipoUsuario.Aluno,
             Ativo = true
         };

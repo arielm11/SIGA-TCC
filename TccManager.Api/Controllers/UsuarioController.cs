@@ -8,6 +8,7 @@ using System.Data;
 using System.Security.Claims;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Services.Auth;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
 using TccManager.Shared.Enums;
@@ -21,11 +22,13 @@ namespace TccManager.Api.Controllers;
 public class UsuarioController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IAuthTokenService _authTokenService;
     private readonly ILogger<UsuarioController> _logger;
 
-    public UsuarioController(AppDbContext context, ILogger<UsuarioController> logger)
+    public UsuarioController(AppDbContext context, IAuthTokenService authTokenService, ILogger<UsuarioController> logger)
     {
         _context = context;
+        _authTokenService = authTokenService;
         _logger = logger;
     }
 
@@ -190,6 +193,24 @@ public class UsuarioController : ControllerBase
             return BadRequest("Email já cadastrado");
         }
 
+        // Issue #140 (achado M5): em autoedição (o próprio usuário editando o próprio
+        // registro — inclusive um Admin editando a si mesmo), trocar a senha ou o e-mail
+        // exige a senha atual. Um Admin editando o registro de OUTRO usuário nunca precisa
+        // informar a senha desse outro usuário (fluxo legítimo de redefinição pelo Admin).
+        var autoedicao = ObterIdClaimAutenticado() == id.ToString();
+        var alterandoSenhaOuEmail = !string.IsNullOrEmpty(dto.Senha) || dto.Email != usuario.Email;
+
+        if (autoedicao && alterandoSenhaOuEmail)
+        {
+            if (string.IsNullOrEmpty(dto.SenhaAtual) || !BCrypt.Net.BCrypt.Verify(dto.SenhaAtual, usuario.SenhaHash))
+            {
+                _logger.LogWarning(
+                    "Autoedição de senha/e-mail rejeitada em PUT /api/usuario/{{id}}: senha atual ausente ou incorreta. Alvo: {AlvoId}",
+                    id);
+                return BadRequest("Senha atual incorreta.");
+            }
+        }
+
         // Issue #90 (achado A07-1): mesma política do POST — reaproveitada, não decidida
         // agora. Só se aplica quando uma nova senha é de fato enviada (Senha vazia
         // continua significando "manter a atual", comportamento já existente).
@@ -216,6 +237,7 @@ public class UsuarioController : ControllerBase
         {
             var bloqueadoPorUnicoAdmin = false;
             string? mensagemBloqueio = null;
+            var revogarSessoesDoAlvo = false;
 
             // Tipo e Ativo sao campos sensiveis (escalacao de privilegio) e so podem
             // ser alterados por um Admin. Em autoedicao, o valor enviado pelo cliente
@@ -256,6 +278,12 @@ public class UsuarioController : ControllerBase
                             usuario.Tipo,
                             ativoAntigo,
                             usuario.Ativo);
+
+                        // Issue #140 (achado B4): papel/status vão dentro do JWT e só são
+                        // reavaliados quando o access token expira — revogar as sessões
+                        // ativas do alvo faz o próximo refresh (ou acesso, sem refresh válido)
+                        // já refletir a mudança, em vez de tolerar até ~15 min de defasagem.
+                        revogarSessoesDoAlvo = true;
                     }
                 }
             }
@@ -268,6 +296,12 @@ public class UsuarioController : ControllerBase
                 // com a flag ligada (ele nunca obtém token para chegar ao PUT, D8), mas evita um
                 // estado preso caso a flag venha a ser usada em outro fluxo no futuro.
                 usuario.PrecisaTrocarSenha = false;
+
+                // Issue #140 (achado M5): nenhuma troca de senha revogava as sessões já
+                // emitidas — um refresh token obtido antes da troca continuava válido
+                // indefinidamente (ele é rotativo). Vale tanto para autoedição quanto para
+                // redefinição feita por um Admin.
+                revogarSessoesDoAlvo = true;
             }
 
             try
@@ -290,6 +324,13 @@ public class UsuarioController : ControllerBase
 
             if (transacao != null)
                 await transacao.CommitAsync();
+
+            // Issue #140: revogação best-effort, após o commit da mudança principal — mesmo
+            // padrão de RascunhoAtaTokenService.RevogarTodosTokensDoMembroAsync (chamada
+            // separada, não a mesma transação). Sempre pelo id do ALVO (usuario.Id), nunca
+            // pelo solicitante.
+            if (revogarSessoesDoAlvo)
+                await _authTokenService.RevokeAllSessionsAsync(usuario.Id);
 
             // Issue #89: o bloqueio do último Admin agora reporta 409 (não mais 200
             // silencioso) — os demais campos da requisição (Nome/Email/Senha) já foram
