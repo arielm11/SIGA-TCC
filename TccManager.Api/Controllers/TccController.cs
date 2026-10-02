@@ -100,6 +100,7 @@ public class TccController : ControllerBase
 
     [HttpPost("proposta")]
     [Authorize(Roles = "Aluno")]
+    [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> SubmeterProposta([FromBody] PropostaTccDto dto)
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -157,6 +158,7 @@ public class TccController : ControllerBase
 
     [HttpDelete("proposta/{id}")]
     [Authorize(Roles = "Aluno")]
+    [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> ExcluirProposta(int id)
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier);

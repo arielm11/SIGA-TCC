@@ -27,6 +27,7 @@ public static class RateLimitingSetup
     public const string ListagemPaginadaPolicyName = "listagem-paginada";
     public const string TrocaSenhaPolicyName = "troca-senha";
     public const string UploadPolicyName = "upload";
+    public const string PropostaPolicyName = "proposta";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -103,6 +104,22 @@ public static class RateLimitingSetup
         var uploadWindowSeconds = configuration.GetValue<int?>("RateLimiting:Upload:WindowSeconds") ?? 3600;
         var uploadQueueLimit = configuration.GetValue<int?>("RateLimiting:Upload:QueueLimit") ?? 0;
         var uploadPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:Upload:PermitLimitAnonimo") ?? 5;
+
+        // Issue #141 (achado M4): POST api/tcc/proposta e DELETE api/tcc/proposta/{id} não
+        // tinham rate limiting — um Aluno em loop "submeter com OrientadorSolicitadoId →
+        // excluir" conseguia disparar um e-mail de notificação por iteração (NomeProfessor,
+        // Titulo controlados pelo atacante), o suficiente para floodar a fila (capacidade
+        // 1000, ChannelEmailQueue) e fazer notificações legítimas de outros usuários serem
+        // descartadas em silêncio. Particionado por usuário (mesmo raciocínio de
+        // "upload"/"geracao-pdf": ambos endpoints exigem Authorize(Roles = "Aluno"), rede de
+        // origem típica é um campus universitário atrás de NAT/proxy compartilhado). Janela
+        // de 1h (não 1min): o cenário de abuso é repetição ao longo do tempo, não uma rajada
+        // isolada — um Aluno legítimo que submete/exclui a proposta algumas vezes seguidas
+        // ao decidir o professor não deveria ser limitado.
+        var propostaPermitLimit = configuration.GetValue<int?>("RateLimiting:Proposta:PermitLimit") ?? 10;
+        var propostaWindowSeconds = configuration.GetValue<int?>("RateLimiting:Proposta:WindowSeconds") ?? 3600;
+        var propostaQueueLimit = configuration.GetValue<int?>("RateLimiting:Proposta:QueueLimit") ?? 0;
+        var propostaPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:Proposta:PermitLimitAnonimo") ?? 5;
 
         services.AddRateLimiter(options =>
         {
@@ -226,6 +243,30 @@ public static class RateLimitingSetup
                         {
                             PermitLimit = uploadPermitLimitAnonimo,
                             Window = TimeSpan.FromSeconds(uploadWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
+            // Mesmo particionamento por usuário de "geracao-pdf"/"listagem-paginada"/"upload".
+            options.AddPolicy(PropostaPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = propostaPermitLimit,
+                            Window = TimeSpan.FromSeconds(propostaWindowSeconds),
+                            QueueLimit = propostaQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = propostaPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(propostaWindowSeconds),
                             QueueLimit = 0
                         });
             });
