@@ -61,6 +61,20 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("UX_Entregas_TccId_Final");
         });
 
+        modelBuilder.Entity<Tcc>(entity =>
+        {
+            // Issue #145 (achado B11): reforça no banco a invariante "no máximo 1 TCC ativo
+            // por Aluno" (TccController.SubmeterProposta já checa isso em AnyAsync, mas
+            // sozinho não impede duas requisições concorrentes de passarem no pre-check e
+            // criarem 2 TCCs ativos para o mesmo Aluno). StatusTcc.Reprovado == 2 (sem
+            // HasConversion, enum persistido como int) — único status que permite nova
+            // submissão.
+            entity.HasIndex(t => t.AlunoId)
+                .IsUnique()
+                .HasFilter("[Status] <> 2")
+                .HasDatabaseName("UX_Tccs_AlunoId_Ativo");
+        });
+
         modelBuilder.Entity<Banca>(entity =>
         {
             // Issue #139 (achado M3): backstop atômico contra 2 bancas agendadas para o mesmo

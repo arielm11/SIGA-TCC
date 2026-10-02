@@ -107,10 +107,30 @@ public class OrientadorController : ControllerBase
 
         if (entrega == null) return NotFound("Entrega não encontrada ou você não tem permissão para acessar.");
 
+        // Issue #145 (achado B2): RegistrarFeedback é anterior às guardas de veredito da
+        // issue #81 (D9) e nunca recebeu a mesma proteção — sem isso, dava pra editar
+        // nota/parecer de uma entrega mesmo com o TCC já Finalizado/Reprovado, sem trilha de
+        // auditoria. Mesma guarda de AprovarEntrega/RejeitarEntrega.
+        if (entrega.Tcc!.Status != StatusTcc.Aprovado && entrega.Tcc.Status != StatusTcc.EmAndamento)
+            return BadRequest("Só é possível registrar feedback enquanto o TCC está em acompanhamento pelo orientador.");
+
         entrega.Feedback = _sanitizerService.Sanitizar(dto.Feedback);
         entrega.Nota = dto.Nota;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado B2): backstop atômico do RowVersion de Entrega contra uma
+            // corrida com AprovarEntrega/RejeitarEntrega (ou outro RegistrarFeedback)
+            // concorrente sobre a mesma Entrega.
+            _auditLogger.LogWarning(
+                "Conflito de concorrência ao registrar feedback. EntregaId: {EntregaId}, TccId: {TccId}",
+                entrega.Id, entrega.TccId);
+            return Conflict("Esta entrega foi alterada por outra ação simultânea. Atualize a página e tente novamente.");
+        }
 
         await _notificationService.NotificarFeedbackRegistradoAsync(entrega.Id);
 
@@ -152,6 +172,15 @@ public class OrientadorController : ControllerBase
         try
         {
             await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado B2): backstop atômico do RowVersion de Entrega contra uma
+            // corrida com RegistrarFeedback/RejeitarEntrega concorrente sobre a mesma Entrega.
+            _auditLogger.LogWarning(
+                "Conflito de concorrência ao aprovar entrega. EntregaId: {EntregaId}, TccId: {TccId}",
+                entrega.Id, entrega.TccId);
+            return Conflict("Esta entrega foi alterada por outra ação simultânea. Atualize a página e tente novamente.");
         }
         catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
         {
@@ -209,7 +238,19 @@ public class OrientadorController : ControllerBase
         // arquitetura seção 6).
         entrega.Feedback = _sanitizerService.Sanitizar(dto.Motivo);
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado B2): backstop atômico do RowVersion de Entrega contra uma
+            // corrida com RegistrarFeedback/AprovarEntrega concorrente sobre a mesma Entrega.
+            _auditLogger.LogWarning(
+                "Conflito de concorrência ao rejeitar entrega. EntregaId: {EntregaId}, TccId: {TccId}",
+                entrega.Id, entrega.TccId);
+            return Conflict("Esta entrega foi alterada por outra ação simultânea. Atualize a página e tente novamente.");
+        }
 
         _auditLogger.LogInformation(
             "Veredito registrado pelo Professor: Rejeitada. EntregaId: {EntregaId}, TccId: {TccId}, AlunoId: {AlunoId}, OrientadorId: {OrientadorId}, TipoEntrega: {TipoEntrega}",
