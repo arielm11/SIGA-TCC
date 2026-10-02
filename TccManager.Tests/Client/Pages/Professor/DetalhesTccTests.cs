@@ -86,7 +86,7 @@ public class DetalhesTccTests
         // Entrega sem parecer: Feedback null vira string vazia (o DTO exige string não-nula) e
         // Nota permanece nula (campo opcional).
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 10, Titulo = "Capítulo 1", Feedback = null, Nota = null };
+        var entrega = new EntregaDto { Id = 10, Titulo = "Capítulo 1", Feedback = null, Nota = null };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
 
@@ -101,7 +101,7 @@ public class DetalhesTccTests
     {
         // "Editar Avaliação": o form inline abre preenchido com a avaliação existente.
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 3, Feedback = "Revisar a metodologia.", Nota = 8.5m };
+        var entrega = new EntregaDto { Id = 3, Feedback = "Revisar a metodologia.", Nota = 8.5m };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
 
@@ -116,9 +116,9 @@ public class DetalhesTccTests
         // Abrir o form de outra entrega troca o alvo e substitui o modelo (não mistura os dados
         // digitados na entrega anterior).
         var componente = new DetalhesTcc();
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 1, Feedback = "Parecer da 1", Nota = 5m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 1, Feedback = "Parecer da 1", Nota = 5m });
 
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 2, Feedback = "Parecer da 2", Nota = 9m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 2, Feedback = "Parecer da 2", Nota = 9m });
 
         Assert.Equal(2, LerCampo<int?>(componente, "entregaEmAvaliacao"));
         var feedback = LerCampo<FeedbackDto>(componente, "feedbackAtual")!;
@@ -132,7 +132,7 @@ public class DetalhesTccTests
         // O form edita um DTO próprio: alterar o rascunho não altera a entrega carregada do backend
         // enquanto o POST não é feito.
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 4, Feedback = "Original", Nota = 7m };
+        var entrega = new EntregaDto { Id = 4, Feedback = "Original", Nota = 7m };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
         var feedback = LerCampo<FeedbackDto>(componente, "feedbackAtual")!;
@@ -148,7 +148,7 @@ public class DetalhesTccTests
     {
         // "Cancelar" no form inline: some o form (entregaEmAvaliacao null) e o rascunho é descartado.
         var componente = new DetalhesTcc();
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 9, Feedback = "Texto", Nota = 6m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 9, Feedback = "Texto", Nota = 6m });
 
         Invocar(componente, "FecharFormFeedback");
 
@@ -165,7 +165,7 @@ public class DetalhesTccTests
     {
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
-        var ata = new Acompanhamento
+        var ata = new AcompanhamentoResumoDto
         {
             Id = 15,
             DataReuniao = new DateTime(2026, 3, 10, 14, 30, 0, DateTimeKind.Utc),
@@ -187,7 +187,7 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
         var original = new DateTime(2026, 7, 14, 9, 0, 0, DateTimeKind.Utc);
-        var ata = new Acompanhamento { Id = 1, DataReuniao = original, Ata = "Ata" };
+        var ata = new AcompanhamentoResumoDto { Id = 1, DataReuniao = original, Ata = "Ata" };
 
         Invocar(componente, "PrepararEdicaoAcompanhamento", ata);
 
@@ -205,7 +205,7 @@ public class DetalhesTccTests
         var js = new FakeJsRuntime();
         DefinirInjetado(componente, "JSRuntime", js);
 
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 2, Ata = "Ata" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 2, Ata = "Ata" });
 
         var invocacao = Assert.Single(js.Invocacoes);
         Assert.Equal("window.scrollTo", invocacao.Identifier);
@@ -218,7 +218,7 @@ public class DetalhesTccTests
         // Edita um DTO próprio; a ata do histórico só muda depois do PUT + recarga.
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
-        var ata = new Acompanhamento { Id = 3, DataReuniao = new DateTime(2026, 1, 5), Ata = "Texto original" };
+        var ata = new AcompanhamentoResumoDto { Id = 3, DataReuniao = new DateTime(2026, 1, 5), Ata = "Texto original" };
 
         Invocar(componente, "PrepararEdicaoAcompanhamento", ata);
         LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata = "Texto editado";
@@ -232,8 +232,8 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
 
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 1, Ata = "Primeira" });
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 2, Ata = "Segunda" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 1, Ata = "Primeira" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 2, Ata = "Segunda" });
 
         Assert.Equal(2, LerCampo<int?>(componente, "acompanhamentoEmEdicaoId"));
         Assert.Equal("Segunda", LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata);
@@ -247,7 +247,7 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
         Invocar(componente, "PrepararEdicaoAcompanhamento",
-            new Acompanhamento { Id = 8, DataReuniao = new DateTime(2026, 2, 2), Ata = "Conteúdo" });
+            new AcompanhamentoResumoDto { Id = 8, DataReuniao = new DateTime(2026, 2, 2), Ata = "Conteúdo" });
 
         Invocar(componente, "CancelarEdicaoAcompanhamento");
 

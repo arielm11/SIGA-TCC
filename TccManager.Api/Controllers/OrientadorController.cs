@@ -87,7 +87,11 @@ public class OrientadorController : ControllerBase
 
         if (tcc == null) return NotFound("TCC não encontrado ou você não tem permissão para acessar.");
 
-        return Ok(tcc);
+        // Issue #144 (achado A3/B8): projeta para DTO em vez de devolver a entidade Tcc crua
+        // — antes vazava, entre outros, PrecisaTrocarSenha/LimiteOrientandos/Ativo do Aluno e
+        // o caminho interno de armazenamento das Entregas (mesma classe de risco do
+        // vazamento de SenhaHash corrigido na #137).
+        return Ok(TccDetalheDto.DeEntidade(tcc, nomeAluno: tcc.Aluno?.Nome));
     }
 
     [HttpPost("entregas/{IdEntrega}/feedback")]

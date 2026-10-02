@@ -286,7 +286,7 @@ public class StatusTccEmAndamento_GrupoA_Regressao_Tests
         var resposta = await client.GetAsync("/api/tcc/meu-tcc");
         resposta.EnsureSuccessStatusCode();
 
-        var tcc = await resposta.Content.ReadFromJsonAsync<Tcc>();
+        var tcc = await resposta.Content.ReadFromJsonAsync<TccDetalheDto>();
         Assert.Equal(IdTccEmAndamento, tcc!.Id);
         Assert.Equal(StatusTcc.EmAndamento, tcc.Status);
     }
@@ -301,7 +301,7 @@ public class StatusTccEmAndamento_GrupoA_Regressao_Tests
         var resposta = await client.GetAsync("/api/tcc/entregas");
         resposta.EnsureSuccessStatusCode();
 
-        var pagina = await resposta.Content.ReadFromJsonAsync<PagedResult<Entrega>>();
+        var pagina = await resposta.Content.ReadFromJsonAsync<PagedResult<EntregaDto>>();
         Assert.Equal(501, Assert.Single(pagina!.Items).Id);
     }
 }

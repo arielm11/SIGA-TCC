@@ -1,6 +1,7 @@
 using System.Reflection;
 using TccManager.Client.Pages.Aluno;
 using TccManager.Shared.Enums;
+using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
 using Xunit;
 
@@ -46,7 +47,7 @@ public class MeuTccTests
         return (int?)campo.GetValue(componente);
     }
 
-    private static bool InvocarFoiReprovadoNaBanca(MeuTcc componente, Tcc tcc)
+    private static bool InvocarFoiReprovadoNaBanca(MeuTcc componente, TccDetalheDto tcc)
     {
         var metodo = typeof(MeuTcc).GetMethod("FoiReprovadoNaBanca", Privados)
             ?? throw new MissingMethodException(nameof(MeuTcc), "FoiReprovadoNaBanca");
@@ -127,7 +128,7 @@ public class MeuTccTests
     public void FoiReprovadoNaBanca_SemEntregas_RetornaFalso()
     {
         var componente = new MeuTcc();
-        var tcc = new Tcc { Entregas = new List<Entrega>() };
+        var tcc = new TccDetalheDto { Entregas = new List<EntregaDto>() };
 
         Assert.False(InvocarFoiReprovadoNaBanca(componente, tcc));
     }
@@ -137,7 +138,7 @@ public class MeuTccTests
     {
         // Guarda de null explícita no método (tcc.Entregas != null && ...).
         var componente = new MeuTcc();
-        var tcc = new Tcc { Entregas = null! };
+        var tcc = new TccDetalheDto { Entregas = null! };
 
         Assert.False(InvocarFoiReprovadoNaBanca(componente, tcc));
     }
@@ -147,9 +148,9 @@ public class MeuTccTests
     {
         // Reprovado sem entrega Final = proposta rejeitada pelo orientador, não reprovação na banca.
         var componente = new MeuTcc();
-        var tcc = new Tcc
+        var tcc = new TccDetalheDto
         {
-            Entregas = new List<Entrega>
+            Entregas = new List<EntregaDto>
             {
                 new() { Tipo = TipoEntrega.Parcial },
                 new() { Tipo = TipoEntrega.Parcial }
@@ -163,9 +164,9 @@ public class MeuTccTests
     public void FoiReprovadoNaBanca_ComEntregaFinal_RetornaVerdadeiro()
     {
         var componente = new MeuTcc();
-        var tcc = new Tcc
+        var tcc = new TccDetalheDto
         {
-            Entregas = new List<Entrega> { new() { Tipo = TipoEntrega.Final } }
+            Entregas = new List<EntregaDto> { new() { Tipo = TipoEntrega.Final } }
         };
 
         Assert.True(InvocarFoiReprovadoNaBanca(componente, tcc));
@@ -175,9 +176,9 @@ public class MeuTccTests
     public void FoiReprovadoNaBanca_MisturaParcialEFinal_RetornaVerdadeiro()
     {
         var componente = new MeuTcc();
-        var tcc = new Tcc
+        var tcc = new TccDetalheDto
         {
-            Entregas = new List<Entrega>
+            Entregas = new List<EntregaDto>
             {
                 new() { Tipo = TipoEntrega.Parcial },
                 new() { Tipo = TipoEntrega.Final },

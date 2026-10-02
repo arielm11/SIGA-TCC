@@ -152,22 +152,22 @@
                             }
                             else
                             {
-                                <RadzenDataGrid @ref="gridEntregas" Data="@entregasFeitas" TItem="Entrega"
+                                <RadzenDataGrid @ref="gridEntregas" Data="@entregasFeitas" TItem="EntregaDto"
                                                 AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
                                                 AllowSorting="true" EmptyText="Nenhuma entrega realizada ainda." PageSizeText="Itens por página">
                                     <Columns>
-                                        <RadzenDataGridColumn TItem="Entrega" Property="Titulo" Title="Título" />
-                                        <RadzenDataGridColumn TItem="Entrega" Property="Tipo" Title="Tipo" Width="120px" TextAlign="TextAlign.Center">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="Titulo" Title="Título" />
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="Tipo" Title="Tipo" Width="120px" TextAlign="TextAlign.Center">
                                             <Template Context="entrega">
                                                 <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@entrega.Tipo.ToString()" />
                                             </Template>
                                         </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="Entrega" Property="DataEnvio" Title="Data de Envio" Width="170px">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="DataEnvio" Title="Data de Envio" Width="170px">
                                             <Template Context="entrega">
                                                 @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                                             </Template>
                                         </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="Entrega" Title="Parecer do Orientador" Sortable="false" Filterable="false" Width="260px">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Title="Parecer do Orientador" Sortable="false" Filterable="false" Width="260px">
                                             <Template Context="entrega">
                                                 <RadzenStack Gap="0.35rem">
                                                     @* Issue #81 (D13): reflete entrega.Status (veredito explícito), não mais a
@@ -369,7 +369,7 @@
 @code {
     private bool carregando = true;
     private bool enviando = false;
-    private Tcc? tccExistente;
+    private TccDetalheDto? tccExistente;
     private PropostaTccDto proposta = new();
     private string novaEntregaTitulo = "";
     private TipoEntrega novaEntregaTipo = TipoEntrega.Parcial;
@@ -378,7 +378,7 @@
         .ToList();
     private Radzen.FileInfo? arquivoSelecionado;
     private RadzenUpload? uploadEntregaRef;
-    private List<Entrega>? entregasFeitas;
+    private List<EntregaDto>? entregasFeitas;
     private int? entregaSelecionadaParaFeedback;
     private List<Acompanhamento>? meusAcompanhamentos;
     private BancaInfoDto? minhaBanca;
@@ -387,7 +387,7 @@
     // Issue #112 (RF01/6.4): lista de professores para o dropdown de seleção na submissão.
     private List<ProfessorOpcao> professoresOptions = new();
 
-    private RadzenDataGrid<Entrega>? gridEntregas;
+    private RadzenDataGrid<EntregaDto>? gridEntregas;
     private bool gridEntregasReloadFeita;
 
     protected override async Task OnInitializedAsync()
@@ -447,7 +447,7 @@
                 }
                 else
                 {
-                    tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
+                    tccExistente = await response.Content.ReadFromJsonAsync<TccDetalheDto>();
                     if (tccExistente != null && (tccExistente.Status == StatusTcc.Aprovado || tccExistente.Status == StatusTcc.EmAndamento))
                     {
                         await CarregarEntregas();
@@ -473,7 +473,7 @@
 
     private async Task CarregarEntregas()
     {
-        var entregasPaginado = await Http.GetFromJsonAsync<PagedResult<Entrega>>($"api/tcc/entregas?pageSize={PaginacaoQuery.MaxPageSize}");
+        var entregasPaginado = await Http.GetFromJsonAsync<PagedResult<EntregaDto>>($"api/tcc/entregas?pageSize={PaginacaoQuery.MaxPageSize}");
         entregasFeitas = entregasPaginado?.Items ?? new();
 
         meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
@@ -696,7 +696,7 @@
         }
     }
 
-    private bool FoiReprovadoNaBanca(Tcc tcc)
+    private bool FoiReprovadoNaBanca(TccDetalheDto tcc)
     {
         return tcc.Entregas != null && tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
     }

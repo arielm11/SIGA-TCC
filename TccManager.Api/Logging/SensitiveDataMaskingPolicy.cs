@@ -41,8 +41,7 @@ public class SensitiveDataMaskingPolicy : IDestructuringPolicy
 
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-        var hasSensitiveProperty = properties.Any(p =>
-            SensitivePropertyNames.Contains(p.Name, StringComparer.OrdinalIgnoreCase));
+        var hasSensitiveProperty = properties.Any(p => EhNomeSensivel(p.Name));
 
         if (!hasSensitiveProperty)
             return false;
@@ -54,7 +53,7 @@ public class SensitiveDataMaskingPolicy : IDestructuringPolicy
             if (property.GetIndexParameters().Length > 0)
                 continue;
 
-            var isSensitive = SensitivePropertyNames.Contains(property.Name, StringComparer.OrdinalIgnoreCase);
+            var isSensitive = EhNomeSensivel(property.Name);
 
             LogEventPropertyValue propertyValue;
 
@@ -83,4 +82,12 @@ public class SensitiveDataMaskingPolicy : IDestructuringPolicy
         result = new StructureValue(logEventProperties, type.Name);
         return true;
     }
+
+    // Issue #144 (achado A2): comparação por substring, não igualdade exata — nomes
+    // compostos que já existem no código atual ("RefreshToken", "SenhaAtual", "NovaSenha",
+    // "TokenHash", "ReplacedByTokenHash") não batiam com a lista por igualdade e passavam
+    // sem mascaramento, apesar de a lista pretender cobrir exatamente essa classe de campo.
+    private static bool EhNomeSensivel(string nomePropriedade) =>
+        SensitivePropertyNames.Any(palavra =>
+            nomePropriedade.Contains(palavra, StringComparison.OrdinalIgnoreCase));
 }
