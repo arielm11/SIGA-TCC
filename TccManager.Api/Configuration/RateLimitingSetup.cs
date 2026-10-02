@@ -21,6 +21,7 @@ namespace TccManager.Api.Configuration;
 public static class RateLimitingSetup
 {
     public const string LoginPolicyName = "login";
+    public const string LogoutPolicyName = "logout";
     public const string RefreshPolicyName = "refresh";
     public const string RascunhoPublicoPolicyName = "rascunho-publico";
     public const string GeracaoPdfPolicyName = "geracao-pdf";
@@ -34,6 +35,14 @@ public static class RateLimitingSetup
         var loginPermitLimit = configuration.GetValue<int?>("RateLimiting:Login:PermitLimit") ?? 5;
         var loginWindowSeconds = configuration.GetValue<int?>("RateLimiting:Login:WindowSeconds") ?? 60;
         var loginQueueLimit = configuration.GetValue<int?>("RateLimiting:Login:QueueLimit") ?? 0;
+
+        // Issue #142 (achado M2): Logout usava a mesma política "login", compartilhando a
+        // cota — um atacante martelando /login podia bloquear o logout de usuários legítimos,
+        // e vice-versa. Logout não é superfície de força bruta (não aceita senha), então tem
+        // limite mais generoso, mesmo raciocínio de "refresh".
+        var logoutPermitLimit = configuration.GetValue<int?>("RateLimiting:Logout:PermitLimit") ?? 15;
+        var logoutWindowSeconds = configuration.GetValue<int?>("RateLimiting:Logout:WindowSeconds") ?? 60;
+        var logoutQueueLimit = configuration.GetValue<int?>("RateLimiting:Logout:QueueLimit") ?? 0;
 
         // /refresh acontece em segundo plano com frequência maior que login manual
         // (renovação silenciosa do cliente) — limite mais generoso que "login", mas
@@ -133,6 +142,16 @@ public static class RateLimitingSetup
                         PermitLimit = loginPermitLimit,
                         Window = TimeSpan.FromSeconds(loginWindowSeconds),
                         QueueLimit = loginQueueLimit
+                    }));
+
+            options.AddPolicy(LogoutPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = logoutPermitLimit,
+                        Window = TimeSpan.FromSeconds(logoutWindowSeconds),
+                        QueueLimit = logoutQueueLimit
                     }));
 
             options.AddPolicy(RefreshPolicyName, context =>

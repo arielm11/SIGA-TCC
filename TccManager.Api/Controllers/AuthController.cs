@@ -120,7 +120,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("logout")]
     [AllowAnonymous]
-    [EnableRateLimiting("login")]
+    [EnableRateLimiting(RateLimitingSetup.LogoutPolicyName)]
     public async Task<IActionResult> Logout([FromBody] LogoutRequestDto dto)
     {
         if (!string.IsNullOrWhiteSpace(dto.RefreshToken))

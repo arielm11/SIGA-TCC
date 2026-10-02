@@ -111,10 +111,12 @@ public class RateLimitingRefreshTests
     }
 
     [Fact]
-    public async Task LogoutContinuaNaPoliticaLogin_ConsumindoOMesmoOrcamentoDoLogin()
+    public async Task Logout_NaoCompartilhaMaisOOrcamentoDoLogin()
     {
-        // A issue #60 moveu apenas o /refresh: /login e /logout seguem em "login".
-        // Este teste trava esse contorno para que uma mudança futura seja deliberada.
+        // Issue #142 (achado M2): /logout ganhou política própria ("logout", 15 req/60s) —
+        // antes compartilhava "login" (5 req/60s), o que fazia um atacante martelando /login
+        // conseguir bloquear o logout de usuários legítimos (e vice-versa). Substitui o teste
+        // anterior, que travava deliberadamente o comportamento antigo.
         var factory = new TccApiFactory();
         var client = factory.CreateClient();
 
@@ -123,9 +125,33 @@ public class RateLimitingRefreshTests
             await client.PostAsJsonAsync(RotaLogin, CredencialInvalida());
         }
 
+        var loginBloqueado = await client.PostAsJsonAsync(RotaLogin, CredencialInvalida());
+        Assert.Equal(HttpStatusCode.TooManyRequests, loginBloqueado.StatusCode);
+
         var logout = await client.PostAsJsonAsync("/api/auth/logout",
             new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
 
-        Assert.Equal(HttpStatusCode.TooManyRequests, logout.StatusCode);
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, logout.StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_AcimaDoProprioLimite_Retorna429ComRetryAfter()
+    {
+        const int limiteLogout = 15;
+        var factory = new TccApiFactory();
+        var client = factory.CreateClient();
+
+        for (var i = 1; i <= limiteLogout; i++)
+        {
+            var resposta = await client.PostAsJsonAsync("/api/auth/logout",
+                new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
+            Assert.NotEqual(HttpStatusCode.TooManyRequests, resposta.StatusCode);
+        }
+
+        var bloqueado = await client.PostAsJsonAsync("/api/auth/logout",
+            new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, bloqueado.StatusCode);
+        Assert.True(bloqueado.Headers.Contains("Retry-After"));
     }
 }
