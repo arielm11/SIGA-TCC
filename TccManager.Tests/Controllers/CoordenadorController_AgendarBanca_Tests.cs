@@ -1,8 +1,10 @@
-﻿using System.Net.Http.Json;
+﻿using System.Net;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Controllers;
@@ -237,5 +239,161 @@ public class CoordenadorController_AgendarBanca_Tests
         var utcEsperado = DateTime.SpecifyKind(dataHoraEmBrasilia.AddHours(3), DateTimeKind.Utc);
 
         Assert.Equal(utcEsperado, banca.DataHora);
+    }
+
+    // ── Issue #139 (achado M1): validação de avaliadores ──────────────────────────────────
+
+    [Fact]
+    public async Task ProfessorDuplicadoNaLista_ContaComoUm_RN05Falha()
+    {
+        // Arrange — [21, 21] não é "2 avaliadores", é 1 avaliador repetido.
+        var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idProfessorAvaliador1, idProfessorAvaliador1 },
+            MembrosExternosIds = new List<int>()
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tccId}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var context = factory.CriarContextoDireto();
+        Assert.False(await context.Banca.AnyAsync(b => b.TccId == tccId));
+    }
+
+    [Fact]
+    public async Task AlunoDoProprioTcc_NaListaDeProfessores_EExcluidoERN05Falha()
+    {
+        // Arrange — inclui o próprio Aluno do TCC em ProfessoresIds; mesmo que ele "exista",
+        // precisa ser excluído do cômputo (não é Professor e não pode avaliar o próprio TCC).
+        var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idAluno, idProfessorAvaliador1 },
+            MembrosExternosIds = new List<int>()
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tccId}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProfessorIdQueNaoEProfessor_DeveRetornarBadRequest()
+    {
+        // Arrange — id de um Aluno qualquer (não vinculado ao TCC) na lista de avaliadores:
+        // sem a validação de Tipo == Professor, isso daria a esse Aluno acesso de download
+        // das entregas de outro Aluno via DownloadEntrega.
+        var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
+        using var contextSetup = factory.CriarContextoDireto();
+        const int idOutroAluno = 99;
+        contextSetup.Usuarios.Add(new Usuario { Id = idOutroAluno, Nome = "Outro Aluno", Email = "outro@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true });
+        await contextSetup.SaveChangesAsync();
+
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idOutroAluno, idProfessorAvaliador1 },
+            MembrosExternosIds = new List<int>()
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tccId}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var context = factory.CriarContextoDireto();
+        Assert.False(await context.Banca.AnyAsync(b => b.TccId == tccId));
+    }
+
+    [Fact]
+    public async Task ProfessorInativo_DeveRetornarBadRequest()
+    {
+        var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
+        using var contextSetup = factory.CriarContextoDireto();
+        const int idProfessorInativo = 98;
+        contextSetup.Usuarios.Add(new Usuario { Id = idProfessorInativo, Nome = "Prof Inativo", Email = "inativo@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Professor, Ativo = false });
+        await contextSetup.SaveChangesAsync();
+
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idProfessorInativo, idProfessorAvaliador1 },
+            MembrosExternosIds = new List<int>()
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tccId}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MembroExternoInexistente_DeveRetornarBadRequest()
+    {
+        var (factory, tccId) = await PrepararCenarioComTccAguardandoDefesa();
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idProfessorAvaliador1 },
+            MembrosExternosIds = new List<int> { 9999 }
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tccId}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ViolacaoDoIndiceUnicoDeBancaPorTcc_DeveRetornar409()
+    {
+        // Arrange — simula a corrida real que o índice único em Banca.TccId existe para
+        // proteger (duplo clique / 2 Coordenadores simultâneos): o pre-check de Status não
+        // impede a segunda requisição de chegar ao SaveChanges.
+        var factory = new SaveChangesFalhaBancaDuplicadaApiFactory();
+        using var contextSetup = factory.CriarContextoDireto();
+
+        var aluno = new Usuario { Id = idAluno, Nome = "Aluno Teste", Email = "aluno@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Aluno, Ativo = true };
+        var orientador = new Usuario { Id = idProfessorOrientador, Nome = "Orientador Teste", Email = "orientador@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Professor, Ativo = true };
+        var avaliador1 = new Usuario { Id = idProfessorAvaliador1, Nome = "Avaliador Um", Email = "avaliador1@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Professor, Ativo = true };
+        var avaliador2 = new Usuario { Id = idProfessorAvaliador2, Nome = "Avaliador Dois", Email = "avaliador2@teste.com", SenhaHash = "x", Tipo = TipoUsuario.Professor, Ativo = true };
+        contextSetup.Usuarios.AddRange(aluno, orientador, avaliador1, avaliador2);
+
+        var tcc = new Tcc
+        {
+            Titulo = "TCC de Teste",
+            Resumo = "Resumo de teste",
+            AlunoId = idAluno,
+            OrientadorId = idProfessorOrientador,
+            Status = StatusTcc.AguardandoDefesa,
+            DataCriacao = DateTime.UtcNow
+        };
+        contextSetup.Tccs.Add(tcc);
+        await contextSetup.SaveChangesAsync();
+
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var dto = new AgendarBancaDto
+        {
+            DataHora = DateTime.Now.AddDays(7),
+            Local = "Sala 101",
+            ProfessoresIds = new List<int> { idProfessorAvaliador1, idProfessorAvaliador2 },
+            MembrosExternosIds = new List<int>()
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/coordenador/tcc/{tcc.Id}/banca", dto);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 }

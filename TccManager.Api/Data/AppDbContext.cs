@@ -61,6 +61,15 @@ public class AppDbContext : DbContext
                 .HasDatabaseName("UX_Entregas_TccId_Final");
         });
 
+        modelBuilder.Entity<Banca>(entity =>
+        {
+            // Issue #139 (achado M3): backstop atômico contra 2 bancas agendadas para o mesmo
+            // TCC — não há fluxo de reagendar/excluir Banca no sistema, então é 1:0..1 com
+            // Tcc, sem filtro. CoordenadorController.AgendarBanca trata a violação (2601/2627)
+            // devolvendo 409.
+            entity.HasIndex(b => b.TccId).IsUnique();
+        });
+
         modelBuilder.Entity<BancaAvaliador>()
             .HasOne(ba => ba.Professor)
             .WithMany()
