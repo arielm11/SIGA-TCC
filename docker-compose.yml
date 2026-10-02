@@ -8,7 +8,11 @@ services:
       # Falha ao subir se a variável não estiver definida — ver .env.example.
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?}
     ports:
-      - "${MSSQL_PORT:-1433}:1433"
+      # Issue #149 (achado B10): sem o host 127.0.0.1 explícito, o Docker publica a porta em
+      # todas as interfaces de rede (0.0.0.0) — o usuário SA fica acessível por qualquer
+      # máquina na mesma rede local, ignorando regras de firewall do host (o Docker manipula
+      # o netfilter diretamente). Este ambiente é só para desenvolvimento local (ver README).
+      - "127.0.0.1:${MSSQL_PORT:-1433}:1433"
     volumes:
       - siga-sqlserver-data:/var/opt/mssql
     healthcheck:
