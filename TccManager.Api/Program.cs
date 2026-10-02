@@ -254,7 +254,27 @@ try
         };
     });
 
+    // Issue #148 (achado B9): sem UseHsts, o primeiro acesso via HTTP (antes do redirect para
+    // HTTPS já estar "memorizado" pelo navegador) fica sujeito a SSL-strip. Só fora de
+    // Development: o certificado de desenvolvimento autoassinado não deve ganhar Strict-
+    // -Transport-Security (o navegador passaria a exigir HTTPS também em localhost por até o
+    // MaxAge configurado, incômodo para quem alterna entre ambientes na mesma máquina).
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHsts();
+    }
+
     app.UseHttpsRedirection();
+
+    // Issue #148 (achado B9): X-Content-Type-Options impede o navegador de tentar adivinhar
+    // o tipo de um corpo de resposta diferente do Content-Type declarado (MIME sniffing) —
+    // defesa em profundidade barata, sem efeito colateral conhecido, em todas as respostas da
+    // API (JSON e os downloads de PDF/arquivo).
+    app.Use(async (context, next) =>
+    {
+        context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+        await next();
+    });
 
     // Sem UseStaticFiles(): wwwroot/uploads (entregas/atas/propostas) nunca deve ser servido
     // sem autenticação/autorização. O único uso de wwwroot hoje é esse diretório de uploads,

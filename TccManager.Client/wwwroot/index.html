@@ -4,6 +4,23 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+        Issue #148 (achado B9): defesa em profundidade contra injeção de script/estilo/objeto
+        de terceiros. object-src/base-uri restritos sem efeito colateral conhecido.
+        script-src/style-src precisam de 'unsafe-inline' (os dois <script> inline abaixo, sem
+        infraestrutura de nonce num index.html estático) e script-src precisa de
+        'wasm-unsafe-eval' (exigência própria do runtime do Blazor WebAssembly para compilar o
+        módulo .wasm) — CSP mais estrita exigiria nonce por build, fora de escopo desta issue.
+        connect-src permite qualquer origem https:/wss: (não restrito a 'self'): a URL base da
+        API é configurada em runtime (appsettings*.json do Client) e pode estar em outra porta/
+        subdomínio — não é conhecida em build-time deste arquivo estático. Ainda bloqueia
+        downgrade para http:// não criptografado.
+        frame-ancestors é ignorado por especificação quando entregue via <meta> (só tem efeito
+        via header HTTP) — precisa ser configurado na camada de hospedagem estática do Client
+        (nginx/IIS/etc.), fora do código deste repositório.
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" />
     <title>TccManager.Client</title>
     <base href="/" />
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
