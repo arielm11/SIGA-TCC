@@ -132,6 +132,12 @@ public class OrientadorController : ControllerBase
             return Conflict("Esta entrega foi alterada por outra ação simultânea. Atualize a página e tente novamente.");
         }
 
+        // Issue #143 (achado M6): altera a nota da entrega e não tinha nenhum registro de
+        // auditoria. Nunca o texto do parecer, só ids/nota.
+        _auditLogger.LogInformation(
+            "Feedback registrado. EntregaId: {EntregaId}, TccId: {TccId}, OrientadorId: {OrientadorId}, Nota: {Nota}",
+            entrega.Id, entrega.TccId, profId, entrega.Nota);
+
         await _notificationService.NotificarFeedbackRegistradoAsync(entrega.Id);
 
         return Ok("Feedback registrado com sucesso.");
@@ -289,6 +295,12 @@ public class OrientadorController : ControllerBase
         _context.Acompanhamentos.Add(novoAcompanhamento);
         await _context.SaveChangesAsync();
 
+        // Issue #143 (achado M6): CRUD de acompanhamentos não tinha nenhum registro de
+        // auditoria. Só ids, nunca o texto da Ata (nunca logar texto livre).
+        _auditLogger.LogInformation(
+            "Acompanhamento registrado. TccId: {TccId}, AcompanhamentoId: {AcompanhamentoId}, OrientadorId: {OrientadorId}",
+            idTcc, novoAcompanhamento.Id, profId);
+
         return Ok("Acompanhamento registrado com sucesso.");
     }
 
@@ -309,6 +321,11 @@ public class OrientadorController : ControllerBase
         acompanhamento.Ata = _sanitizerService.Sanitizar(dto.Ata)!;
 
         await _context.SaveChangesAsync();
+
+        _auditLogger.LogInformation(
+            "Acompanhamento editado. TccId: {TccId}, AcompanhamentoId: {AcompanhamentoId}, OrientadorId: {OrientadorId}",
+            idTcc, idAcompanhamento, profId);
+
         return Ok("Acompanhamento atualizado com sucesso.");
     }
 
@@ -327,6 +344,11 @@ public class OrientadorController : ControllerBase
 
         _context.Acompanhamentos.Remove(acompanhamento);
         await _context.SaveChangesAsync();
+
+        _auditLogger.LogInformation(
+            "Acompanhamento excluído. TccId: {TccId}, AcompanhamentoId: {AcompanhamentoId}, OrientadorId: {OrientadorId}",
+            idTcc, idAcompanhamento, profId);
+
         return Ok("Acompanhamento deletado com sucesso.");
     }
 

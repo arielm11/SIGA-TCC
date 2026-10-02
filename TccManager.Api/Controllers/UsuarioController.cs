@@ -25,9 +25,17 @@ public class UsuarioController : ControllerBase
     private readonly IAuthTokenService _authTokenService;
     private readonly ILogger<UsuarioController> _logger;
 
-    public UsuarioController(AppDbContext context, IAuthTokenService authTokenService, ILogger<UsuarioController> logger)
+    // Issue #143 (achado M6/D3): categoria dedicada de auditoria, mesmo padrão de
+    // AuthController/CoordenadorController/OrientadorController/RascunhoAtaController/
+    // TccController. Antes desta correção, todo evento de criação/exclusão/mudança de
+    // papel-status de usuário ia para o logger genérico — um filtro por
+    // SourceContext == "TccManager.Api.Auditoria" não encontrava nenhum desses eventos.
+    private readonly ILogger _auditLogger;
+
+    public UsuarioController(AppDbContext context, IAuthTokenService authTokenService, ILogger<UsuarioController> logger, ILoggerFactory loggerFactory)
     {
         _context = context;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
         _authTokenService = authTokenService;
         _logger = logger;
     }
@@ -81,7 +89,7 @@ public class UsuarioController : ControllerBase
     {
         if (!PodeAcessarOuEditar(id))
         {
-            _logger.LogWarning(
+            _auditLogger.LogWarning(
                 "Acesso negado em GET /api/usuario/{{id}}. Solicitante: {SolicitanteId}, alvo: {AlvoId}",
                 ObterIdClaimAutenticado() ?? "desconhecido",
                 id);
@@ -145,14 +153,14 @@ public class UsuarioController : ControllerBase
             // O "when" restringe o catch à violação de unicidade (2601/2627) —
             // outras causas de DbUpdateException (banco indisponível, outra
             // constraint) propagam em vez de virar um falso "email já em uso".
-            _logger.LogWarning("Falha ao salvar usuário em POST /api/usuario: possível violação de restrição de unicidade de email.");
+            _auditLogger.LogWarning("Falha ao salvar usuário em POST /api/usuario: possível violação de restrição de unicidade de email.");
             return Conflict("Não foi possível salvar o usuário. Verifique se o email já está em uso.");
         }
 
         // Issue #90 (achado A09-2): criação de usuário (inclusive de um Admin) não tinha
         // nenhum registro de auditoria — paridade com os demais eventos sensíveis deste
         // controller. Nunca loga e-mail (LGPD), só o id gerado e o tipo.
-        _logger.LogWarning(
+        _auditLogger.LogInformation(
             "Usuário criado com sucesso via POST /api/usuario. Admin: {AdminId}, novo usuário: {NovoUsuarioId}, Tipo: {Tipo}",
             ObterIdClaimAutenticado() ?? "desconhecido",
             newUsuario.Id,
@@ -175,7 +183,7 @@ public class UsuarioController : ControllerBase
     {
         if (!PodeAcessarOuEditar(id))
         {
-            _logger.LogWarning(
+            _auditLogger.LogWarning(
                 "Acesso negado em PUT /api/usuario/{{id}}. Solicitante: {SolicitanteId}, alvo: {AlvoId}",
                 ObterIdClaimAutenticado() ?? "desconhecido",
                 id);
@@ -204,7 +212,7 @@ public class UsuarioController : ControllerBase
         {
             if (string.IsNullOrEmpty(dto.SenhaAtual) || !BCrypt.Net.BCrypt.Verify(dto.SenhaAtual, usuario.SenhaHash))
             {
-                _logger.LogWarning(
+                _auditLogger.LogWarning(
                     "Autoedição de senha/e-mail rejeitada em PUT /api/usuario/{{id}}: senha atual ausente ou incorreta. Alvo: {AlvoId}",
                     id);
                 return BadRequest("Senha atual incorreta.");
@@ -216,6 +224,12 @@ public class UsuarioController : ControllerBase
         // continua significando "manter a atual", comportamento já existente).
         if (!string.IsNullOrEmpty(dto.Senha) && !PoliticaSenha.Valida(dto.Senha, dto.Email, out var motivoSenhaEdicao))
             return BadRequest(motivoSenhaEdicao);
+
+        // Issue #143 (achado M6): capturado antes do overwrite, para o log de auditoria
+        // abaixo — troca de senha/e-mail só era auditada via revogação de sessão (#140), sem
+        // nenhum evento de auditoria explícito dizendo o quê mudou.
+        var emailMudou = dto.Email != usuario.Email;
+        var senhaMudou = !string.IsNullOrEmpty(dto.Senha);
 
         usuario.Nome = dto.Nome;
         usuario.Email = dto.Email;
@@ -256,7 +270,7 @@ public class UsuarioController : ControllerBase
                     bloqueadoPorUnicoAdmin = true;
                     mensagemBloqueio = "Não é possível remover o papel de Admin ou desativar o único Admin ativo do sistema.";
 
-                    _logger.LogWarning(
+                    _auditLogger.LogWarning(
                         "Alteração de campos sensíveis bloqueada em PUT /api/usuario/{{id}}: alvo é o único Admin ativo do sistema. Admin solicitante: {AdminId}, alvo: {AlvoId}, Tipo solicitado: {TipoSolicitado}, Ativo solicitado: {AtivoSolicitado}",
                         ObterIdClaimAutenticado() ?? "desconhecido",
                         id,
@@ -270,7 +284,7 @@ public class UsuarioController : ControllerBase
 
                     if (tipoAntigo != usuario.Tipo || ativoAntigo != usuario.Ativo)
                     {
-                        _logger.LogWarning(
+                        _auditLogger.LogInformation(
                             "Alteração de campos sensíveis em PUT /api/usuario/{{id}}. Admin: {AdminId}, alvo: {AlvoId}, Tipo: {TipoAntigo} -> {TipoNovo}, Ativo: {AtivoAntigo} -> {AtivoNovo}",
                             ObterIdClaimAutenticado() ?? "desconhecido",
                             id,
@@ -316,7 +330,7 @@ public class UsuarioController : ControllerBase
                 // O "when" restringe o catch à violação de unicidade (2601/2627) —
                 // outras causas de DbUpdateException (banco indisponível, outra
                 // constraint) propagam em vez de virar um falso "email já em uso".
-                _logger.LogWarning(
+                _auditLogger.LogWarning(
                     "Falha ao salvar usuário em PUT /api/usuario/{{id}}: possível violação de restrição de unicidade de email. Alvo: {AlvoId}",
                     id);
                 return Conflict("Não foi possível salvar o usuário. Verifique se o email já está em uso.");
@@ -324,6 +338,19 @@ public class UsuarioController : ControllerBase
 
             if (transacao != null)
                 await transacao.CommitAsync();
+
+            // Issue #143 (achado M6): troca de senha/e-mail não tinha nenhum registro de
+            // auditoria explícito (só o efeito colateral da revogação de sessão, #140).
+            // Nunca loga o e-mail em si (LGPD), só se mudou.
+            if (emailMudou || senhaMudou)
+            {
+                _auditLogger.LogInformation(
+                    "Dados sensíveis alterados em PUT /api/usuario/{{id}}. Solicitante: {SolicitanteId}, alvo: {AlvoId}, EmailMudou: {EmailMudou}, SenhaMudou: {SenhaMudou}",
+                    ObterIdClaimAutenticado() ?? "desconhecido",
+                    id,
+                    emailMudou,
+                    senhaMudou);
+            }
 
             // Issue #140: revogação best-effort, após o commit da mudança principal — mesmo
             // padrão de RascunhoAtaTokenService.RevogarTodosTokensDoMembroAsync (chamada
@@ -381,7 +408,7 @@ public class UsuarioController : ControllerBase
             {
                 // Issue #90 (achado A09-2): recusa de DELETE não tinha nenhum registro de
                 // auditoria — paridade com a recusa equivalente do PUT, acima.
-                _logger.LogWarning(
+                _auditLogger.LogWarning(
                     "Exclusão recusada em DELETE /api/usuario/{{id}}: alvo é o único Admin ativo do sistema. Admin solicitante: {AdminId}, alvo: {AlvoId}",
                     ObterIdClaimAutenticado() ?? "desconhecido",
                     id);
@@ -414,7 +441,7 @@ public class UsuarioController : ControllerBase
                 // acima (ex.: vínculo futuro ainda não previsto aqui) — mesmo padrão de
                 // Create/UpdateUsuario, agora com o "when" e o SqlErrorNumber logado em
                 // vez de um catch genérico e cru (nunca ex.Message: pode trazer dados).
-                _logger.LogWarning(
+                _auditLogger.LogWarning(
                     "Falha ao excluir usuário em DELETE /api/usuario/{{id}}: possível violação de integridade referencial (SqlErrorNumber {SqlErrorNumber}). Alvo: {AlvoId}",
                     sqlEx.Number,
                     id);
@@ -426,7 +453,7 @@ public class UsuarioController : ControllerBase
 
             // Issue #90 (achado A09-2): exclusão bem-sucedida (destrutiva, com cascade)
             // não tinha nenhum registro de auditoria.
-            _logger.LogWarning(
+            _auditLogger.LogInformation(
                 "Usuário excluído com sucesso via DELETE /api/usuario/{{id}}. Admin: {AdminId}, alvo: {AlvoId}",
                 ObterIdClaimAutenticado() ?? "desconhecido",
                 id);

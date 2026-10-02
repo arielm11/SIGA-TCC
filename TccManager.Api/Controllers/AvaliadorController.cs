@@ -20,10 +20,18 @@ public class AvaliadorController : ControllerBase
     private readonly AppDbContext _context;
     private readonly IAtaPdfService _ataPdfService;
 
-    public AvaliadorController(AppDbContext context, IAtaPdfService ataPdfService)
+    // Issue #143 (achado M6/D4): este controller não tinha nenhum ILogger — nem acesso
+    // negado nem concedido ao rascunho da ata (documento sensível antes do resultado da
+    // banca ser público) era registrado, inconsistente com
+    // CoordenadorController.GetAtaAssinada. Mesma categoria dedicada dos demais
+    // controllers.
+    private readonly ILogger _auditLogger;
+
+    public AvaliadorController(AppDbContext context, IAtaPdfService ataPdfService, ILoggerFactory loggerFactory)
     {
         _context = context;
         _ataPdfService = ataPdfService;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("meus-convites")]
@@ -93,9 +101,21 @@ public class AvaliadorController : ControllerBase
             .AnyAsync(ba => ba.BancaId == idBanca && ba.ProfessorId == profId);
 
         if (!ehAvaliadorDaBanca)
+        {
+            _auditLogger.LogWarning(
+                "Acesso negado ao rascunho da ata. Solicitante: {SolicitanteId}, BancaId: {BancaId}",
+                profId, idBanca);
             return Forbid();
+        }
 
         var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);
+
+        if (resultado.Status == AtaPdfResultadoStatus.Sucesso)
+        {
+            _auditLogger.LogInformation(
+                "Download do rascunho da ata concedido. Solicitante: {SolicitanteId}, BancaId: {BancaId}",
+                profId, idBanca);
+        }
 
         return resultado.Status switch
         {
