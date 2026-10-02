@@ -37,4 +37,12 @@ public interface IAuthTokenService
     /// revogado não gera erro.
     /// </summary>
     Task LogoutAsync(string refreshTokenBruto);
+
+    /// <summary>
+    /// Issue #140 (achados M5/B4): revoga todos os refresh tokens ativos do usuário, sem
+    /// emitir um novo par — usado por <c>UsuarioController.UpdateUsuario</c> sempre que a
+    /// senha do usuário muda (por qualquer caminho) ou quando um Admin altera o papel/status
+    /// Ativo de outro usuário. Idempotente: usuário sem sessão ativa não gera erro.
+    /// </summary>
+    Task RevokeAllSessionsAsync(int usuarioId);
 }

@@ -332,6 +332,7 @@ public class UsuarioController_Seguranca_Tests
             Nome = "Aluno Editado",
             Email = "aluno-editado@teste.com",
             Senha = string.Empty,
+            SenhaAtual = SenhaOriginal,
             Tipo = TipoUsuario.Admin,
             Ativo = false
         };
@@ -356,9 +357,9 @@ public class UsuarioController_Seguranca_Tests
     }
 
     [Theory]
-    [InlineData(IdProfessor, "Professor", TipoUsuario.Professor)]
-    [InlineData(IdCoordenador, "Coordenador", TipoUsuario.Coordenador)]
-    public async Task UpdateUsuario_AutoEdicao_NaoAdmin_NaoAlteraTipo(int idChamador, string role, TipoUsuario tipoOriginal)
+    [InlineData(IdProfessor, "Professor", TipoUsuario.Professor, SenhaOriginal + "-prof")]
+    [InlineData(IdCoordenador, "Coordenador", TipoUsuario.Coordenador, SenhaOriginal + "-coord")]
+    public async Task UpdateUsuario_AutoEdicao_NaoAdmin_NaoAlteraTipo(int idChamador, string role, TipoUsuario tipoOriginal, string senhaAtual)
     {
         using var factory = await CriarFactoryComUsuariosAsync();
         var client = factory.CreateClientAutenticado(idChamador, role);
@@ -369,6 +370,7 @@ public class UsuarioController_Seguranca_Tests
             Nome = "Nome Alterado",
             Email = $"alterado-{idChamador}@teste.com",
             Senha = string.Empty,
+            SenhaAtual = senhaAtual,
             Tipo = TipoUsuario.Admin,
             Ativo = false
         };
@@ -396,6 +398,7 @@ public class UsuarioController_Seguranca_Tests
             Nome = "Aluno Teste",
             Email = "aluno@teste.com",
             Senha = "nova-senha-789",
+            SenhaAtual = SenhaOriginal,
             Tipo = TipoUsuario.Aluno,
             Ativo = true
         };
