@@ -79,7 +79,10 @@ public class TccController : ControllerBase
                 .FirstOrDefaultAsync();
         }
 
-        return Ok(tcc);
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Tcc crua —
+        // mesma classe de risco do vazamento de SenhaHash corrigido na #137 (qualquer campo
+        // novo em Tcc/Usuario sem [JsonIgnore] vazava automaticamente por este endpoint).
+        return Ok(TccDetalheDto.DeEntidade(tcc));
     }
 
     [HttpGet("professores")]
@@ -153,7 +156,8 @@ public class TccController : ControllerBase
         if (tcc.OrientadorSolicitadoId != null)
             await _notificationService.NotificarPropostaSolicitadaAsync(tcc.Id);
 
-        return Ok(tcc);
+        // Issue #144 (achado A3): mesma projeção de GetMeuTcc, pelo mesmo motivo.
+        return Ok(TccDetalheDto.DeEntidade(tcc));
     }
 
     [HttpDelete("proposta/{id}")]
@@ -190,10 +194,22 @@ public class TccController : ControllerBase
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado, cancellationToken);
         if (tcc == null) return NotFound("TCC não encontrado.");
 
-        var entregas = await _context.Entregas
+        var pagina = await _context.Entregas
             .Where(e => e.TccId == tcc.Id)
             .OrderByDescending(e => e.DataEnvio)
             .ToPagedResultAsync(paginacao, cancellationToken);
+
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Entrega
+        // crua (não expõe ArquivoCaminho, mesma classe de risco das demais correções desta
+        // issue).
+        var entregas = new PagedResult<EntregaDto>
+        {
+            Items = pagina.Items.Select(EntregaDto.DeEntidade).ToList(),
+            TotalCount = pagina.TotalCount,
+            TotalPages = pagina.TotalPages,
+            CurrentPage = pagina.CurrentPage,
+            PageSize = pagina.PageSize
+        };
 
         return Ok(entregas);
     }
@@ -371,7 +387,9 @@ public class TccController : ControllerBase
                 entrega.Tipo);
         }
 
-        return Ok(entrega);
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Entrega
+        // crua.
+        return Ok(EntregaDto.DeEntidade(entrega));
     }
 
     // Remove o arquivo já gravado em disco quando o SaveChangesAsync que persistiria a
@@ -506,9 +524,17 @@ public class TccController : ControllerBase
         if (tcc == null)
             return NotFound("TCC não encontrado.");
 
+        // Issue #144 (achado A4): projeta para DTO em vez de devolver List<Acompanhamento>
+        // cru.
         var acompanhamentos = await _context.Acompanhamentos
             .Where(a => a.TccId == tcc.Id)
             .OrderByDescending(a => a.DataReuniao)
+            .Select(a => new AcompanhamentoResumoDto
+            {
+                Id = a.Id,
+                DataReuniao = a.DataReuniao,
+                Ata = a.Ata
+            })
             .ToListAsync();
 
         return Ok(acompanhamentos);

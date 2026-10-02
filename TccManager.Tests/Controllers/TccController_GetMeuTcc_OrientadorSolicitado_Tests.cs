@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
 using Xunit;
@@ -48,7 +49,7 @@ public class TccController_GetMeuTcc_OrientadorSolicitado_Tests
         var response = await client.GetAsync("/api/tcc/meu-tcc");
 
         response.EnsureSuccessStatusCode();
-        var tcc = await response.Content.ReadFromJsonAsync<Tcc>();
+        var tcc = await response.Content.ReadFromJsonAsync<TccDetalheDto>();
 
         Assert.NotNull(tcc);
         Assert.Equal("Professor Desejado", tcc!.NomeOrientadorSolicitado);
@@ -77,7 +78,7 @@ public class TccController_GetMeuTcc_OrientadorSolicitado_Tests
         var response = await client.GetAsync("/api/tcc/meu-tcc");
 
         response.EnsureSuccessStatusCode();
-        var tcc = await response.Content.ReadFromJsonAsync<Tcc>();
+        var tcc = await response.Content.ReadFromJsonAsync<TccDetalheDto>();
 
         Assert.NotNull(tcc);
         Assert.Null(tcc!.NomeOrientadorSolicitado);

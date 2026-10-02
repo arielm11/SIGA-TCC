@@ -102,7 +102,7 @@ public class SanitizacaoXss_Integracao_Tests
         Assert.DoesNotContain("<script", corpo, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("</script>", corpo, StringComparison.OrdinalIgnoreCase);
 
-        var tccRetornado = await response.Content.ReadFromJsonAsync<Tcc>();
+        var tccRetornado = await response.Content.ReadFromJsonAsync<TccDetalheDto>();
         Assert.NotNull(tccRetornado);
         Assert.DoesNotContain("<", tccRetornado!.Titulo);
         Assert.DoesNotContain("<", tccRetornado.Resumo);

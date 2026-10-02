@@ -32,7 +32,7 @@
                     <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">@tcc.Titulo</RadzenText>
                     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.4rem" class="rz-mt-1">
                         <RadzenIcon Icon="person" />
-                        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Aluno: @tcc.Aluno?.Nome</RadzenText>
+                        <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Aluno: @tcc.NomeAluno</RadzenText>
                     </RadzenStack>
                     <RadzenText class="rz-mt-3 rz-mb-3"><strong>Resumo:</strong> @tcc.Resumo</RadzenText>
                     <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@($"Status: {StatusTccFormatter.Formatar(tcc.Status)}")" />
@@ -259,7 +259,7 @@
 
     private bool carregando = true;
     private bool salvando = false;
-    private Tcc? tcc;
+    private TccDetalheDto? tcc;
 
     private int? entregaEmAvaliacao;
     private FeedbackDto feedbackAtual = new();
@@ -279,7 +279,7 @@
 
     // Download autenticado do arquivo da entrega (o endpoint estático sem autenticação foi
     // removido; agora exige Bearer token, por isso é buscado via HttpClient em vez de <a href>).
-    private async Task BaixarArquivoEntrega(Entrega entrega)
+    private async Task BaixarArquivoEntrega(EntregaDto entrega)
     {
         entregaIdBaixando = entrega.Id;
         try
@@ -290,8 +290,7 @@
             {
                 var bytes = await response.Content.ReadAsByteArrayAsync();
                 var base64 = Convert.ToBase64String(bytes);
-                var extensao = Path.GetExtension(entrega.ArquivoCaminho);
-                var nomeArquivo = $"entrega-{entrega.Id}{extensao}";
+                var nomeArquivo = $"entrega-{entrega.Id}{entrega.ExtensaoArquivo}";
                 await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", nomeArquivo, "application/octet-stream", base64);
             }
             else
@@ -333,7 +332,7 @@
         carregando = true;
         try
         {
-            tcc = await Http.GetFromJsonAsync<Tcc>($"api/orientador/tcc/{TccId}");
+            tcc = await Http.GetFromJsonAsync<TccDetalheDto>($"api/orientador/tcc/{TccId}");
         }
         catch
         {
@@ -348,7 +347,7 @@
         finally { carregando = false; }
     }
 
-    private void AbrirFormFeedback(Entrega entrega)
+    private void AbrirFormFeedback(EntregaDto entrega)
     {
         entregaEmAvaliacao = entrega.Id;
 
@@ -442,7 +441,7 @@
         finally { salvandoAcompanhamento = false; }
     }
 
-    private void PrepararEdicaoAcompanhamento(Acompanhamento ata)
+    private void PrepararEdicaoAcompanhamento(AcompanhamentoResumoDto ata)
     {
         acompanhamentoEmEdicaoId = ata.Id;
         novoAcompanhamento = new AcompanhamentoDto
@@ -543,7 +542,7 @@
 
     // Issue #81 (D3/D12): veredito de aprovação de uma entrega. Sem corpo; após sucesso, recarrega
     // a tela (padrão já usado nas demais ações desta página).
-    private async Task AprovarEntrega(Entrega entrega)
+    private async Task AprovarEntrega(EntregaDto entrega)
     {
         var confirmado = await DialogService.Confirm(
             "Tem certeza que deseja aprovar esta entrega?",
@@ -586,7 +585,7 @@
     // Issue #81 (D3/D4/D12): veredito de rejeição — reusa RejeitarPropostaDialog (agora
     // parametrizável) pré-carregado com o Feedback atual da entrega, já que D4 define que rejeitar
     // sobrescreve o Feedback e o professor precisa ver o que está substituindo.
-    private async Task AbrirRejeicaoEntrega(Entrega entrega)
+    private async Task AbrirRejeicaoEntrega(EntregaDto entrega)
     {
         var resultado = await DialogService.OpenAsync<RejeitarPropostaDialog>(
             "Rejeitar Entrega",
