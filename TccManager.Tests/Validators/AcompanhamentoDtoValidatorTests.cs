@@ -69,6 +69,26 @@ public class AcompanhamentoDtoValidatorTests
     }
 
     [Fact]
+    public void DataReuniaoAusente_DeveFalhar()
+    {
+        // Issue #146 (achado D9): antes desta correção não havia nenhuma validação de
+        // presença para DataReuniao — combinado com o inicializador não-vazio que existia em
+        // AcompanhamentoDto (= DateTime.Today, removido nesta mesma correção), uma requisição
+        // sem o campo no JSON desserializava para default(DateTime) só quando o inicializador
+        // não existia; com o inicializador antigo, a requisição nunca chegava a produzir esse
+        // valor — o teste aqui simula diretamente o valor que uma requisição sem o campo
+        // produziria hoje (default(DateTime)), travando que o validator rejeita.
+        var dto = DtoValido();
+        dto.DataReuniao = default;
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AcompanhamentoDto.DataReuniao)
+                                         && e.ErrorMessage == "A data da reunião é obrigatória.");
+    }
+
+    [Fact]
     public void AtaDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveFalhar()
     {
         // Achado A10-1 da revisão de segurança — ver PropostaTccDtoValidatorTests para o

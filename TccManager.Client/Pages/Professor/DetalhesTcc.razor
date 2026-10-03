@@ -265,7 +265,11 @@
     private FeedbackDto feedbackAtual = new();
     private int? entregaIdBaixando;
 
-    private AcompanhamentoDto novoAcompanhamento = new();
+    // Issue #146: o valor-padrão de DataReuniao (preenchimento inicial do formulário de
+    // criação) agora é responsabilidade do Client, não mais do DTO compartilhado — o
+    // inicializador no DTO mascarava a ausência do campo quando a requisição não vinha deste
+    // formulário (ver AcompanhamentoDtoValidator.NotEmpty).
+    private AcompanhamentoDto novoAcompanhamento = new() { DataReuniao = DateTime.Today };
     private bool salvandoAcompanhamento = false;
     private int? acompanhamentoEmEdicaoId = null;
 
@@ -457,7 +461,7 @@
     private void CancelarEdicaoAcompanhamento()
     {
         acompanhamentoEmEdicaoId = null;
-        novoAcompanhamento = new AcompanhamentoDto();
+        novoAcompanhamento = new AcompanhamentoDto { DataReuniao = DateTime.Today };
     }
 
     private async Task ExcluirAcompanhamento(int idAcompanhamento)

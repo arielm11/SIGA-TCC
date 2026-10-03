@@ -1,12 +1,12 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace TccManager.Shared.DTOs;
+﻿namespace TccManager.Shared.DTOs;
 public class PropostaTccDto
 {
-    [Required(ErrorMessage = "O título é obrigatório.")]
+    // Issue #146 (achado D8): [Required] removido — mesmo motivo já aplicado a
+    // [StringLength] nestes dois campos (ver PropostaTccDtoValidator): duplicava
+    // PropostaTccDtoValidator (FluentValidation), que já tem NotEmpty() e sempre vence para
+    // campo vazio ([ApiController] valida ModelState antes do filtro de FluentValidation).
     public string Titulo { get; set; } = string.Empty;
 
-    [Required(ErrorMessage = "O resumo é obrigatório.")]
     public string Resumo { get; set; } = string.Empty;
 
     // Issue #112 (RF01): professor de escolha do aluno, opcional (P1 do documento de produto).

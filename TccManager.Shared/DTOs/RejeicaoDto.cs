@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace TccManager.Shared.DTOs;
 
 // Issue #81 (D5): movido de CoordenadorDtos.cs para arquivo próprio — deixou de ser
@@ -7,6 +5,8 @@ namespace TccManager.Shared.DTOs;
 // POST api/orientador/entregas/{id}/rejeitar. Mesmo namespace: nenhum using muda.
 public class RejeicaoDto
 {
-    [Required(ErrorMessage = "O motivo da rejeição é obrigatório!")]
+    // Issue #146 (achado D8): [Required] removido — duplicava RejeicaoDtoValidator
+    // (FluentValidation), que já tem NotEmpty() e sempre vence para campo vazio
+    // ([ApiController] valida ModelState antes do filtro de FluentValidation).
     public string Motivo { get; set; } = string.Empty;
 }

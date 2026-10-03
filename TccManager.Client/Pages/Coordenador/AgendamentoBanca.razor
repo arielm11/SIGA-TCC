@@ -117,7 +117,11 @@
 
     private int tccSelecionadoId = 0;
     private string orientadorNome = "";
-    private AgendarBancaDto agendamento = new();
+    // Issue #146: o valor-padrão de DataHora (preenchimento inicial do formulário) agora é
+    // responsabilidade do Client, não mais do DTO compartilhado — o inicializador no DTO
+    // mascarava a ausência do campo quando a requisição não vinha deste formulário (ver
+    // AgendarBancaDtoValidator, regra "deve ser futura").
+    private AgendarBancaDto agendamento = new() { DataHora = DateTime.Now.AddDays(7) };
 
     private IEnumerable<int> professoresSelecionados = new List<int>();
     private IEnumerable<int> externosSelecionados = new List<int>();
@@ -154,7 +158,7 @@
     {
         tccSelecionadoId = id;
         orientadorNome = tccsProntos.FirstOrDefault(t => t.Id == id)?.NomeOrientador ?? "";
-        agendamento = new AgendarBancaDto();
+        agendamento = new AgendarBancaDto { DataHora = DateTime.Now.AddDays(7) };
         professoresSelecionados = new List<int>();
         externosSelecionados = new List<int>();
     }

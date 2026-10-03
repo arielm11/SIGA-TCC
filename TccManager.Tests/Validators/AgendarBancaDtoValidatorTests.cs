@@ -48,6 +48,26 @@ public class AgendarBancaDtoValidatorTests
     }
 
     [Fact]
+    public void DataHoraAusente_DeveSerInvalida()
+    {
+        // Issue #146 (achado D9): AgendarBancaDto.DataHora tinha um inicializador não-vazio
+        // (= DateTime.Now.AddDays(7), removido nesta mesma correção) — uma requisição sem o
+        // campo no JSON desserializava silenciosamente para "daqui a 7 dias" em vez de falhar
+        // nenhuma validação de presença. Sem o inicializador, o valor é default(DateTime)
+        // (ano 0001), que a regra "deve ser futura" já rejeita corretamente.
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 6, 15, 12, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+
+        var dto = DtoComData(default);
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.DataHora)
+                                         && e.ErrorMessage == MensagemEsperada);
+    }
+
+    [Fact]
     public void DataUmSegundoNoFuturo_DeveSerValida()
     {
         // Fronteira: a data (em Brasília) é convertida para UTC e comparada com o "agora".
