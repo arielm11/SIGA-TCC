@@ -337,6 +337,59 @@ public class TccNotificationServiceTests
         Assert.DoesNotContain("rascunho-ata", msgAluno.CorpoHtml);
     }
 
+    /// <summary>
+    /// Issue #150 (achado C2): fake mínimo que sempre lança — simula a falha de
+    /// GerarTokensEmLoteAsync para travar o novo contrato de resiliência "em lote": uma
+    /// falha na geração afeta TODOS os membros externos da banca (trade-off aceito da
+    /// mudança para lote, antes a falha de um membro não afetava os demais).
+    /// </summary>
+    private sealed class RascunhoTokenServiceQueSempreFalha : IRascunhoAtaTokenService
+    {
+        public Task<string> GerarTokenAsync(int bancaId, int membroExternoId) => throw new InvalidOperationException("Falha simulada.");
+        public Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds) => throw new InvalidOperationException("Falha simulada.");
+        public Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto) => throw new NotImplementedException();
+        public Task RevogarTokenAtualAsync(int bancaId, int membroExternoId) => throw new NotImplementedException();
+        public Task RevogarTodosTokensDoMembroAsync(int membroExternoId) => throw new NotImplementedException();
+    }
+
+    [Fact]
+    public async Task NotificarBancaAgendadaAsync_FalhaAoGerarTokensEmLote_EnviaSemLinkParaTodosSemLancar()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno", "aluno@teste.com", TipoUsuario.Aluno));
+        context.Usuarios.Add(NovoUsuario(20, "Orientador", "orient@teste.com", TipoUsuario.Professor));
+        context.MembrosExternos.Add(new MembroExterno { Id = 5, Nome = "Externo A", Email = "extA@empresa.com", Instituicao = "Empresa" });
+        context.MembrosExternos.Add(new MembroExterno { Id = 6, Nome = "Externo B", Email = "extB@empresa.com", Instituicao = "Empresa" });
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC A", Resumo = "r", AlunoId = 10, OrientadorId = 20, Status = StatusTcc.AguardandoDefesa });
+
+        var banca = new Banca { Id = 1, TccId = 1, DataHora = DateTime.UtcNow.AddDays(3), Local = "Sala 1" };
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 1, BancaId = 1, MembroExternoId = 5 });
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 2, BancaId = 1, MembroExternoId = 6 });
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+
+        var servico = new TccNotificationService(
+            context,
+            new FileEmailTemplateRenderer(NullLogger<FileEmailTemplateRenderer>.Instance),
+            queue,
+            NullLogger<TccNotificationService>.Instance,
+            new RascunhoTokenServiceQueSempreFalha(),
+            Options.Create(new AppUrlsOptions()));
+
+        // Não deve lançar — contrato de "nunca lança para o chamador" preservado mesmo com a
+        // falha em lote.
+        await servico.NotificarBancaAgendadaAsync(1);
+
+        var msgA = queue.Mensagens.Single(m => m.Destinatarios.Contains("extA@empresa.com"));
+        var msgB = queue.Mensagens.Single(m => m.Destinatarios.Contains("extB@empresa.com"));
+        Assert.DoesNotContain("rascunho-ata", msgA.CorpoHtml);
+        Assert.DoesNotContain("rascunho-ata", msgB.CorpoHtml);
+        Assert.Contains("apenas informativa", msgA.CorpoHtml);
+        Assert.Contains("apenas informativa", msgB.CorpoHtml);
+    }
+
     [Fact]
     public async Task NotificarBancaAgendadaAsync_NaoVazaTokenDeUmMembroNoEmailDeOutro()
     {
