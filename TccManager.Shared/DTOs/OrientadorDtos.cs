@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using TccManager.Shared.Enums;
+﻿using TccManager.Shared.Enums;
 
 namespace TccManager.Shared.DTOs;
 
@@ -20,7 +19,9 @@ public class TccResumoDto
 
 public class FeedbackDto
 {
-    [Required(ErrorMessage = "O feedback é obrigatório!")]
+    // Issue #146 (achado D8): [Required] removido — duplicava FeedbackDtoValidator
+    // (FluentValidation), que já tem NotEmpty() e sempre vence para campo vazio
+    // ([ApiController] valida ModelState antes do filtro de FluentValidation).
     public string Feedback { get; set; } = string.Empty;
 
     public decimal? Nota { get; set; }
@@ -28,9 +29,14 @@ public class FeedbackDto
 
 public class AcompanhamentoDto
 {
-    [Required(ErrorMessage = "A data da reunião é obrigatória!")]
-    public DateTime DataReuniao { get; set; } = DateTime.Today;
+    // Issue #146 (achados D8/D9): [Required] removido (duplicava
+    // AcompanhamentoDtoValidator). O inicializador não-vazio (antes DateTime.Today) também
+    // foi removido: com ele, ausência do campo no JSON nunca disparava nenhuma validação de
+    // presença — registrava silenciosamente a reunião como "hoje". AcompanhamentoDtoValidator
+    // ganhou um NotEmpty() explícito para DataReuniao (não existia nenhuma validação de
+    // presença para este campo antes desta correção).
+    public DateTime DataReuniao { get; set; }
 
-    [Required(ErrorMessage = "O registro da ata é obrigatória!")]
+    // Issue #146 (achado D8): mesmo motivo — AcompanhamentoDtoValidator já tem NotEmpty().
     public string Ata { get; set; } = string.Empty;
 }

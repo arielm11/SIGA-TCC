@@ -500,6 +500,13 @@ public class CoordenadorController : ControllerBase
         if (extensaoAta != ".pdf")
             return BadRequest("O documento da ata deve ser um arquivo PDF.");
 
+        // Issue #146 (achado B5): notaFinal é [FromForm] decimal, não passa por nenhum
+        // FluentValidationActionFilter — sem este teto, uma nota negativa ou acima de 100 era
+        // aceita e ia direto para a ata oficial. Antes do upload, mesma disciplina já usada
+        // nas demais validações deste método.
+        if (notaFinal < 0 || notaFinal > 100)
+            return BadRequest("A nota final deve estar entre 0 e 100.");
+
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
         // Issue #73 (achado A10-1 da revisão de segurança,

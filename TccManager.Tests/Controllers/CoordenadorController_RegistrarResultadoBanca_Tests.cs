@@ -495,4 +495,50 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
         Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
     }
+
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(100.01)]
+    [InlineData(999.99)]
+    public async Task NotaForaDaFaixaDe0A100_Retorna400ENaoAlteraOTcc(decimal notaInvalida)
+    {
+        // Issue #146 (achado B5): notaFinal é [FromForm] decimal, não passava por nenhuma
+        // validação de faixa — uma nota negativa ou acima de 100 era aceita e ia direto para
+        // a ata oficial. 999,99 é o maior valor que ainda cabe em decimal(5,2) sem estourar a
+        // coluna (o estouro em si já é coberto por outro achado, fora de escopo aqui).
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(notaInvalida, motivo: "Motivo qualquer."));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("entre 0 e 100", corpo, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+
+        var arquivosGravados = Directory.Exists(factory.PastaAtas) ? Directory.GetFiles(factory.PastaAtas) : Array.Empty<string>();
+        Assert.Empty(arquivosGravados);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public async Task NotaNosLimitesDaFaixa_Permite(decimal notaValida)
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(notaValida, motivo: notaValida == 0 ? "Nota mínima." : null));
+
+        response.EnsureSuccessStatusCode();
+    }
 }
