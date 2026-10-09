@@ -51,8 +51,9 @@ public class OrientadorController : ControllerBase
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
 
+        // Issue #151 (achado C4): Include() ignorado em silêncio pelo EF Core — o Select
+        // abaixo já traduz t.Aluno.Nome para SQL sem precisar dele.
         var ativos = await _context.Tccs
-            .Include(t => t.Aluno)
             .Where(t => t.OrientadorId == profId && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
             .Select(t => new TccResumoDto
             {
@@ -79,7 +80,10 @@ public class OrientadorController : ControllerBase
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
 
+        // Issue #151 (achado C3): leitura pura (nunca salva) que materializava a entidade
+        // completa rastreada sem necessidade.
         var tcc = await _context.Tccs
+            .AsNoTracking()
             .Include(t => t.Aluno)
             .Include(t => t.Entregas.OrderByDescending(e => e.DataEnvio))
             .Include(t => t.Acompanhamentos.OrderByDescending(a => a.DataReuniao))
@@ -431,8 +435,9 @@ public class OrientadorController : ControllerBase
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
             return Unauthorized();
 
+        // Issue #151 (achado C4): Include() ignorado em silêncio pelo EF Core — o Select
+        // abaixo já traduz t.Aluno.Nome para SQL sem precisar dele.
         var propostas = await _context.Tccs
-            .Include(t => t.Aluno)
             .Where(t => t.Status == StatusTcc.Pendente && t.OrientadorSolicitadoId == profId)
             .OrderBy(t => t.DataCriacao)
             .Select(t => new TccResumoDto

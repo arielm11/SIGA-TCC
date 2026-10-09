@@ -92,8 +92,9 @@ public class CoordenadorController : ControllerBase
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetPropostasPendentes([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
+        // Issue #151 (achado C4): Include() ignorado em silêncio pelo EF Core — o Select
+        // abaixo já traduz t.Aluno!.Nome para SQL sem precisar dele.
         var pendentes = await _context.Tccs
-            .Include(t => t.Aluno)
             .Where(t => t.Status == StatusTcc.Pendente)
             .OrderBy(t => t.DataCriacao)
             .Select(t => new TccResumoDto
@@ -415,9 +416,9 @@ public class CoordenadorController : ControllerBase
     [HttpGet("aguardando-banca")]
     public async Task<IActionResult> GetTccsAguardandoBanca()
     {
+        // Issue #151 (achado C4): os 2 Include() abaixo eram ignorados em silêncio pelo EF
+        // Core — o Select já traduz t.Aluno!.Nome/t.Orientador!.Nome para SQL sem eles.
         var lista = await _context.Tccs
-            .Include(t => t.Aluno)
-            .Include(t => t.Orientador)
             .Where(t => t.Status == StatusTcc.AguardandoDefesa && !_context.Banca.Any(b => b.TccId == t.Id))
             .Select(t => new TccAguardandoBancaDto
             {
@@ -433,11 +434,9 @@ public class CoordenadorController : ControllerBase
     [HttpGet("bancas-pendentes-resultado")]
     public async Task<IActionResult> GetBancasPendentesResultado()
     {
+        // Issue #151 (achado C4): os 2 Include()/ThenInclude() abaixo eram ignorados em
+        // silêncio pelo EF Core — o Select já traduz os mesmos caminhos para SQL sem eles.
         var bancas = await _context.Banca
-            .Include(b => b.Tcc)
-                .ThenInclude(t => t.Aluno)
-            .Include(b => b.Avaliadores)
-                .ThenInclude(a => a.MembroExterno)
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
             .Select(b => new BancaPendenteDto
             {
@@ -660,7 +659,9 @@ public class CoordenadorController : ControllerBase
     [HttpGet("banca/{idBanca}/ata-assinada")]
     public async Task<IActionResult> GetAtaAssinada(int idBanca)
     {
-        var banca = await _context.Banca.FirstOrDefaultAsync(b => b.Id == idBanca);
+        // Issue #151 (achado C3): leitura pura, só para abrir o arquivo via caminho — nunca
+        // salva.
+        var banca = await _context.Banca.AsNoTracking().FirstOrDefaultAsync(b => b.Id == idBanca);
 
         if (banca == null)
             return NotFound("Banca não encontrada.");

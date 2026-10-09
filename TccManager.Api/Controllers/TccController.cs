@@ -58,7 +58,10 @@ public class TccController : ControllerBase
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
             return Unauthorized("Sessão inválida.");
 
+        // Issue #151 (achado C3): leitura pura (nunca salva); NomeOrientadorSolicitado é
+        // [NotMapped] e não participa do change tracker de qualquer forma.
         var tcc = await _context.Tccs
+            .AsNoTracking()
             .Include(t => t.Entregas)
             .Where(t => t.AlunoId == alunoId)
             .OrderByDescending(t => t.DataCriacao)
@@ -557,7 +560,8 @@ public class TccController : ControllerBase
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        // Issue #151 (achado C3): leitura pura (só usada para obter tcc.Id), nunca salva.
+        var tcc = await _context.Tccs.AsNoTracking().FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
         if (tcc == null)
             return NotFound("TCC não encontrado.");
 
@@ -585,11 +589,14 @@ public class TccController : ControllerBase
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        // Issue #151 (achado C3): as duas leituras abaixo são puras (o retorno é um objeto
+        // anônimo projetado, nunca salvo).
+        var tcc = await _context.Tccs.AsNoTracking().FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
         if (tcc == null)
             return NotFound("TCC não encontrado.");
 
         var banca = await _context.Banca
+            .AsNoTracking()
             .Include(b => b.Avaliadores)
                 .ThenInclude(a => a.Professor)
             .FirstOrDefaultAsync(b => b.TccId == tcc.Id);

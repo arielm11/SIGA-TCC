@@ -44,12 +44,11 @@ public class AvaliadorController : ControllerBase
         // A extensão real (.pdf/.doc/.docx/.zip) não é calculável em SQL — Path.GetExtension
         // roda em memória sobre o caminho já materializado, então a projeção fica em duas
         // etapas: busca o caminho da Entrega Final (SQL) e só depois deriva a extensão (C#).
+        // Issue #151 (achado C4): os 4 Include()/ThenInclude() abaixo eram ignorados em
+        // silêncio pelo EF Core (warning NavigationBaseIncludeIgnored a cada chamada) — o
+        // Select já traduz os mesmos caminhos de navegação direto para SQL, sem precisar de
+        // Include nenhum.
         var convitesBrutos = await _context.BancaAvaliadores
-            .Include(ba => ba.Banca)
-                .ThenInclude(b => b!.Tcc)
-                    .ThenInclude(t => t!.Aluno)
-            .Include(ba => ba.Banca!.Tcc!.Orientador)
-            .Include(ba => ba.Banca!.Tcc!.Entregas)
             .Where(ba => ba.ProfessorId == profId && ba.Banca!.Tcc!.Status != StatusTcc.Finalizado)
             .Select(ba => new
             {
