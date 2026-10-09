@@ -65,6 +65,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .Include(t => t.Orientador)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
@@ -98,6 +99,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
 
@@ -130,6 +132,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .Include(t => t.OrientadorSolicitado)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
@@ -164,6 +167,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var banca = await _context.Banca
+                .AsNoTracking()
                 .Include(b => b.Tcc!).ThenInclude(t => t.Aluno)
                 .Include(b => b.Tcc!).ThenInclude(t => t.Orientador)
                 .Include(b => b.Avaliadores).ThenInclude(a => a.Professor)
@@ -193,6 +197,36 @@ public class TccNotificationService : ITccNotificationService
 
             var linkAtalhoInterno = MontarLinkAtalhoInterno();
 
+            // Issue #150 (achado C2): membros externos com e-mail válido são coletados aqui
+            // e os tokens são gerados para todos de uma vez (GerarTokensEmLoteAsync), em vez
+            // de 1 chamada a GerarTokenAsync por membro dentro do loop abaixo — cada chamada
+            // individual custava 3 round-trips (SELECT Banca redundante + SELECT de
+            // revogação + SaveChanges próprio); uma banca com 3 avaliadores externos chegava
+            // a 9 round-trips sequenciais.
+            var membrosExternosComEmail = banca.Avaliadores
+                .Where(a => a.MembroExternoId.HasValue && a.MembroExterno != null && !string.IsNullOrWhiteSpace(a.MembroExterno.Email))
+                .Select(a => (Id: a.MembroExternoId!.Value, Email: a.MembroExterno!.Email))
+                .ToList();
+
+            IReadOnlyDictionary<int, string> tokensPorMembro;
+            try
+            {
+                tokensPorMembro = await _rascunhoTokenService.GerarTokensEmLoteAsync(
+                    banca, membrosExternosComEmail.Select(m => m.Id));
+            }
+            catch (Exception exToken)
+            {
+                // Defesa em profundidade: falha ao gerar os tokens não deve impedir o e-mail
+                // informativo de banca agendada para nenhum destinatário — todos os membros
+                // externos recebem o bloco "sem acesso" neste cenário (trade-off aceito da
+                // mudança para lote: antes, a falha de UM membro não afetava os demais).
+                _logger.LogWarning(
+                    exToken,
+                    "Falha ao gerar tokens de rascunho em lote para a Banca {BancaId}; e-mails serão enviados sem link de acesso.",
+                    bancaId);
+                tokensPorMembro = new Dictionary<int, string>();
+            }
+
             foreach (var avaliador in banca.Avaliadores)
             {
                 if (avaliador.ProfessorId.HasValue && avaliador.Professor != null)
@@ -209,26 +243,11 @@ public class TccNotificationService : ITccNotificationService
                     if (string.IsNullOrWhiteSpace(avaliador.MembroExterno.Email))
                         continue;
 
-                    // Token gerado aqui dentro: o valor bruto nunca precisa cruzar
-                    // fronteiras de camada, vive só neste escopo até compor o link do
-                    // e-mail (ver docs/arquitetura/2026-07-13-pdf-ata-rascunho-etapa2.md, seção 7.1).
-                    try
-                    {
-                        var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(bancaId, avaliador.MembroExternoId.Value);
-                        var link = MontarLinkRascunhoExterno(tokenBruto);
-                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoExterno(link)));
-                    }
-                    catch (Exception exToken)
-                    {
-                        // Defesa em profundidade: falha ao gerar o token de um membro não
-                        // deve impedir o e-mail informativo de banca agendada para ele nem
-                        // para os demais destinatários.
-                        _logger.LogWarning(
-                            exToken,
-                            "Falha ao gerar token de rascunho para MembroExterno {MembroExternoId} na Banca {BancaId}; e-mail será enviado sem link de acesso.",
-                            avaliador.MembroExternoId, bancaId);
-                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoIndisponivel));
-                    }
+                    var blocoAcesso = tokensPorMembro.TryGetValue(avaliador.MembroExternoId.Value, out var tokenBruto)
+                        ? BlocoAcessoExterno(MontarLinkRascunhoExterno(tokenBruto))
+                        : BlocoAcessoIndisponivel;
+
+                    envios.Add((avaliador.MembroExterno.Email, blocoAcesso));
                 }
                 else
                 {
@@ -287,6 +306,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var entrega = await _context.Entregas
+                .AsNoTracking()
                 .Include(e => e.Tcc!).ThenInclude(t => t.Aluno)
                 .FirstOrDefaultAsync(e => e.Id == entregaId);
 
@@ -324,6 +344,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
 
@@ -358,6 +379,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var banca = await _context.Banca
+                .AsNoTracking()
                 .Include(b => b.Tcc!).ThenInclude(t => t.Aluno)
                 .Include(b => b.Tcc!).ThenInclude(t => t.Orientador)
                 .FirstOrDefaultAsync(b => b.Id == bancaId);
@@ -410,7 +432,7 @@ public class TccNotificationService : ITccNotificationService
     {
         try
         {
-            var membro = await _context.MembrosExternos.FirstOrDefaultAsync(m => m.Id == membroExternoId);
+            var membro = await _context.MembrosExternos.AsNoTracking().FirstOrDefaultAsync(m => m.Id == membroExternoId);
 
             if (membro == null || string.IsNullOrWhiteSpace(membro.Email))
             {
@@ -441,6 +463,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var entrega = await _context.Entregas
+                .AsNoTracking()
                 .Include(e => e.Tcc!).ThenInclude(t => t.Aluno)
                 .FirstOrDefaultAsync(e => e.Id == entregaId);
 

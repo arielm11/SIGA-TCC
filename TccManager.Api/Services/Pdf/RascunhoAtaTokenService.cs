@@ -50,6 +50,48 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         return tokenBruto;
     }
 
+    public async Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds)
+    {
+        var ids = membroExternoIds.ToList();
+        if (ids.Count == 0)
+            return new Dictionary<int, string>();
+
+        // 1 SELECT cobrindo a revogação de TODOS os pares de uma vez, em vez de 1 por membro.
+        var tokensAtivos = await _context.RascunhoAtaTokens
+            .Where(t => t.BancaId == banca.Id && ids.Contains(t.MembroExternoId) && t.RevokedAtUtc == null)
+            .ToListAsync();
+
+        var agora = DateTime.UtcNow;
+        foreach (var token in tokensAtivos)
+        {
+            token.RevokedAtUtc = agora;
+        }
+
+        var tokensBrutos = new Dictionary<int, string>();
+
+        foreach (var membroExternoId in ids)
+        {
+            var tokenBruto = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+
+            _context.RascunhoAtaTokens.Add(new RascunhoAtaToken
+            {
+                BancaId = banca.Id,
+                MembroExternoId = membroExternoId,
+                TokenHash = CalcularHash(tokenBruto),
+                CreatedAtUtc = agora,
+                ExpiresAtUtc = banca.DataHora
+            });
+
+            tokensBrutos[membroExternoId] = tokenBruto;
+        }
+
+        // 1 SaveChangesAsync para as revogações e todos os tokens novos, em vez de 1 por
+        // membro.
+        await _context.SaveChangesAsync();
+
+        return tokensBrutos;
+    }
+
     public async Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto)
     {
         var hash = CalcularHash(tokenBruto);

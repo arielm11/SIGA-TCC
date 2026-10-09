@@ -1,3 +1,5 @@
+using TccManager.Shared.Models;
+
 namespace TccManager.Api.Services.Pdf;
 
 public enum RascunhoTokenValidacaoStatus
@@ -43,6 +45,17 @@ public interface IRascunhoAtaTokenService
     /// link do e-mail.
     /// </summary>
     Task<string> GerarTokenAsync(int bancaId, int membroExternoId);
+
+    /// <summary>
+    /// Issue #150 (achado C2): variante em lote de <see cref="GerarTokenAsync"/> para quando
+    /// vários membros externos da MESMA banca precisam de token de uma vez (ex.: ao agendar
+    /// a banca) — sem isso, N membros custavam 3 round-trips cada (SELECT Banca redundante +
+    /// SELECT de revogação + SaveChanges próprio). Aqui: 1 SELECT de revogação cobrindo todos
+    /// os pares, nenhum SELECT de Banca (recebida já carregada pelo chamador) e 1
+    /// SaveChangesAsync para todos os tokens novos. Retorna o token bruto de cada membro, na
+    /// mesma ordem de <paramref name="membroExternoIds"/>.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds);
 
     /// <summary>
     /// Calcula o hash do token recebido e busca por hash (nunca compara pelo valor bruto).

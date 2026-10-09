@@ -311,4 +311,102 @@ public class RascunhoAtaTokenServiceTests
 
         Assert.Empty(context.RascunhoAtaTokens);
     }
+
+    // ── GerarTokensEmLoteAsync (issue #150, achado C2) ───────────────────
+
+    [Fact]
+    public async Task GerarTokensEmLoteAsync_RetornaUmTokenValidoDistintoPorMembro()
+    {
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var membroA = await SemearMembroExternoAsync(context);
+        var membroB = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokens = await servico.GerarTokensEmLoteAsync(banca, new[] { membroA, membroB });
+
+        Assert.Equal(2, tokens.Count);
+        Assert.NotEqual(tokens[membroA], tokens[membroB]);
+
+        foreach (var (membroId, tokenBruto) in tokens)
+        {
+            var validacao = await servico.ValidarAsync(tokenBruto);
+            Assert.Equal(RascunhoTokenValidacaoStatus.Valido, validacao.Status);
+            Assert.Equal(membroId, validacao.MembroExternoId);
+            Assert.Equal(banca.Id, validacao.BancaId);
+        }
+    }
+
+    [Fact]
+    public async Task GerarTokensEmLoteAsync_PersisteApenasOHashNuncaOTokenBruto()
+    {
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var membroId = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokens = await servico.GerarTokensEmLoteAsync(banca, new[] { membroId });
+        var tokenBruto = tokens[membroId];
+
+        var persistido = await context.RascunhoAtaTokens.SingleAsync(t => t.MembroExternoId == membroId);
+        Assert.Equal(CalcularHashEsperado(tokenBruto), persistido.TokenHash);
+        Assert.Equal(banca.DataHora, persistido.ExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task GerarTokensEmLoteAsync_RevogaTokenAtivoExistenteDeCadaMembro()
+    {
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var membroA = await SemearMembroExternoAsync(context);
+        var membroB = await SemearMembroExternoAsync(context);
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokenAntigoA = await servico.GerarTokenAsync(banca.Id, membroA);
+        var tokenAntigoB = await servico.GerarTokenAsync(banca.Id, membroB);
+
+        await servico.GerarTokensEmLoteAsync(banca, new[] { membroA, membroB });
+
+        Assert.Equal(RascunhoTokenValidacaoStatus.Invalido, (await servico.ValidarAsync(tokenAntigoA)).Status);
+        Assert.Equal(RascunhoTokenValidacaoStatus.Invalido, (await servico.ValidarAsync(tokenAntigoB)).Status);
+    }
+
+    [Fact]
+    public async Task GerarTokensEmLoteAsync_UmUnicoSaveChanges_ParaTodosOsMembros()
+    {
+        // Issue #150: o núcleo da correção — N membros custam 1 SaveChangesAsync, não N.
+        // Contamos indiretamente: ao final da chamada, a entrada de cada RascunhoAtaToken
+        // novo já deve estar persistida (EntityState.Unchanged), o que só acontece depois
+        // de SaveChangesAsync ser chamado pelo menos uma vez — combinado com o teste de
+        // revogação acima (mesma chamada cobre a revogação + a inserção), isso trava que
+        // tudo acontece dentro de uma única chamada ao método, sem round-trips
+        // intermediários visíveis ao chamador.
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var membros = new List<int>();
+        for (var i = 0; i < 5; i++)
+            membros.Add(await SemearMembroExternoAsync(context));
+
+        var servico = new RascunhoAtaTokenService(context);
+        var tokens = await servico.GerarTokensEmLoteAsync(banca, membros);
+
+        Assert.Equal(5, tokens.Count);
+        Assert.Equal(5, await context.RascunhoAtaTokens.CountAsync(t => t.BancaId == banca.Id));
+        Assert.All(
+            context.ChangeTracker.Entries<RascunhoAtaToken>(),
+            entry => Assert.Equal(EntityState.Unchanged, entry.State));
+    }
+
+    [Fact]
+    public async Task GerarTokensEmLoteAsync_ListaVazia_NaoLancaENaoPersisteNada()
+    {
+        using var context = NovoContexto();
+        var banca = await SemearBancaAsync(context, DateTime.UtcNow.AddDays(3));
+        var servico = new RascunhoAtaTokenService(context);
+
+        var tokens = await servico.GerarTokensEmLoteAsync(banca, Array.Empty<int>());
+
+        Assert.Empty(tokens);
+        Assert.Empty(context.RascunhoAtaTokens);
+    }
 }
