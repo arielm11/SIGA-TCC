@@ -151,7 +151,9 @@ public class AuditoriaCoberturaInconsistente_Tests
         var client = factory.CreateClientAutenticado(IdProfessor, "Professor");
         var response = await client.GetAsync("/api/avaliador/banca/9999/ata-rascunho-pdf");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // Issue #153: resposta HTTP virou 404 uniforme, mas o log de auditoria (nível de
+        // acesso real) continua registrando o acesso negado normalmente.
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         var entrada = Assert.Single(factory.LogsDoHost, e => e.RenderMessage().Contains("Acesso negado ao rascunho da ata", StringComparison.Ordinal));
         AssertEhAuditoria(entrada);
         Assert.Contains($"BancaId: 9999", entrada.RenderMessage(), StringComparison.Ordinal);

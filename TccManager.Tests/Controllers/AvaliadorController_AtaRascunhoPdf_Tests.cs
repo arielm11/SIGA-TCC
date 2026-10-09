@@ -10,9 +10,10 @@ namespace TccManager.Tests.Controllers;
 /// Integração do endpoint GET /api/avaliador/banca/{idBanca}/ata-rascunho-pdf (RNF-01/Etapa 2).
 /// A validação de vínculo é explícita: só o professor que é BancaAvaliador daquela banca
 /// específica baixa o rascunho. Qualquer outro professor (inclusive o orientador, que não
-/// tem vínculo BancaAvaliador — decisão 6) recebe 403 Forbidden, não bastando ter o papel
-/// "Professor". Banca inexistente também cai em 403, pois sem vínculo o controller retorna
-/// Forbid() antes de chegar à resolução de banca (não expõe existência).
+/// tem vínculo BancaAvaliador — decisão 6) recebe 404 uniforme, não bastando ter o papel
+/// "Professor". Banca inexistente também cai no mesmo 404 (issue #153: antes retornava 403
+/// Forbidden, único ponto do sistema com esse comportamento — trocado pelo padrão 404
+/// uniforme do resto do sistema, que não diferencia "recurso não existe" de "sem permissão").
 /// </summary>
 public class AvaliadorController_AtaRascunhoPdf_Tests
 {
@@ -71,7 +72,7 @@ public class AvaliadorController_AtaRascunhoPdf_Tests
     }
 
     [Fact]
-    public async Task ProfessorNaoVinculado_Retorna403()
+    public async Task ProfessorNaoVinculado_Retorna404()
     {
         using var factory = new WebRootIsolatedApiFactory();
         var s = await SemearBancaAsync(factory);
@@ -79,11 +80,11 @@ public class AvaliadorController_AtaRascunhoPdf_Tests
 
         var response = await client.GetAsync($"/api/avaliador/banca/{s.BancaId}/ata-rascunho-pdf");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task Orientador_MesmaBanca_Retorna403()
+    public async Task Orientador_MesmaBanca_Retorna404()
     {
         // O orientador tem papel Professor mas NÃO é BancaAvaliador — não deve acessar (decisão 6).
         using var factory = new WebRootIsolatedApiFactory();
@@ -92,20 +93,21 @@ public class AvaliadorController_AtaRascunhoPdf_Tests
 
         var response = await client.GetAsync($"/api/avaliador/banca/{s.BancaId}/ata-rascunho-pdf");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task BancaInexistente_Retorna403()
+    public async Task BancaInexistente_Retorna404()
     {
-        // Sem vínculo BancaAvaliador para a banca pedida (inexistente) → Forbid antes de 404.
+        // Sem vínculo BancaAvaliador para a banca pedida (inexistente) → 404 uniforme,
+        // mesma resposta de "banca existe mas sem vínculo" (issue #153).
         using var factory = new WebRootIsolatedApiFactory();
         var s = await SemearBancaAsync(factory);
         var client = factory.CreateClientAutenticado(s.AvaliadorId, "Professor");
 
         var response = await client.GetAsync("/api/avaliador/banca/9999/ata-rascunho-pdf");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
