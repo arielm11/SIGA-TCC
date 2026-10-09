@@ -629,9 +629,9 @@ public class CoordenadorController : ControllerBase
 
     [HttpGet("banca/{idBanca}/ata-pdf")]
     [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
-    public async Task<IActionResult> GetAtaPdf(int idBanca)
+    public async Task<IActionResult> GetAtaPdf(int idBanca, CancellationToken cancellationToken)
     {
-        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca);
+        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca, cancellationToken);
 
         // Sucesso é o único ramo que lê PdfBytes (e é o único caso em que
         // AtaPdfService garante que ele vem preenchido) — default vira 500, não sucesso
@@ -702,9 +702,9 @@ public class CoordenadorController : ControllerBase
 
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
     [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
-    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
+    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca, CancellationToken cancellationToken)
     {
-        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca, cancellationToken);
 
         return resultado.Status switch
         {

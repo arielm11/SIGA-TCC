@@ -41,7 +41,7 @@ public interface IAtaPdfService
     /// ou o resultado ainda não tiver sido registrado (<c>NotaFinal == null</c>), o
     /// <see cref="AtaPdfResultado.Status"/> indica o motivo e <c>PdfBytes</c> vem nulo.
     /// </summary>
-    Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca);
+    Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gera o PDF rascunho pré-defesa (RF-01/Etapa 2): mesma composição, sem nota final,
@@ -50,5 +50,5 @@ public interface IAtaPdfService
     /// <see cref="AtaPdfResultadoStatus.ResultadoJaRegistrado"/> (410 Gone) mesmo que o
     /// chamador ainda tenha um token/sessão tecnicamente válido (RNF-03).
     /// </summary>
-    Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca);
+    Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca, CancellationToken cancellationToken = default);
 }

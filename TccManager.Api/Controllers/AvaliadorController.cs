@@ -90,7 +90,7 @@ public class AvaliadorController : ControllerBase
     /// </summary>
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
     [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
-    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
+    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca, CancellationToken cancellationToken)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int profId))
@@ -107,7 +107,7 @@ public class AvaliadorController : ControllerBase
             return Forbid();
         }
 
-        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca, cancellationToken);
 
         if (resultado.Status == AtaPdfResultadoStatus.Sucesso)
         {
