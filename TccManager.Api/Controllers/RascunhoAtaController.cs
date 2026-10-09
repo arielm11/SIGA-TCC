@@ -36,7 +36,7 @@ public class RascunhoAtaController : ControllerBase
 
     [HttpGet("{token}")]
     [EnableRateLimiting(RateLimitingSetup.RascunhoPublicoPolicyName)]
-    public async Task<IActionResult> GetRascunhoPorToken(string token)
+    public async Task<IActionResult> GetRascunhoPorToken(string token, CancellationToken cancellationToken)
     {
         var validacao = await _tokenService.ValidarAsync(token);
 
@@ -64,7 +64,7 @@ public class RascunhoAtaController : ControllerBase
         if (validacao.Status == RascunhoTokenValidacaoStatus.ResultadoRegistrado)
             return StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado; o rascunho não está mais disponível.");
 
-        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(validacao.BancaId);
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(validacao.BancaId, cancellationToken);
 
         // Servido inline (sem Content-Disposition: attachment) — o membro externo abre
         // o PDF direto no navegador a partir do link recebido por e-mail (RF-07).

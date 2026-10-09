@@ -28,9 +28,9 @@ public class AtaPdfService : IAtaPdfService
         _logger = logger;
     }
 
-    public async Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca)
+    public async Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca, CancellationToken cancellationToken = default)
     {
-        var banca = await CarregarBancaComposicaoAsync(idBanca);
+        var banca = await CarregarBancaComposicaoAsync(idBanca, cancellationToken);
 
         if (banca == null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.BancaNaoEncontrada };
@@ -65,9 +65,9 @@ public class AtaPdfService : IAtaPdfService
         return new AtaPdfResultado { Status = AtaPdfResultadoStatus.Sucesso, PdfBytes = pdfBytes };
     }
 
-    public async Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca)
+    public async Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca, CancellationToken cancellationToken = default)
     {
-        var banca = await CarregarBancaComposicaoAsync(idBanca);
+        var banca = await CarregarBancaComposicaoAsync(idBanca, cancellationToken);
 
         if (banca == null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.BancaNaoEncontrada };
@@ -187,14 +187,14 @@ public class AtaPdfService : IAtaPdfService
     /// <param name="FkId">valor da FK que não resolveu, quando a inconsistência é sobre uma FK específica; nulo quando é sobre ausência/duplicidade estrutural.</param>
     private readonly record struct InconsistenciaAtaPdf(string Relacao, int EntidadeId, int? FkId);
 
-    private Task<Banca?> CarregarBancaComposicaoAsync(int idBanca) =>
+    private Task<Banca?> CarregarBancaComposicaoAsync(int idBanca, CancellationToken cancellationToken) =>
         _context.Banca
             .AsNoTracking()
             .Include(b => b.Tcc).ThenInclude(t => t!.Aluno)
             .Include(b => b.Tcc).ThenInclude(t => t!.Orientador)
             .Include(b => b.Avaliadores).ThenInclude(a => a.Professor)
             .Include(b => b.Avaliadores).ThenInclude(a => a.MembroExterno)
-            .FirstOrDefaultAsync(b => b.Id == idBanca);
+            .FirstOrDefaultAsync(b => b.Id == idBanca, cancellationToken);
 
     private AtaPdfModel MontarModel(Banca banca, decimal? notaFinal, string? motivoReprovacao, bool rascunho)
     {
