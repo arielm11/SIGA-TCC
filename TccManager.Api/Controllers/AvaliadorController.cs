@@ -104,7 +104,9 @@ public class AvaliadorController : ControllerBase
             _auditLogger.LogWarning(
                 "Acesso negado ao rascunho da ata. Solicitante: {SolicitanteId}, BancaId: {BancaId}",
                 profId, idBanca);
-            return Forbid();
+            // Issue #153 (achado D1/D2): 404 uniforme, não 403 — não confirma a um professor
+            // sem vínculo se a banca existe, mesmo padrão do resto do sistema.
+            return NotFound("Banca não encontrada ou você não tem permissão para acessar.");
         }
 
         var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca, cancellationToken);

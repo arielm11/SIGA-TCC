@@ -87,6 +87,10 @@ public class UsuarioController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetUsuarioById(int id)
     {
+        // Issue #153 (achado D1/D2): Forbid() aqui, diferente do 404 uniforme usado no
+        // resto do sistema, não é descuido — a checagem de posse ocorre antes da checagem
+        // de existência (abaixo), então não há vazamento de enumeração: um 403 não revela
+        // se o id alvo existe ou não.
         if (!PodeAcessarOuEditar(id))
         {
             _auditLogger.LogWarning(
@@ -181,6 +185,9 @@ public class UsuarioController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateUsuario(int id, [FromBody] UsuarioDto dto)
     {
+        // Issue #153 (achado D1/D2): mesma justificativa de GetUsuarioById — a checagem de
+        // posse ocorre antes da checagem de existência, então o 403 aqui não vaza
+        // enumeração (divergência deliberada do 404 uniforme usado no resto do sistema).
         if (!PodeAcessarOuEditar(id))
         {
             _auditLogger.LogWarning(

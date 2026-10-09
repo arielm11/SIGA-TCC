@@ -16,9 +16,9 @@ namespace TccManager.Tests.Configuration;
 /// diferentes). UseAuthentication roda antes de UseRateLimiter em Program.cs para que
 /// HttpContext.User já esteja populado quando a política particiona a requisição.
 ///
-/// As requisições de consumo usam propositalmente um usuário SEM vínculo com a banca (403):
-/// UseRateLimiter roda antes de UseAuthorization/endpoint, então a cota é consumida sem
-/// gerar PDF de verdade — o teste mede o limitador, não o custo do PDF.
+/// As requisições de consumo usam propositalmente um usuário SEM vínculo com a banca (404
+/// uniforme, issue #153): UseRateLimiter roda antes de UseAuthorization/endpoint, então a
+/// cota é consumida sem gerar PDF de verdade — o teste mede o limitador, não o custo do PDF.
 /// </summary>
 public class RateLimitingGeracaoPdfTests
 {
@@ -81,7 +81,7 @@ public class RateLimitingGeracaoPdfTests
         for (var i = 1; i <= PermitLimit; i++)
         {
             var resp = await client.GetAsync(rota);
-            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
         }
     }
 
