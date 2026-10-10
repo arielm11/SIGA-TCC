@@ -136,6 +136,95 @@ public class Paginacao_Integracao_Tests
         Assert.Equal(PaginacaoQuery.MaxPageSize, pagina!.PageSize);
     }
 
+    // ─────────────────────────── GET /api/usuario (issue #154) ───────────────────────────
+
+    private const int idAdmin = 100;
+
+    private static async Task<TccApiFactory> FactoryComUsuarios(int quantidade)
+    {
+        var factory = new TccApiFactory();
+        using var context = factory.CriarContextoDireto();
+
+        context.Usuarios.Add(new Usuario
+        {
+            Id = idAdmin,
+            Nome = "Admin",
+            Email = "admin@teste.com",
+            SenhaHash = "x",
+            Tipo = TipoUsuario.Admin,
+            Ativo = true
+        });
+
+        for (int i = 1; i <= quantidade; i++)
+        {
+            context.Usuarios.Add(new Usuario
+            {
+                Nome = $"Usuario {i:D3}",
+                Email = $"usuario{i}@teste.com",
+                SenhaHash = "x",
+                Tipo = TipoUsuario.Aluno,
+                Ativo = true
+            });
+        }
+        await context.SaveChangesAsync();
+        return factory;
+    }
+
+    [Fact]
+    public async Task GetUsuarios_RetornaEnvelopePagedResult()
+    {
+        var factory = await FactoryComUsuarios(3);
+        var client = factory.CreateClientAutenticado(idAdmin, "Admin");
+
+        var response = await client.GetAsync("/api/usuario");
+
+        response.EnsureSuccessStatusCode();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+
+        Assert.NotNull(pagina);
+        // +1 pelo próprio Admin semeado.
+        Assert.Equal(4, pagina!.TotalCount);
+        Assert.Equal(4, pagina.Items.Count);
+    }
+
+    [Fact]
+    public async Task GetUsuarios_TotalCountRefleteTotalReal_MesmoComPaginaParcial()
+    {
+        var factory = await FactoryComUsuarios(25);
+        var client = factory.CreateClientAutenticado(idAdmin, "Admin");
+
+        var response = await client.GetAsync("/api/usuario?page=2&pageSize=10");
+
+        response.EnsureSuccessStatusCode();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+
+        Assert.NotNull(pagina);
+        Assert.Equal(26, pagina!.TotalCount);
+        Assert.Equal(10, pagina.Items.Count);
+        Assert.Equal(2, pagina.CurrentPage);
+    }
+
+    // ─────────────────────────── GET /api/usuario/professores (issue #154) ───────────────────────────
+
+    [Fact]
+    public async Task UsuarioControllerGetProfessores_RetornaEnvelopePagedResult()
+    {
+        var factory = await FactoryComProfessores(25);
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.GetAsync("/api/usuario/professores?page=2&pageSize=10");
+
+        response.EnsureSuccessStatusCode();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+
+        Assert.NotNull(pagina);
+        Assert.Equal(25, pagina!.TotalCount);
+        Assert.Equal(10, pagina.Items.Count);
+        Assert.Equal(2, pagina.CurrentPage);
+        // Ordenação por Nome mantida: página 2 começa em Prof 011.
+        Assert.Equal("Prof 011", pagina.Items.First().Nome);
+    }
+
     // ─────────────────────────── GET /api/orientador/dashboard ───────────────────────────
     //
     // Issue #76 (D2/D3): os 5 testes que existiam aqui cobriam a paginação de
