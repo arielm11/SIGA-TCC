@@ -127,6 +127,24 @@ public class RateLimitingListagemPaginadaTests
     }
 
     [Fact]
+    public async Task UsuarioControllerGetUsuarios_TambemEhLimitado_MesmaCotaDoCoordenador()
+    {
+        // Issue #154 (achado D5): GetUsuarios (listagem administrativa) era o único endpoint
+        // de listagem do sistema sem rate limiting — adicionado à mesma política dos demais.
+        using var factory = new WebRootIsolatedApiFactory();
+        var client = factory.CreateClientAutenticado(IdCoordenador, "Coordenador");
+
+        for (var i = 1; i <= PermitLimit; i++)
+        {
+            await client.GetAsync("/api/coordenador/professores");
+        }
+
+        var bloqueada = await client.GetAsync("/api/usuario");
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, bloqueada.StatusCode);
+    }
+
+    [Fact]
     public async Task CotaNaoEhCompartilhadaEntreUsuariosDiferentes()
     {
         using var factory = new WebRootIsolatedApiFactory();

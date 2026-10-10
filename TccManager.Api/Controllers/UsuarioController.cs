@@ -8,6 +8,7 @@ using System.Data;
 using System.Security.Claims;
 using TccManager.Api.Configuration;
 using TccManager.Api.Data;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services.Auth;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
@@ -40,11 +41,16 @@ public class UsuarioController : ControllerBase
         _logger = logger;
     }
 
+    // Issue #154 (achado D5): único endpoint de listagem administrativa sem paginação nem
+    // rate limiting — mesmo padrão já usado em todos os outros endpoints de listagem do
+    // sistema (ex.: CoordenadorController.GetProfessores).
     [HttpGet]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> GetUsuarios()
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetUsuarios([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var usuarios = await _context.Usuarios
+            .OrderBy(u => u.Nome)
             .Select(u => new UsuarioDto
             {
                 Id = u.Id,
@@ -53,7 +59,7 @@ public class UsuarioController : ControllerBase
                 Tipo = u.Tipo,
                 Ativo = u.Ativo
             })
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(usuarios);
     }
@@ -496,10 +502,13 @@ public class UsuarioController : ControllerBase
     [HttpGet("professores")]
     [Authorize]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
-    public async Task<IActionResult> GetProfessores()
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
+        // Issue #154 (achado D5): faltava paginação — tinha rate limiting (issue #74) mas
+        // ainda materializava a lista inteira de professores ativos de uma vez.
         var professores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
+            .OrderBy(u => u.Nome)
             .Select(u => new UsuarioDto
             {
                 Id = u.Id,
@@ -508,7 +517,7 @@ public class UsuarioController : ControllerBase
                 Tipo = u.Tipo,
                 Ativo = u.Ativo
             })
-            .ToListAsync();
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(professores);
     }

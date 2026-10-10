@@ -18,70 +18,66 @@
         <RadzenButton Text="Novo Usuário" Icon="add" ButtonStyle="ButtonStyle.Primary" Click="@IrParaNovoUsuario" />
     </RadzenStack>
 
-    @if (usuarios == null)
-    {
-        <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
-            <RadzenProgressBarCircular ProgressBarStyle="ProgressBarStyle.Primary" Mode="ProgressBarMode.Indeterminate" />
-            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Buscando usuários...</RadzenText>
-        </RadzenStack>
-    }
-    else
-    {
-        <RadzenDataGrid Data="@usuarios" TItem="UsuarioDto"
-                        AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
-                        AllowSorting="true"
-                        EmptyText="Nenhum usuário encontrado além de você."
-                        PageSizeText="Itens por página">
-            <Columns>
-                <RadzenDataGridColumn TItem="UsuarioDto" Property="Nome" Title="Nome" />
-                <RadzenDataGridColumn TItem="UsuarioDto" Property="Email" Title="Email" />
-                <RadzenDataGridColumn TItem="UsuarioDto" Property="Tipo" Title="Tipo" Width="140px" TextAlign="TextAlign.Center">
-                    <Template Context="user">
-                        <RadzenBadge BadgeStyle="@ObterEstiloBadge(user.Tipo)" Text="@user.Tipo.ToString()" />
-                    </Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="UsuarioDto" Property="Ativo" Title="Status" Width="140px" TextAlign="TextAlign.Center">
-                    <Template Context="user">
-                        @if (user.Ativo)
-                        {
-                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
-                                <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" />
-                                <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Ativo</RadzenText>
-                            </RadzenStack>
-                        }
-                        else
-                        {
-                            <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
-                                <RadzenIcon Icon="cancel" IconColor="var(--rz-danger)" />
-                                <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Inativo</RadzenText>
-                            </RadzenStack>
-                        }
-                    </Template>
-                </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="UsuarioDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
-                    <Template Context="user">
-                        <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                      Click="@(() => Editar(user.Id))" class="rz-me-1" title="Editar" />
-                        <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                      Click="@(() => Excluir(user.Id))" title="Excluir" />
-                    </Template>
-                </RadzenDataGridColumn>
-            </Columns>
-        </RadzenDataGrid>
-    }
+    <RadzenDataGrid @ref="grid" Data="@usuarios" Count="@count" TItem="UsuarioDto"
+                    LoadData="@CarregarUsuarios" AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
+                    EmptyText="Nenhum usuário encontrado além de você."
+                    PageSizeText="Itens por página">
+        <Columns>
+            <RadzenDataGridColumn TItem="UsuarioDto" Property="Nome" Title="Nome" />
+            <RadzenDataGridColumn TItem="UsuarioDto" Property="Email" Title="Email" />
+            <RadzenDataGridColumn TItem="UsuarioDto" Property="Tipo" Title="Tipo" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
+                <Template Context="user">
+                    <RadzenBadge BadgeStyle="@ObterEstiloBadge(user.Tipo)" Text="@user.Tipo.ToString()" />
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UsuarioDto" Property="Ativo" Title="Status" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
+                <Template Context="user">
+                    @if (user.Ativo)
+                    {
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
+                            <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Ativo</RadzenText>
+                        </RadzenStack>
+                    }
+                    else
+                    {
+                        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Gap="0.25rem">
+                            <RadzenIcon Icon="cancel" IconColor="var(--rz-danger)" />
+                            <RadzenText TextStyle="TextStyle.Body2" class="rz-my-0">Inativo</RadzenText>
+                        </RadzenStack>
+                    }
+                </Template>
+            </RadzenDataGridColumn>
+            <RadzenDataGridColumn TItem="UsuarioDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
+                <Template Context="user">
+                    <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                  Click="@(() => Editar(user.Id))" class="rz-me-1" title="Editar" />
+                    <RadzenButton Icon="delete" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                  Click="@(() => Excluir(user.Id))" title="Excluir" />
+                </Template>
+            </RadzenDataGridColumn>
+        </Columns>
+    </RadzenDataGrid>
 </RadzenStack>
 
 @code {
-    private List<UsuarioDto>? usuarios;
+    private RadzenDataGrid<UsuarioDto>? grid;
+    private List<UsuarioDto> usuarios = new();
+    private int count;
 
     protected override async Task OnInitializedAsync()
     {
         await AuthStateProvider.GetAuthenticationStateAsync();
-        await CarregarUsuarios();
     }
 
-    private async Task CarregarUsuarios()
+    // Issue #154 (achado D5): endpoint passou a paginar no servidor (antes devolvia a lista
+    // inteira de uma vez, único endpoint de listagem administrativa sem essa proteção) —
+    // mesmo padrão LoadData/PagedResult já usado em GestaoProfessores.razor.
+    private async Task CarregarUsuarios(LoadDataArgs args)
     {
+        var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
+        var page = (args.Skip ?? 0) / pageSize + 1;
+
         try
         {
             // Issue #158 (achado D12): AuthTokenHandler já anexa o Bearer em toda requisição
@@ -89,7 +85,9 @@
             // Http.DefaultRequestHeaders.Authorization aqui era redundante e, por Http ser um
             // HttpClient de escopo efetivamente singleton em Blazor WASM, podia manter um
             // token antigo sendo enviado após logout/troca de usuário na mesma aba.
-            usuarios = await Http.GetFromJsonAsync<List<UsuarioDto>>("api/usuario");
+            var resultado = await Http.GetFromJsonAsync<PagedResult<UsuarioDto>>($"api/usuario?page={page}&pageSize={pageSize}");
+            usuarios = resultado?.Items ?? new();
+            count = resultado?.TotalCount ?? 0;
         }
         catch (Exception ex)
         {
@@ -131,9 +129,9 @@
             {
                 var response = await Http.DeleteAsync($"api/usuario/{id}");
 
-                if (response.IsSuccessStatusCode)
+                if (response.IsSuccessStatusCode && grid != null)
                 {
-                    await CarregarUsuarios();
+                    await grid.Reload();
                 }
                 else
                 {
