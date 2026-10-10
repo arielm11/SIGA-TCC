@@ -17,19 +17,19 @@
         <RadzenButton Text="Novo Usuário" Icon="add" ButtonStyle="ButtonStyle.Primary" Click="@IrParaNovoUsuario" />
     </RadzenStack>
 
-    <RadzenDataGrid @ref="grid" Data="@usuarios" Count="@count" TItem="UsuarioDto"
+    <RadzenDataGrid @ref="grid" Data="@usuarios" Count="@count" TItem="UsuarioResponseDto"
                     LoadData="@CarregarUsuarios" AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
                     EmptyText="Nenhum usuário encontrado além de você."
                     PageSizeText="Itens por página">
         <Columns>
-            <RadzenDataGridColumn TItem="UsuarioDto" Property="Nome" Title="Nome" />
-            <RadzenDataGridColumn TItem="UsuarioDto" Property="Email" Title="Email" />
-            <RadzenDataGridColumn TItem="UsuarioDto" Property="Tipo" Title="Tipo" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
+            <RadzenDataGridColumn TItem="UsuarioResponseDto" Property="Nome" Title="Nome" />
+            <RadzenDataGridColumn TItem="UsuarioResponseDto" Property="Email" Title="Email" />
+            <RadzenDataGridColumn TItem="UsuarioResponseDto" Property="Tipo" Title="Tipo" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
                 <Template Context="user">
                     <RadzenBadge BadgeStyle="@ObterEstiloBadge(user.Tipo)" Text="@user.Tipo.ToString()" />
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="UsuarioDto" Property="Ativo" Title="Status" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
+            <RadzenDataGridColumn TItem="UsuarioResponseDto" Property="Ativo" Title="Status" Sortable="false" Width="140px" TextAlign="TextAlign.Center">
                 <Template Context="user">
                     @if (user.Ativo)
                     {
@@ -47,7 +47,7 @@
                     }
                 </Template>
             </RadzenDataGridColumn>
-            <RadzenDataGridColumn TItem="UsuarioDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
+            <RadzenDataGridColumn TItem="UsuarioResponseDto" Title="Ações" Sortable="false" Filterable="false" Width="130px" TextAlign="TextAlign.Center">
                 <Template Context="user">
                     <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined" Size="ButtonSize.Small"
                                   Click="@(() => Editar(user.Id))" class="rz-me-1" title="Editar" />
@@ -60,8 +60,8 @@
 </RadzenStack>
 
 @code {
-    private RadzenDataGrid<UsuarioDto>? grid;
-    private List<UsuarioDto> usuarios = new();
+    private RadzenDataGrid<UsuarioResponseDto>? grid;
+    private List<UsuarioResponseDto> usuarios = new();
     private int count;
 
     // Issue #154 (achado D5): endpoint passou a paginar no servidor (antes devolvia a lista
@@ -79,7 +79,7 @@
             // Http.DefaultRequestHeaders.Authorization aqui era redundante e, por Http ser um
             // HttpClient de escopo efetivamente singleton em Blazor WASM, podia manter um
             // token antigo sendo enviado após logout/troca de usuário na mesma aba.
-            var resultado = await Http.GetFromJsonAsync<PagedResult<UsuarioDto>>($"api/usuario?page={page}&pageSize={pageSize}");
+            var resultado = await Http.GetFromJsonAsync<PagedResult<UsuarioResponseDto>>($"api/usuario?page={page}&pageSize={pageSize}");
             usuarios = resultado?.Items ?? new();
             count = resultado?.TotalCount ?? 0;
         }

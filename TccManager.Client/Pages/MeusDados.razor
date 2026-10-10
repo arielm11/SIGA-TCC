@@ -33,23 +33,23 @@
     else if (usuario != null)
     {
         <RadzenCard Variant="Variant.Filled" class="rz-shadow-2">
-            <EditForm Model="usuario" OnValidSubmit="SalvarAlteracoes">
+            <EditForm Model="editForm" OnValidSubmit="SalvarAlteracoes">
                 <DataAnnotationsValidator />
 
                 <RadzenStack Gap="1rem">
                     <RadzenRow Gap="1rem">
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenTextBox Name="Nome" @bind-Value="usuario.Nome" style="width: 100%;" />
+                                <RadzenTextBox Name="Nome" @bind-Value="editForm.Nome" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Nome)" />
+                            <ValidationMessage For="@(() => editForm.Nome)" />
                         </RadzenColumn>
 
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenTextBox Name="Email" @bind-Value="usuario.Email" style="width: 100%;" />
+                                <RadzenTextBox Name="Email" @bind-Value="editForm.Email" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Email)" />
+                            <ValidationMessage For="@(() => editForm.Email)" />
                         </RadzenColumn>
                     </RadzenRow>
 
@@ -63,16 +63,16 @@
 
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="Alterar Senha" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenPassword Name="Senha" @bind-Value="usuario.Senha" Placeholder="Deixe em branco para manter a atual" style="width: 100%;" />
+                                <RadzenPassword Name="Senha" @bind-Value="editForm.Senha" Placeholder="Deixe em branco para manter a atual" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Senha)" />
+                            <ValidationMessage For="@(() => editForm.Senha)" />
                         </RadzenColumn>
                     </RadzenRow>
 
                     <RadzenRow Gap="1rem">
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="Senha Atual" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenPassword Name="SenhaAtual" @bind-Value="usuario.SenhaAtual" Placeholder="Necessária para alterar e-mail ou senha" style="width: 100%;" />
+                                <RadzenPassword Name="SenhaAtual" @bind-Value="editForm.SenhaAtual" Placeholder="Necessária para alterar e-mail ou senha" style="width: 100%;" />
                             </RadzenFormField>
                         </RadzenColumn>
                     </RadzenRow>
@@ -98,7 +98,11 @@
 </RadzenStack>
 
 @code {
-    private UsuarioDto? usuario;
+    // Issue #165 (achado A1/B3): a resposta de GET passou a ser UsuarioResponseDto (sem
+    // Senha/SenhaAtual) — editForm é o modelo de escrita, separado do de leitura, inicializado
+    // a partir de "usuario" a cada recarga.
+    private UsuarioResponseDto? usuario;
+    private UsuarioDto editForm = new();
     private bool carregando = true;
     private bool salvando = false;
     private int usuarioId;
@@ -147,8 +151,17 @@
             // Http.DefaultRequestHeaders.Authorization aqui era redundante e, por Http ser um
             // HttpClient de escopo efetivamente singleton em Blazor WASM, podia manter um
             // token antigo sendo enviado após logout/troca de usuário na mesma aba.
-            usuario = await Http.GetFromJsonAsync<UsuarioDto>("api/usuario/me");
-            if (usuario != null) usuario.Senha = string.Empty;
+            usuario = await Http.GetFromJsonAsync<UsuarioResponseDto>("api/usuario/me");
+            if (usuario != null)
+            {
+                editForm = new UsuarioDto
+                {
+                    Nome = usuario.Nome,
+                    Email = usuario.Email,
+                    Tipo = usuario.Tipo,
+                    Ativo = usuario.Ativo
+                };
+            }
         }
         catch (Exception)
         {
@@ -161,7 +174,7 @@
         salvando = true;
         try
         {
-            var response = await Http.PutAsJsonAsync($"api/usuario/{usuarioId}", usuario);
+            var response = await Http.PutAsJsonAsync($"api/usuario/{usuarioId}", editForm);
 
             if (response.IsSuccessStatusCode)
             {

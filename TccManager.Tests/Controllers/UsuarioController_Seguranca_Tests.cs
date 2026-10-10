@@ -51,8 +51,9 @@ public class UsuarioController_Seguranca_Tests
     }
 
     /// <summary>
-    /// Verifica o payload JSON bruto: nao basta o controller devolver UsuarioDto no tipo estatico,
-    /// porque uma regressao futura poderia voltar a serializar a entidade Usuario sem erro de compilacao.
+    /// Verifica o payload JSON bruto: nao basta o controller devolver UsuarioResponseDto no
+    /// tipo estatico, porque uma regressao futura poderia voltar a serializar a entidade
+    /// Usuario sem erro de compilacao.
     /// </summary>
     private static void AssertPayloadSemVazamentoDeHash(string json, params string[] hashesSemeados)
     {
@@ -60,10 +61,17 @@ public class UsuarioController_Seguranca_Tests
         Assert.DoesNotContain("$2a$", json, StringComparison.Ordinal);
         Assert.DoesNotContain("$2b$", json, StringComparison.Ordinal);
 
-        // Campos que so existem na entidade Usuario (nao no UsuarioDto): se aparecerem,
-        // e sinal de que a entidade crua voltou a ser serializada.
+        // Campos que so existem na entidade Usuario (nao no UsuarioResponseDto): se
+        // aparecerem, e sinal de que a entidade crua voltou a ser serializada.
         Assert.DoesNotContain("limiteOrientandos", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("aceitandoOrientandos", json, StringComparison.OrdinalIgnoreCase);
+
+        // Issue #165 (achados A1/B3): antes, Senha era omitido na resposta só por convenção
+        // (UsuarioDto também servia de corpo de escrita) — agora UsuarioResponseDto nem tem
+        // o campo, então a chave "senha" não deveria mais aparecer em nenhuma resposta de
+        // leitura/escrita do controller.
+        Assert.DoesNotContain("\"senha\"", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"senhaAtual\"", json, StringComparison.OrdinalIgnoreCase);
 
         foreach (var hash in hashesSemeados)
         {
@@ -88,7 +96,7 @@ public class UsuarioController_Seguranca_Tests
         var json = await response.Content.ReadAsStringAsync();
         AssertPayloadSemVazamentoDeHash(json, HashAluno);
 
-        var dto = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var dto = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.NotNull(dto);
         Assert.Equal(IdAluno, dto!.Id);
         Assert.Equal("Aluno Teste", dto.Nome);
@@ -110,7 +118,7 @@ public class UsuarioController_Seguranca_Tests
         var json = await response.Content.ReadAsStringAsync();
         AssertPayloadSemVazamentoDeHash(json, HashAluno);
 
-        var dto = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var dto = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(IdAluno, dto!.Id);
     }
 
@@ -244,7 +252,7 @@ public class UsuarioController_Seguranca_Tests
         AssertPayloadSemVazamentoDeHash(json);
         Assert.DoesNotContain("senha-do-novo-456", json, StringComparison.Ordinal);
 
-        var criadoDto = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var criadoDto = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.NotNull(criadoDto);
         Assert.True(criadoDto!.Id > 0);
         Assert.Equal("Professor Novo", criadoDto.Nome);
@@ -306,7 +314,7 @@ public class UsuarioController_Seguranca_Tests
         var json = await response.Content.ReadAsStringAsync();
         AssertPayloadSemVazamentoDeHash(json, HashAluno);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(TipoUsuario.Professor, retornado!.Tipo);
         Assert.False(retornado.Ativo);
 
@@ -344,7 +352,7 @@ public class UsuarioController_Seguranca_Tests
         var json = await response.Content.ReadAsStringAsync();
         AssertPayloadSemVazamentoDeHash(json, HashAluno);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(TipoUsuario.Aluno, retornado!.Tipo);
         Assert.True(retornado.Ativo);
 
@@ -589,6 +597,12 @@ public class UsuarioController_Seguranca_Tests
             Assert.DoesNotContain(HashCoordenador, json, StringComparison.Ordinal);
             Assert.DoesNotContain("$2a$", json, StringComparison.Ordinal);
             Assert.DoesNotContain("$2b$", json, StringComparison.Ordinal);
+
+            // Issue #165 (achados A1/B3): as 6 respostas do controller agora usam
+            // UsuarioResponseDto, que nem tem o campo Senha/SenhaAtual — estrutural, não
+            // mais por omissão manual na construção do objeto.
+            Assert.DoesNotContain("\"senha\"", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("\"senhaAtual\"", json, StringComparison.OrdinalIgnoreCase);
         }
     }
 
@@ -617,7 +631,7 @@ public class UsuarioController_Seguranca_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var dto = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var dto = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(IdAluno, dto!.Id);
         Assert.Equal(TipoUsuario.Aluno, dto.Tipo);
     }
