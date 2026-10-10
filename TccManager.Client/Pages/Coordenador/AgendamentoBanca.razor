@@ -169,17 +169,24 @@
         agendamento.ProfessoresIds = professoresSelecionados?.ToList() ?? new();
         agendamento.MembrosExternosIds = externosSelecionados?.ToList() ?? new();
 
-        var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
-        if (resp.IsSuccessStatusCode)
+        try
         {
-            NotificationService.NotificarSucesso("Banca agendada", "Banca agendada com sucesso!");
-            tccSelecionadoId = 0;
-            await CarregarListas();
+            var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
+            if (resp.IsSuccessStatusCode)
+            {
+                NotificationService.NotificarSucesso("Banca agendada", "Banca agendada com sucesso!");
+                tccSelecionadoId = 0;
+                await CarregarListas();
+            }
+            else
+            {
+                var erro = await resp.Content.ReadAsStringAsync();
+                NotificationService.NotificarErro("Erro ao agendar", erro);
+            }
         }
-        else
+        catch
         {
-            var erro = await resp.Content.ReadAsStringAsync();
-            NotificationService.NotificarErro("Erro ao agendar", erro);
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao agendar a banca.");
         }
     }
 

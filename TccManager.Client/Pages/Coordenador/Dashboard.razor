@@ -185,17 +185,24 @@
 
         if (resultado is string motivo && !string.IsNullOrWhiteSpace(motivo))
         {
-            var payload = new RejeicaoDto { Motivo = motivo };
-            var response = await Http.PutAsJsonAsync($"api/coordenador/propostas/{tcc.Id}/rejeitar", payload);
+            try
+            {
+                var payload = new RejeicaoDto { Motivo = motivo };
+                var response = await Http.PutAsJsonAsync($"api/coordenador/propostas/{tcc.Id}/rejeitar", payload);
 
-            if (response.IsSuccessStatusCode)
-            {
-                NotificationService.NotificarSucesso("Proposta rejeitada", "Proposta rejeitada com sucesso.");
-                await CarregarDados(); // Recarrega KPIs e a lista
+                if (response.IsSuccessStatusCode)
+                {
+                    NotificationService.NotificarSucesso("Proposta rejeitada", "Proposta rejeitada com sucesso.");
+                    await CarregarDados(); // Recarrega KPIs e a lista
+                }
+                else
+                {
+                    NotificationService.NotificarErro("Erro", "Erro ao rejeitar a proposta.");
+                }
             }
-            else
+            catch
             {
-                NotificationService.NotificarErro("Erro", "Erro ao rejeitar a proposta.");
+                NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao rejeitar a proposta.");
             }
         }
     }
@@ -232,6 +239,10 @@
             {
                 NotificationService.NotificarErro("Erro", "Erro ao designar orientador.");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao designar o orientador.");
         }
         finally { enviando = false; }
     }

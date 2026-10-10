@@ -366,6 +366,10 @@
                 NotificationService.NotificarErro("Erro", "Erro ao salvar a avaliação.");
             }
         }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao salvar a avaliação.");
+        }
         finally { salvando = false; }
     }
 
@@ -397,6 +401,10 @@
             {
                 NotificationService.NotificarErro("Erro", "Erro ao guardar o acompanhamento.");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao guardar o acompanhamento.");
         }
         finally { salvandoAcompanhamento = false; }
     }

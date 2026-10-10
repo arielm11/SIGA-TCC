@@ -167,6 +167,10 @@
                 NotificationService.NotificarErro("Erro", $"Erro ao baixar o rascunho da ata: {erro}");
             }
         }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao baixar o rascunho da ata.");
+        }
         finally
         {
             bancaIdBaixandoRascunho = null;

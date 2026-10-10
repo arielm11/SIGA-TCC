@@ -1,4 +1,5 @@
 @page "/coordenador/bancas-concluidas"
+@implements IDisposable
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Formatting
@@ -67,6 +68,18 @@
     private int? bancaIdBaixandoGerada;
     private int? bancaIdBaixandoAssinada;
 
+    // Issue #157 (achado D11): Radzen.LoadDataArgs não expõe CancellationToken, então sem um
+    // CancellationTokenSource próprio a proteção de cancelamento que a API exige nos
+    // endpoints paginados (issues #74/#107) fica inatingível a partir do Client — a requisição
+    // continua em andamento no servidor mesmo depois do usuário navegar para outra tela.
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && grid != null)
@@ -80,8 +93,18 @@
         var pageSize = args.Top ?? PaginacaoQuery.DefaultPageSize;
         var page = (args.Skip ?? 0) / pageSize + 1;
 
-        var resultado = await Http.GetFromJsonAsync<PagedResult<BancaConcluidaDto>>(
-            $"api/coordenador/bancas-concluidas?page={page}&pageSize={pageSize}");
+        PagedResult<BancaConcluidaDto>? resultado;
+        try
+        {
+            resultado = await Http.GetFromJsonAsync<PagedResult<BancaConcluidaDto>>(
+                $"api/coordenador/bancas-concluidas?page={page}&pageSize={pageSize}", _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Dispose() cancelou a requisição (usuário saiu da página antes da resposta
+            // chegar) — o componente já não existe mais para ser atualizado.
+            return;
+        }
 
         bancas = resultado?.Items ?? new();
         count = resultado?.TotalCount ?? 0;
