@@ -3,6 +3,7 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Radzen;
 using Radzen.Blazor;
+using TccManager.Client.Services;
 using TccManager.Client.Shared.Dialogs;
 using Xunit;
 
@@ -31,6 +32,7 @@ public class RegistrarResultadoDialogTests : BunitContext
         Services.AddSingleton<NotificationService>();
         Services.AddSingleton<DialogService>();
         Services.AddScoped(_ => new HttpClient(new HandlerSempre404()) { BaseAddress = new Uri("https://localhost/") });
+        Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
     }
 
     private sealed class HandlerSempre404 : HttpMessageHandler

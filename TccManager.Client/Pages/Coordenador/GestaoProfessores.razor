@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject DialogService DialogService
@@ -164,13 +165,7 @@
             // tratada propagada até o renderer do Blazor (não só desta página: no navegador
             // real isso derruba a aplicação inteira com o overlay "An unhandled error has
             // occurred"), não só um erro local desta grid.
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar a lista de professores.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar a lista de professores.");
         }
     }
 
@@ -188,13 +183,7 @@
         catch
         {
             // Mesmo raciocínio de LoadDataProfessores acima.
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar a lista de avaliadores externos.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar a lista de avaliadores externos.");
         }
     }
 
@@ -209,23 +198,11 @@
         var response = await Http.PutAsJsonAsync($"api/coordenador/professores/{prof.Id}/capacidade", payload);
         if (response.IsSuccessStatusCode)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Success,
-                Summary = "Capacidade salva",
-                Detail = "Capacidade salva com sucesso!",
-                Duration = 4000
-            });
+            NotificationService.NotificarSucesso("Capacidade salva", "Capacidade salva com sucesso!");
         }
         else
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao salvar capacidade.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao salvar capacidade.");
         }
     }
 
@@ -254,13 +231,7 @@
                     detalhe = corpo;
             }
 
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = detalhe,
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Erro", detalhe);
         }
     }
 

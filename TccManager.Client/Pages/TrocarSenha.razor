@@ -5,6 +5,7 @@
 @using TccManager.Shared.Validation
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
+@using TccManager.Client.Services
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ILocalStorageService LocalStorage
@@ -90,13 +91,7 @@
     {
         if (model.NovaSenha != model.ConfirmarNovaSenha)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Senhas não coincidem",
-                Detail = "A nova senha e a confirmação precisam ser iguais.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Senhas não coincidem", "A nova senha e a confirmação precisam ser iguais.");
             return;
         }
 
@@ -105,13 +100,7 @@
         // aplica exatamente a mesma regra do lado da API.
         if (!PoliticaSenha.Valida(model.NovaSenha, model.Email, model.SenhaAtual, out var motivo))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Senha inválida",
-                Detail = motivo ?? "A nova senha não atende aos requisitos mínimos.",
-                Duration = 6000
-            });
+            NotificationService.NotificarAviso("Senha inválida", motivo ?? "A nova senha não atende aos requisitos mínimos.");
             return;
         }
 
@@ -140,23 +129,11 @@
             }
 
             var mensagem = await ExtrairMensagemErroAsync(response);
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Não foi possível trocar a senha",
-                Detail = mensagem,
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Não foi possível trocar a senha", mensagem);
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Não foi possível comunicar com o servidor. Tente novamente em instantes.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Não foi possível comunicar com o servidor. Tente novamente em instantes.");
         }
         finally
         {
@@ -189,13 +166,7 @@
                     await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
                     AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
-                    NotificationService.Notify(new NotificationMessage
-                    {
-                        Severity = NotificationSeverity.Success,
-                        Summary = "Senha alterada",
-                        Detail = "Sua senha foi alterada com sucesso.",
-                        Duration = 5000
-                    });
+                    NotificationService.NotificarSucesso("Senha alterada", "Sua senha foi alterada com sucesso.");
 
                     Navigation.NavigateTo("/");
                     return;

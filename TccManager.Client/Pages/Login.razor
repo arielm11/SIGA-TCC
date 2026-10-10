@@ -4,6 +4,7 @@
 @using TccManager.Shared.DTOs
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
+@using TccManager.Client.Services
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ILocalStorageService LocalStorage
@@ -60,24 +61,12 @@
     {
         if (Expirado == "1")
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Sessão expirada",
-                Detail = "Sua sessão expirou. Faça login novamente.",
-                Duration = 6000
-            });
+            NotificationService.NotificarAviso("Sessão expirada", "Sua sessão expirou. Faça login novamente.");
         }
 
         if (SenhaAlterada == "1")
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Success,
-                Summary = "Senha alterada",
-                Detail = "Sua senha foi alterada com sucesso. Faça login com a nova senha.",
-                Duration = 6000
-            });
+            NotificationService.NotificarSucesso("Senha alterada", "Sua senha foi alterada com sucesso. Faça login com a nova senha.");
         }
     }
 
@@ -123,24 +112,12 @@
                     // Corpo em formato inesperado — mantém a mensagem genérica de fallback.
                 }
 
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Falha no login",
-                    Detail = mensagem,
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Falha no login", mensagem);
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Falha ao entrar",
-                Detail = "Não foi possível entrar. Tente novamente em instantes.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Falha ao entrar", "Não foi possível entrar. Tente novamente em instantes.");
         }
         finally
         {

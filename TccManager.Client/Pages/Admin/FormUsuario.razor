@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Admin")]
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -104,13 +105,7 @@
             }
             catch (Exception)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao carregar",
-                    Detail = "Erro ao carregar usuário. Talvez ele não exista.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao carregar", "Erro ao carregar usuário. Talvez ele não exista.");
             }
         }
     }
@@ -121,13 +116,7 @@
 
         if (!Id.HasValue && string.IsNullOrWhiteSpace(usuario.Senha))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Senha obrigatória",
-                Detail = "A senha é obrigatória para novos usuários.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Senha obrigatória", "A senha é obrigatória para novos usuários.");
             carregando = false;
             return;
         }
@@ -152,24 +141,12 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao salvar",
-                    Detail = $"Erro ao salvar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao salvar", $"Erro ao salvar: {erro}");
             }
         }
         catch (Exception ex)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
             Console.WriteLine(ex.Message);
         }
         finally

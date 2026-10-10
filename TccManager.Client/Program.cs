@@ -26,6 +26,7 @@ builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
 
 builder.Services.AddScoped<ISessionEndedHandler, SessionEndedHandler>();
 builder.Services.AddScoped<ITokenRefreshCoordinator, TokenRefreshCoordinator>();
+builder.Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
 
 // Issue #88 (D10) — carrega só o e-mail entre Login.razor e TrocarSenha.razor no fluxo de
 // troca de senha obrigatória.

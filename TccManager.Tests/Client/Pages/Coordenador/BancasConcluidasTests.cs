@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Radzen;
 using Radzen.Blazor;
 using TccManager.Client.Pages.Coordenador;
+using TccManager.Client.Services;
 using TccManager.Shared.DTOs;
 using Xunit;
 
@@ -103,6 +104,7 @@ public class BancasConcluidasTests : BunitContext
         // destes testes — Loose evita falha por chamada não configurada.
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton<NotificationService>();
+        Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
     }
 
     // ───────────────────── Presença e rótulos dos dois botões ─────────────────────

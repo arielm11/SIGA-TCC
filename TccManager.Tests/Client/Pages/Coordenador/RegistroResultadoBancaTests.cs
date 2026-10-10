@@ -4,6 +4,7 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Radzen;
 using TccManager.Client.Pages.Coordenador;
+using TccManager.Client.Services;
 using TccManager.Shared.DTOs;
 using Xunit;
 
@@ -67,6 +68,7 @@ public class RegistroResultadoBancaTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton<NotificationService>();
         Services.AddSingleton<DialogService>();
+        Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
     }
 
     [Fact]

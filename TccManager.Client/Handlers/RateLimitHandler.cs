@@ -1,5 +1,6 @@
 using System.Net;
 using Radzen;
+using TccManager.Client.Services;
 
 namespace TccManager.Client.Handlers;
 
@@ -32,13 +33,7 @@ public class RateLimitHandler : DelegatingHandler
                 ? $"Muitas requisições. Tente novamente em {(int)delta.TotalSeconds} segundos."
                 : "Muitas requisições. Tente novamente em instantes.";
 
-            _notificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Limite de requisições atingido",
-                Detail = detalhe,
-                Duration = 6000
-            });
+            _notificationService.NotificarAviso("Limite de requisições atingido", detalhe);
         }
 
         return response;

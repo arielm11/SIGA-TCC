@@ -1,6 +1,7 @@
 @page "/coordenador/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject NotificationService NotificationService
@@ -162,13 +163,7 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar dados do painel.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar dados do painel.");
         }
         finally { carregando = false; }
     }
@@ -195,24 +190,12 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Proposta rejeitada",
-                    Detail = "Proposta rejeitada com sucesso.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Proposta rejeitada", "Proposta rejeitada com sucesso.");
                 await CarregarDados(); // Recarrega KPIs e a lista
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao rejeitar a proposta.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao rejeitar a proposta.");
             }
         }
     }
@@ -241,25 +224,13 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Orientador designado",
-                    Detail = "Orientador designado! A proposta foi aprovada e o aluno será notificado.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Orientador designado", "Orientador designado! A proposta foi aprovada e o aluno será notificado.");
                 FecharDesignacao();
                 await CarregarDados(); // Recarrega KPIs e a lista
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao designar orientador.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao designar orientador.");
             }
         }
         finally { enviando = false; }

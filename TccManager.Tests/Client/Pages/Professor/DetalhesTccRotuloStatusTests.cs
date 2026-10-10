@@ -4,6 +4,7 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using Radzen;
 using TccManager.Client.Pages.Professor;
+using TccManager.Client.Services;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
 using Xunit;
@@ -56,6 +57,7 @@ public class DetalhesTccRotuloStatusTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton<NotificationService>();
         Services.AddSingleton<DialogService>();
+        Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
     }
 
     private void RegistrarHttp(StatusTcc status)
