@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject NotificationService NotificationService
@@ -171,26 +172,14 @@
         var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
         if (resp.IsSuccessStatusCode)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Success,
-                Summary = "Banca agendada",
-                Detail = "Banca agendada com sucesso!",
-                Duration = 5000
-            });
+            NotificationService.NotificarSucesso("Banca agendada", "Banca agendada com sucesso!");
             tccSelecionadoId = 0;
             await CarregarListas();
         }
         else
         {
             var erro = await resp.Content.ReadAsStringAsync();
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro ao agendar",
-                Detail = erro,
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Erro ao agendar", erro);
         }
     }
 

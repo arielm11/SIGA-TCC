@@ -3,9 +3,10 @@
 @using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject DialogService DialogService
 @inject NotificationService NotificationService
+@using TccManager.Client.Services
 
 <PageTitle>Lançamento de Nota Final e Ata</PageTitle>
 
@@ -96,13 +97,7 @@
             // exceção não tratada a partir de OnInitializedAsync, derrubando a renderização
             // inteira da página em vez de mostrar um erro — mesmo padrão usado em
             // Dashboard.CarregarDados e ConvitesBanca.CarregarConvites, que já tratavam isso.
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao buscar as bancas pendentes de resultado.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao buscar as bancas pendentes de resultado.");
         }
         finally { carregando = false; }
     }
@@ -125,24 +120,13 @@
         bancaIdBaixandoRascunho = bancaId;
         try
         {
-            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-rascunho-pdf");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/coordenador/banca/{bancaId}/ata-rascunho-pdf", $"ata-rascunho-{bancaId}.pdf", "application/pdf");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-rascunho-{bancaId}.pdf", "application/pdf", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar o rascunho da ata: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar o rascunho da ata: {erro}");
             }
         }
         finally { bancaIdBaixandoRascunho = null; }
@@ -160,24 +144,12 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Rascunho reenviado",
-                    Detail = $"Novo link de acesso ao rascunho enviado para {nomeMembro}.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Rascunho reenviado", $"Novo link de acesso ao rascunho enviado para {nomeMembro}.");
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao reenviar o rascunho: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao reenviar o rascunho: {erro}");
             }
         }
         finally { membroExternoIdReenviando = null; }

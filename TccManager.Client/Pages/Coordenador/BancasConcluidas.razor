@@ -4,8 +4,9 @@
 @using TccManager.Shared.Formatting
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject NotificationService NotificationService
+@using TccManager.Client.Services
 
 <PageTitle>Bancas Concluídas</PageTitle>
 
@@ -91,24 +92,13 @@
         bancaIdBaixandoGerada = bancaId;
         try
         {
-            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-pdf");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/coordenador/banca/{bancaId}/ata-pdf", $"ata-defesa-{bancaId}.pdf", "application/pdf");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{bancaId}.pdf", "application/pdf", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar a ata: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar a ata: {erro}");
             }
         }
         finally { bancaIdBaixandoGerada = null; }
@@ -119,29 +109,18 @@
         bancaIdBaixandoAssinada = bancaId;
         try
         {
-            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-assinada");
+            // "application/octet-stream", não "application/pdf": o servidor deliberadamente
+            // não afirma que este arquivo é PDF (D2 da arquitetura — legado nunca validado,
+            // pode ser qualquer binário). O helper baixa via <a download>, nunca navega para
+            // a Object URL, então não há risco prático — mas mantém a mesma cautela do
+            // backend em vez de recontar o tipo localmente.
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/coordenador/banca/{bancaId}/ata-assinada", $"ata-assinada-{bancaId}.pdf", "application/octet-stream");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                // "application/octet-stream", não "application/pdf": o servidor deliberadamente
-                // não afirma que este arquivo é PDF (D2 da arquitetura — legado nunca validado,
-                // pode ser qualquer binário). O helper baixa via <a download>, nunca navega para
-                // a Object URL, então não há risco prático — mas mantém a mesma cautela do
-                // backend em vez de recontar o tipo localmente.
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-assinada-{bancaId}.pdf", "application/octet-stream", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar a cópia assinada: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar a cópia assinada: {erro}");
             }
         }
         finally { bancaIdBaixandoAssinada = null; }

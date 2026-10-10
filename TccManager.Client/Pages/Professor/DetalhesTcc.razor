@@ -4,9 +4,12 @@
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
 @using TccManager.Shared.Formatting
+@using TccManager.Client.Shared
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
 @inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject NavigationManager Navigation
 @inject DialogService DialogService
 @inject NotificationService NotificationService
@@ -110,7 +113,7 @@
                                             <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
                                                 <RadzenText TextStyle="TextStyle.Subtitle1" class="rz-my-0">@entrega.Titulo</RadzenText>
                                                 <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@entrega.Tipo.ToString()" />
-                                                <RadzenBadge BadgeStyle="@BadgeStyleParaStatusEntrega(entrega.Status)" Text="@TextoStatusEntrega(entrega.Status)" />
+                                                <RadzenBadge BadgeStyle="@StatusEntregaBadgeStyle.Mapear(entrega.Status)" Text="@StatusEntregaFormatter.Formatar(entrega.Status)" />
                                             </RadzenStack>
                                             <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Enviado em: @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</RadzenText>
 
@@ -288,16 +291,11 @@
         entregaIdBaixando = entrega.Id;
         try
         {
-            var response = await Http.GetAsync($"api/tcc/entregas/{entrega.Id}/download");
+            var nomeArquivo = $"entrega-{entrega.Id}{entrega.ExtensaoArquivo}";
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/tcc/entregas/{entrega.Id}/download", nomeArquivo, "application/octet-stream");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                var nomeArquivo = $"entrega-{entrega.Id}{entrega.ExtensaoArquivo}";
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", nomeArquivo, "application/octet-stream", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var detalhe = response.StatusCode switch
                 {
@@ -306,24 +304,12 @@
                     _ => "Não foi possível baixar o arquivo. Tente novamente mais tarde."
                 };
 
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao baixar arquivo",
-                    Detail = detalhe,
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro ao baixar arquivo", detalhe);
             }
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao baixar o arquivo.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao baixar o arquivo.");
         }
         finally
         {
@@ -340,13 +326,7 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar os dados.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar os dados.");
         }
         finally { carregando = false; }
     }
@@ -377,25 +357,13 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Avaliação salva",
-                    Detail = "Avaliação salva com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Avaliação salva", "Avaliação salva com sucesso!");
                 FecharFormFeedback();
                 await CarregarTcc();
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao salvar a avaliação.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao salvar a avaliação.");
             }
         }
         finally { salvando = false; }
@@ -421,25 +389,13 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Ata salva",
-                    Detail = "Ata de reunião salva com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Ata salva", "Ata de reunião salva com sucesso!");
                 CancelarEdicaoAcompanhamento();
                 await CarregarTcc();
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao guardar o acompanhamento.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao guardar o acompanhamento.");
             }
         }
         finally { salvandoAcompanhamento = false; }
@@ -483,24 +439,12 @@
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao excluir o acompanhamento.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao excluir o acompanhamento.");
             }
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao excluir.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao excluir.");
         }
     }
 
@@ -520,25 +464,13 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Aceite concedido",
-                    Detail = "Aceite final concedido com sucesso!",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Aceite concedido", "Aceite final concedido com sucesso!");
                 await CarregarTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = erro,
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", erro);
             }
         }
         finally { processandoAceite = false; }
@@ -562,25 +494,13 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Entrega aprovada",
-                    Detail = "Entrega aprovada com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Entrega aprovada", "Entrega aprovada com sucesso!");
                 await CarregarTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = erro,
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", erro);
             }
         }
         finally { entregaIdProcessandoVeredito = null; }
@@ -612,43 +532,16 @@
             if (response.IsSuccessStatusCode)
             {
                 var mensagem = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Entrega rejeitada",
-                    Detail = mensagem,
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Entrega rejeitada", mensagem);
                 await CarregarTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = erro,
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", erro);
             }
         }
         finally { entregaIdProcessandoVeredito = null; }
     }
 
-    // Issue #81 (D12): mesma paleta usada em Aluno/MeuTcc.razor (D13) para o veredito de
-    // Entrega.Status — mantém as duas telas visualmente consistentes para o mesmo conceito.
-    private static BadgeStyle BadgeStyleParaStatusEntrega(StatusEntrega status) => status switch
-    {
-        StatusEntrega.Aprovada => BadgeStyle.Success,
-        StatusEntrega.Rejeitada => BadgeStyle.Danger,
-        _ => BadgeStyle.Light
-    };
-
-    private static string TextoStatusEntrega(StatusEntrega status) => status switch
-    {
-        StatusEntrega.Aprovada => "Aprovada",
-        StatusEntrega.Rejeitada => "Rejeitada",
-        _ => "Aguardando Veredito"
-    };
 }

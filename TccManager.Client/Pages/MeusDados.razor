@@ -125,13 +125,7 @@
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro: ID do usuário não encontrado no token.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", "Erro: ID do usuário não encontrado no token.");
             }
         }
         catch (Exception ex)
@@ -158,13 +152,7 @@
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Falha ao carregar",
-                Detail = "Falha ao comunicar com o servidor.",
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Falha ao carregar", "Falha ao comunicar com o servidor.");
         }
     }
 
@@ -192,35 +180,17 @@
                     await TokenRefreshCoordinator.EnsureRefreshedAsync(tokenAtual.Replace("\"", string.Empty));
                 }
 
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Sucesso",
-                    Detail = "Dados atualizados com sucesso!",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Sucesso", "Dados atualizados com sucesso!");
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao salvar",
-                    Detail = $"Erro ao salvar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao salvar", $"Erro ao salvar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao tentar salvar.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao tentar salvar.");
         }
         finally
         {

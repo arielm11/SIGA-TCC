@@ -1,6 +1,7 @@
 @page "/professor/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -140,13 +141,7 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar o dashboard.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar o dashboard.");
         }
         finally
         {
@@ -165,13 +160,7 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar as propostas aguardando decisão.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar as propostas aguardando decisão.");
         }
         finally
         {
@@ -203,44 +192,20 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Proposta aprovada",
-                    Detail = "Proposta aprovada com sucesso! Você agora é o orientador deste TCC.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Proposta aprovada", "Proposta aprovada com sucesso! Você agora é o orientador deste TCC.");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.Conflict || response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Warning,
-                    Summary = "Proposta já decidida",
-                    Detail = "Esta proposta já foi decidida por outra ação simultânea. A lista foi atualizada.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarAviso("Proposta já decidida", "Esta proposta já foi decidida por outra ação simultânea. A lista foi atualizada.");
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao aprovar a proposta.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao aprovar a proposta.");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
         }
         finally
         {
@@ -266,44 +231,20 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Proposta rejeitada",
-                    Detail = "Proposta rejeitada com sucesso.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Proposta rejeitada", "Proposta rejeitada com sucesso.");
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.Conflict || response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Warning,
-                    Summary = "Proposta já decidida",
-                    Detail = "Esta proposta já foi decidida por outra ação simultânea. A lista foi atualizada.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarAviso("Proposta já decidida", "Esta proposta já foi decidida por outra ação simultânea. A lista foi atualizada.");
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao rejeitar a proposta.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao rejeitar a proposta.");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
         }
         finally
         {

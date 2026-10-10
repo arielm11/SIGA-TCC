@@ -4,6 +4,8 @@
 @using TccManager.Shared.Models
 @using TccManager.Shared.Enums
 @using TccManager.Shared.Formatting
+@using TccManager.Client.Shared
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Aluno")]
 @inject HttpClient Http
 @inject DialogService DialogService
@@ -173,7 +175,7 @@
                                                     @* Issue #81 (D13): reflete entrega.Status (veredito explícito), não mais a
                                                        heurística antiga de "tem Feedback preenchido" — uma entrega pode ter
                                                        Feedback e continuar sem veredito registrado. *@
-                                                    <RadzenBadge BadgeStyle="@BadgeStyleParaStatusEntrega(entrega.Status)" Text="@TextoStatusEntrega(entrega.Status)" />
+                                                    <RadzenBadge BadgeStyle="@StatusEntregaBadgeStyle.Mapear(entrega.Status)" Text="@StatusEntregaFormatter.Formatar(entrega.Status)" />
 
                                                     @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
                                                     {
@@ -457,13 +459,7 @@
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
         }
         finally
         {
@@ -495,13 +491,7 @@
     {
         if (arquivoSelecionado == null || string.IsNullOrWhiteSpace(novaEntregaTitulo))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Campos obrigatórios",
-                Detail = "Preencha o título e selecione um arquivo.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Campos obrigatórios", "Preencha o título e selecione um arquivo.");
             return;
         }
 
@@ -521,13 +511,7 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Entrega enviada",
-                    Detail = "Entrega enviada com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Entrega enviada", "Entrega enviada com sucesso!");
                 novaEntregaTitulo = "";
                 arquivoSelecionado = null;
                 if (uploadEntregaRef != null)
@@ -539,24 +523,12 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao enviar",
-                    Detail = $"Erro ao enviar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao enviar", $"Erro ao enviar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Ocorreu um erro ao enviar o arquivo. Verifique o tamanho.",
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Erro", "Ocorreu um erro ao enviar o arquivo. Verifique o tamanho.");
         }
         finally
         {
@@ -573,37 +545,19 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Proposta enviada",
-                    Detail = "Proposta enviada com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Proposta enviada", "Proposta enviada com sucesso!");
                 proposta = new PropostaTccDto();
                 await CarregarDadosDoTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao enviar",
-                    Detail = $"Erro ao enviar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao enviar", $"Erro ao enviar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao enviar a proposta.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao enviar a proposta.");
         }
         finally
         {
@@ -626,37 +580,19 @@
 
                 if (response.IsSuccessStatusCode)
                 {
-                    NotificationService.Notify(new NotificationMessage
-                    {
-                        Severity = NotificationSeverity.Success,
-                        Summary = "Proposta excluída",
-                        Detail = "Proposta excluída com sucesso.",
-                        Duration = 4000
-                    });
+                    NotificationService.NotificarSucesso("Proposta excluída", "Proposta excluída com sucesso.");
                     tccExistente = null;
                     await CarregarProfessores(); // o formulário de nova proposta reaparece
                 }
                 else
                 {
                     var erro = await response.Content.ReadAsStringAsync();
-                    NotificationService.Notify(new NotificationMessage
-                    {
-                        Severity = NotificationSeverity.Error,
-                        Summary = "Erro ao excluir",
-                        Detail = $"Erro ao excluir: {erro}",
-                        Duration = 6000
-                    });
+                    NotificationService.NotificarErro("Erro ao excluir", $"Erro ao excluir: {erro}");
                 }
             }
             catch (Exception)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro de conexão",
-                    Detail = "Erro de conexão com o servidor.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
             }
         }
     }
@@ -682,13 +618,7 @@
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar informações da banca.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar informações da banca.");
         }
         finally
         {
@@ -703,20 +633,6 @@
 
     // Issue #81 (D13): mesma paleta de badges usada na tela do Professor (D12) — Pendente
     // (ainda sem veredito) em cinza claro, Aprovada em verde, Rejeitada em vermelho.
-    private static BadgeStyle BadgeStyleParaStatusEntrega(StatusEntrega status) => status switch
-    {
-        StatusEntrega.Aprovada => BadgeStyle.Success,
-        StatusEntrega.Rejeitada => BadgeStyle.Danger,
-        _ => BadgeStyle.Light
-    };
-
-    private static string TextoStatusEntrega(StatusEntrega status) => status switch
-    {
-        StatusEntrega.Aprovada => "Aprovada",
-        StatusEntrega.Rejeitada => "Rejeitada",
-        _ => "Aguardando Veredito"
-    };
-
     private class BancaInfoDto
     {
         public DateTime DataHora { get; set; }

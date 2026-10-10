@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Radzen;
 using Radzen.Blazor;
 using TccManager.Client.Pages.Professor;
+using TccManager.Client.Services;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
 using Xunit;
@@ -72,6 +73,7 @@ public class DetalhesTccVeredictoTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton<NotificationService>();
         Services.AddSingleton<DialogService>();
+        Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
     }
 
     private static Entrega NovaEntrega(int id, string titulo, TipoEntrega tipo, StatusEntrega status, string? feedback = null, int diasAtras = 0) => new()

@@ -3,8 +3,9 @@
 @using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Professor")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject NotificationService NotificationService
+@using TccManager.Client.Services
 
 <PageTitle>Meus Convites de Banca</PageTitle>
 
@@ -108,15 +109,10 @@
         entregaIdBaixando = entregaId;
         try
         {
-            var response = await Http.GetAsync($"api/tcc/entregas/{entregaId}/download");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/tcc/entregas/{entregaId}/download", $"entrega-{entregaId}{extensao}", "application/octet-stream");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"entrega-{entregaId}{extensao}", "application/octet-stream", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var detalhe = response.StatusCode switch
                 {
@@ -125,24 +121,12 @@
                     _ => "Não foi possível baixar o arquivo. Tente novamente mais tarde."
                 };
 
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao baixar arquivo",
-                    Detail = detalhe,
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro ao baixar arquivo", detalhe);
             }
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao baixar o arquivo.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao baixar o arquivo.");
         }
         finally
         {
@@ -159,13 +143,7 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao buscar seus convites de banca.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao buscar seus convites de banca.");
         }
         finally
         {
@@ -180,24 +158,13 @@
         bancaIdBaixandoRascunho = bancaId;
         try
         {
-            var response = await Http.GetAsync($"api/avaliador/banca/{bancaId}/ata-rascunho-pdf");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/avaliador/banca/{bancaId}/ata-rascunho-pdf", $"ata-rascunho-{bancaId}.pdf", "application/pdf");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-rascunho-{bancaId}.pdf", "application/pdf", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar o rascunho da ata: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar o rascunho da ata: {erro}");
             }
         }
         finally
