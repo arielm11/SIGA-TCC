@@ -1,4 +1,5 @@
 @page "/coordenador/professores"
+@implements IDisposable
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
@@ -126,6 +127,18 @@
     private bool professoresCarregados;
     private bool externosCarregados;
 
+    // Issue #157 (achado D11): Radzen.LoadDataArgs não expõe CancellationToken, então sem um
+    // CancellationTokenSource próprio a proteção de cancelamento que a API exige nos
+    // endpoints paginados (issues #74/#107) fica inatingível a partir do Client — a requisição
+    // continua em andamento no servidor mesmo depois do usuário navegar para outra tela.
+    private readonly CancellationTokenSource _cts = new();
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+
     // RadzenDataGrid (nesta versão do Radzen.Blazor) não dispara LoadData automaticamente no
     // primeiro render — precisa de Reload() explícito. Com RadzenTabs RenderMode="TabRenderMode.Server",
     // o conteúdo de uma aba só é montado (e a referência @ref só deixa de ser null) quando ela
@@ -154,9 +167,15 @@
 
         try
         {
-            var resultado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?page={page}&pageSize={pageSize}");
+            var resultado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>(
+                $"api/coordenador/professores?page={page}&pageSize={pageSize}", _cts.Token);
             professores = resultado?.Items ?? new();
             countProfessores = resultado?.TotalCount ?? 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // Dispose() cancelou a requisição (usuário saiu da página antes da resposta
+            // chegar) — o componente já não existe mais para ser atualizado.
         }
         catch
         {
@@ -176,9 +195,14 @@
 
         try
         {
-            var resultado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>($"api/coordenador/membros-externos?page={page}&pageSize={pageSize}");
+            var resultado = await Http.GetFromJsonAsync<PagedResult<MembroExternoDto>>(
+                $"api/coordenador/membros-externos?page={page}&pageSize={pageSize}", _cts.Token);
             externos = resultado?.Items ?? new();
             countExternos = resultado?.TotalCount ?? 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // Mesmo raciocínio de LoadDataProfessores acima.
         }
         catch
         {
@@ -195,43 +219,57 @@
             AceitandoOrientandos = prof.AceitandoOrientandos
         };
 
-        var response = await Http.PutAsJsonAsync($"api/coordenador/professores/{prof.Id}/capacidade", payload);
-        if (response.IsSuccessStatusCode)
+        try
         {
-            NotificationService.NotificarSucesso("Capacidade salva", "Capacidade salva com sucesso!");
+            var response = await Http.PutAsJsonAsync($"api/coordenador/professores/{prof.Id}/capacidade", payload);
+            if (response.IsSuccessStatusCode)
+            {
+                NotificationService.NotificarSucesso("Capacidade salva", "Capacidade salva com sucesso!");
+            }
+            else
+            {
+                NotificationService.NotificarErro("Erro", "Erro ao salvar capacidade.");
+            }
         }
-        else
+        catch
         {
-            NotificationService.NotificarErro("Erro", "Erro ao salvar capacidade.");
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao salvar a capacidade.");
         }
     }
 
     private async Task SalvarMembroExterno()
     {
-        var response = await Http.PostAsJsonAsync("api/coordenador/membros-externos", novoExterno);
-        if (response.IsSuccessStatusCode)
+        try
         {
-            novoExterno = new();
-            if (gridExternos != null)
+            var response = await Http.PostAsJsonAsync("api/coordenador/membros-externos", novoExterno);
+            if (response.IsSuccessStatusCode)
             {
-                await gridExternos.Reload();
+                novoExterno = new();
+                if (gridExternos != null)
+                {
+                    await gridExternos.Reload();
+                }
+            }
+            else
+            {
+                // Issue #99 (achado A06-2): mesmo tratamento de EditarMembroExternoDialog —
+                // repassar o motivo especifico do 400/409 em vez de esconder atras de uma
+                // mensagem generica.
+                var detalhe = "Erro ao adicionar avaliador externo.";
+
+                if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
+                {
+                    var corpo = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(corpo))
+                        detalhe = corpo;
+                }
+
+                NotificationService.NotificarErro("Erro", detalhe);
             }
         }
-        else
+        catch
         {
-            // Issue #99 (achado A06-2): mesmo tratamento de EditarMembroExternoDialog —
-            // repassar o motivo especifico do 400/409 em vez de esconder atras de uma
-            // mensagem generica.
-            var detalhe = "Erro ao adicionar avaliador externo.";
-
-            if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
-            {
-                var corpo = await response.Content.ReadAsStringAsync();
-                if (!string.IsNullOrWhiteSpace(corpo))
-                    detalhe = corpo;
-            }
-
-            NotificationService.NotificarErro("Erro", detalhe);
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao adicionar o avaliador externo.");
         }
     }
 
@@ -244,10 +282,17 @@
 
         if (confirmado == true)
         {
-            var response = await Http.DeleteAsync($"api/coordenador/membros-externos/{id}");
-            if (response.IsSuccessStatusCode && gridExternos != null)
+            try
             {
-                await gridExternos.Reload();
+                var response = await Http.DeleteAsync($"api/coordenador/membros-externos/{id}");
+                if (response.IsSuccessStatusCode && gridExternos != null)
+                {
+                    await gridExternos.Reload();
+                }
+            }
+            catch
+            {
+                NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao excluir o avaliador externo.");
             }
         }
     }

@@ -129,6 +129,10 @@
                 NotificationService.NotificarErro("Erro", $"Erro ao baixar o rascunho da ata: {erro}");
             }
         }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao baixar o rascunho da ata.");
+        }
         finally { bancaIdBaixandoRascunho = null; }
     }
 
@@ -151,6 +155,10 @@
                 var erro = await response.Content.ReadAsStringAsync();
                 NotificationService.NotificarErro("Erro", $"Erro ao reenviar o rascunho: {erro}");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao reenviar o rascunho.");
         }
         finally { membroExternoIdReenviando = null; }
     }
