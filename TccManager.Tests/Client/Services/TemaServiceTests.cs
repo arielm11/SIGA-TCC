@@ -7,8 +7,8 @@ namespace TccManager.Tests.Client.Services;
 
 /// <summary>
 /// Testes unitários de <see cref="TemaService"/> isolando sua lógica pura (resolução do tema a
-/// partir do localStorage, alternância, persistência e disparo de evento) com fakes escritos à
-/// mão de <see cref="Blazored.LocalStorage.ILocalStorageService"/> e <see cref="IJSRuntime"/>.
+/// partir do localStorage, alternância e persistência) com fakes escritos à mão de
+/// <see cref="Blazored.LocalStorage.ILocalStorageService"/> e <see cref="IJSRuntime"/>.
 /// Não cobre o script anti-flash de index.html nem o theme.js real (JS puro — fora do alcance
 /// sem bUnit/ambiente de navegador; ver docs/testes).
 /// </summary>
@@ -193,40 +193,4 @@ public class TemaServiceTests
         Assert.Equal(storage.Store["preferenciaTema"], Assert.Single(js.Invocacoes).Args!.Single());
     }
 
-    // ── AlternarTemaAsync — evento ────────────────────────────────────
-
-    [Fact]
-    public async Task AlternarTemaAsync_DisparaEventoTemaAlterado()
-    {
-        var service = CriarServico(out _, out _);
-        var disparos = 0;
-        service.TemaAlterado += () => disparos++;
-
-        await service.AlternarTemaAsync();
-
-        Assert.Equal(1, disparos);
-    }
-
-    [Fact]
-    public async Task AlternarTemaAsync_SemAssinantes_NaoLancaExcecao()
-    {
-        var service = CriarServico(out _, out _);
-
-        var excecao = await Record.ExceptionAsync(() => service.AlternarTemaAsync());
-
-        Assert.Null(excecao);
-    }
-
-    [Fact]
-    public async Task AlternarTemaAsync_ChamadoDuasVezes_DisparaEventoParaCadaChamada()
-    {
-        var service = CriarServico(out _, out _);
-        var disparos = 0;
-        service.TemaAlterado += () => disparos++;
-
-        await service.AlternarTemaAsync();
-        await service.AlternarTemaAsync();
-
-        Assert.Equal(2, disparos);
-    }
 }

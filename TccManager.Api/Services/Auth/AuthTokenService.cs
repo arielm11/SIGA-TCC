@@ -179,7 +179,7 @@ public class AuthTokenService : IAuthTokenService
             return null;
         }
 
-        var (accessToken, expiresAtUtc) = _tokenService.GerarAccessToken(tokenAtual.Usuario);
+        var (accessToken, _) = _tokenService.GerarAccessToken(tokenAtual.Usuario);
 
         // Achado A09-1 da revisão de segurança: dentro da janela de graça, este é o único
         // controle compensatório que sobra (a reuse-detection deliberadamente não dispara) —
@@ -192,8 +192,7 @@ public class AuthTokenService : IAuthTokenService
         return new TokenPairDto
         {
             Token = accessToken,
-            RefreshToken = sucessorBruto,
-            ExpiresAtUtc = expiresAtUtc
+            RefreshToken = sucessorBruto
         };
     }
 
@@ -243,7 +242,7 @@ public class AuthTokenService : IAuthTokenService
 
     private (TokenPairDto Par, RefreshToken NovoRefreshToken) CriarNovoPar(Usuario usuario, DateTime agora)
     {
-        var (accessToken, expiresAtUtc) = _tokenService.GerarAccessToken(usuario);
+        var (accessToken, _) = _tokenService.GerarAccessToken(usuario);
 
         var refreshTokenBruto = OpaqueTokenHelper.GerarTokenBruto();
 
@@ -260,8 +259,7 @@ public class AuthTokenService : IAuthTokenService
         var par = new TokenPairDto
         {
             Token = accessToken,
-            RefreshToken = refreshTokenBruto,
-            ExpiresAtUtc = expiresAtUtc
+            RefreshToken = refreshTokenBruto
         };
 
         return (par, novoRefreshToken);

@@ -14,7 +14,7 @@ namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Professor")]
+[Authorize(Roles = nameof(TipoUsuario.Professor))]
 public class AvaliadorController : ControllerBase
 {
     private readonly AppDbContext _context;

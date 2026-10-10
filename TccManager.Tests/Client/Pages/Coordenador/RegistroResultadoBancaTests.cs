@@ -51,9 +51,9 @@ public class RegistroResultadoBancaTests : BunitContext
 
     private static HttpResponseMessage Json<T>(T valor) => new(HttpStatusCode.OK) { Content = JsonContent.Create(valor) };
 
-    private static BancaPendenteDto NovaBanca(int tccId = 1, bool comMembroExterno = false) => new()
+    private static BancaPendenteDto NovaBanca(int bancaId = 1, bool comMembroExterno = false) => new()
     {
-        TccId = tccId,
+        BancaId = bancaId,
         DataHora = DateTime.UtcNow.AddDays(1),
         Local = "Sala 202",
         TccTitulo = "TCC Pendente de Resultado",
@@ -127,7 +127,7 @@ public class RegistroResultadoBancaTests : BunitContext
     {
         var pdfFalso = new byte[] { 0x25, 0x50, 0x44, 0x46 };
         var handler = new HandlerMultiRota()
-            .ComRota("/api/coordenador/bancas-pendentes-resultado", () => Json(new List<BancaPendenteDto> { NovaBanca(tccId: 7) }))
+            .ComRota("/api/coordenador/bancas-pendentes-resultado", () => Json(new List<BancaPendenteDto> { NovaBanca(bancaId: 7) }))
             .ComRota("/api/coordenador/banca/7/ata-rascunho-pdf", () => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(pdfFalso)
@@ -149,7 +149,7 @@ public class RegistroResultadoBancaTests : BunitContext
     public void BaixarRascunho_ComFalha_ExibeNotificacaoDeErro()
     {
         var handler = new HandlerMultiRota()
-            .ComRota("/api/coordenador/bancas-pendentes-resultado", () => Json(new List<BancaPendenteDto> { NovaBanca(tccId: 7) }))
+            .ComRota("/api/coordenador/bancas-pendentes-resultado", () => Json(new List<BancaPendenteDto> { NovaBanca(bancaId: 7) }))
             .ComRota("/api/coordenador/banca/7/ata-rascunho-pdf", () => new HttpResponseMessage(HttpStatusCode.NotFound)
             {
                 Content = new StringContent("Banca não encontrada.")

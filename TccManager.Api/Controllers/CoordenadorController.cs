@@ -20,7 +20,7 @@ namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Coordenador")]
+[Authorize(Roles = nameof(TipoUsuario.Coordenador))]
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -440,7 +440,7 @@ public class CoordenadorController : ControllerBase
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
             .Select(b => new BancaPendenteDto
             {
-                TccId = b.Id,
+                BancaId = b.Id,
                 DataHora = b.DataHora,
                 Local = b.Local,
                 TccTitulo = b.Tcc.Titulo,
@@ -642,7 +642,7 @@ public class CoordenadorController : ControllerBase
     /// QuestPDF servido por GetAtaPdf. Estrutura copiada de TccController.DownloadEntrega (ler
     /// caminho persistido → AbrirLeituraAsync → tratar ausência → File → auditar), não de
     /// GetAtaPdf: aqui não há nada para orquestrar, é só ler uma coluna e abrir um stream.
-    /// Nenhuma verificação de autorização além do [Authorize(Roles = "Coordenador")] da classe
+    /// Nenhuma verificação de autorização além do [Authorize(Roles = nameof(TipoUsuario.Coordenador))] da classe
     /// — o único papel autorizado já vê/baixa qualquer banca via GetBancasConcluidas/GetAtaPdf.
     /// </summary>
     [HttpGet("banca/{idBanca}/ata-assinada")]
