@@ -40,7 +40,10 @@ public class TccAguardandoBancaDto
 
 public class BancaPendenteDto
 {
-    public int TccId { get; set; }
+    // Issue #159 (achado F1): renomeado de "TccId" — o valor sempre foi o Id da Banca
+    // (b.Id na projeção do controller), nunca o do Tcc. BancaConcluidaDto já usa "BancaId"
+    // pelo mesmo motivo (ver seu comentário).
+    public int BancaId { get; set; }
     public DateTime DataHora { get; set; }
     public string Local { get; set; } = string.Empty;
     public string TccTitulo { get; set; } = string.Empty;
@@ -62,9 +65,9 @@ public class MembroExternoBancaDto
 }
 
 /// <summary>
-/// Item da listagem de bancas já concluídas (resultado registrado). Usa "BancaId"
-/// (e não "TccId", como o já existente BancaPendenteDto faz de forma enganosa) para
-/// que o Client monte a rota banca/{BancaId}/ata-pdf sem ambiguidade.
+/// Item da listagem de bancas já concluídas (resultado registrado). Usa "BancaId" para que
+/// o Client monte a rota banca/{BancaId}/ata-pdf sem ambiguidade (mesmo nome usado por
+/// BancaPendenteDto, desde a issue #159).
 /// </summary>
 public class BancaConcluidaDto
 {

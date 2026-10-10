@@ -17,7 +17,7 @@ namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Professor")]
+[Authorize(Roles = nameof(TipoUsuario.Professor))]
 public class OrientadorController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -45,7 +45,7 @@ public class OrientadorController : ControllerBase
 
     [HttpGet("dashboard")]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
-    public async Task<IActionResult> GetDaboard(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetDashboard(CancellationToken cancellationToken)
     {
         var profIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(profIdClaim) || !int.TryParse(profIdClaim, out int profId))
@@ -60,7 +60,7 @@ public class OrientadorController : ControllerBase
                 Id = t.Id,
                 Titulo = t.Titulo,
                 Resumo = t.Resumo,
-                NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconecido",
+                NomeAluno = t.Aluno != null ? t.Aluno.Nome : "Desconhecido",
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
             }).ToListAsync(cancellationToken);

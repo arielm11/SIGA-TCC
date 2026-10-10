@@ -186,7 +186,7 @@ public class DashboardTests : BunitContext
     [Fact]
     public void Renderiza_ChamaODashboardSemParametrosDePaginacao()
     {
-        // D3: GetDaboard perdeu o PaginacaoQuery junto com a lista de pendentes — a página não
+        // D3: GetDashboard perdeu o PaginacaoQuery junto com a lista de pendentes — a página não
         // pode continuar mandando page/pageSize (ficaria sugerindo um contrato que não existe).
         var handler = RegistrarHttp(DashboardComOrientandos());
 

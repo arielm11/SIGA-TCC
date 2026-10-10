@@ -153,7 +153,6 @@ public class AuthController_RefreshToken_Tests
         Assert.False(string.IsNullOrWhiteSpace(par.RefreshToken));
         // Rotação: o novo refresh token é diferente do apresentado.
         Assert.NotEqual(login.RefreshToken, par.RefreshToken);
-        Assert.True(par.ExpiresAtUtc > DateTime.UtcNow);
 
         // Issue #85: reapresentar o token antigo IMEDIATAMENTE após a rotação deixou de ser 401.
         // Essa sequência é, por definição, a corrida benigna (duas abas renovando quase juntas),

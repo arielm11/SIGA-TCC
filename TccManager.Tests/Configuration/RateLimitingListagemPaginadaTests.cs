@@ -7,7 +7,7 @@ namespace TccManager.Tests.Configuration;
 /// <summary>
 /// Issue #74 — política de rate limiting "listagem-paginada", aplicada aos 5 endpoints de
 /// listagem paginada autenticados (CoordenadorController.GetProfessores/GetMembrosExternos/
-/// GetBancasConcluidas, OrientadorController.GetDaboard, TccController.GetMinhasEntregas) mais
+/// GetBancasConcluidas, OrientadorController.GetDashboard, TccController.GetMinhasEntregas) mais
 /// um sexto, UsuarioController.GetProfessores (achado F-01 da revisão de segurança: devolvia o
 /// mesmo catálogo, com Email a mais e sem paginação, contornando a proteção dos outros 5).
 /// FixedWindow, PermitLimit 60/60s (10/60s para requisição sem autenticação — achado F-02),
@@ -15,7 +15,7 @@ namespace TccManager.Tests.Configuration;
 /// partição por IP colapsaria a cota de uma rede inteira, ex. campus universitário atrás de
 /// NAT/proxy, num único bucket compartilhado entre usuários diferentes).
 ///
-/// Issue #76 (D3): OrientadorController.GetDaboard deixou de ser um endpoint de listagem
+/// Issue #76 (D3): OrientadorController.GetDashboard deixou de ser um endpoint de listagem
 /// PAGINADA (perdeu o PaginacaoQuery junto com a lista de propostas pendentes), mas a política
 /// continua aplicada nele de propósito — segue sendo listagem autenticada, e removê-la
 /// afrouxaria sem motivo uma proteção da issue #74. O nome da política ficou levemente

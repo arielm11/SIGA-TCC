@@ -31,8 +31,6 @@ public class TemaService
 
     public bool EhEscuro => TemaAtual == TemaEscuro;
 
-    public event Action? TemaAlterado;
-
     /// <summary>
     /// Lê a preferência persistida e sincroniza o estado em memória. Deve ser chamado uma única
     /// vez, no bootstrap do host (Program.cs), antes do primeiro componente renderizar.
@@ -63,7 +61,5 @@ public class TemaService
 
         await _localStorage.SetItemAsync(ChaveLocalStorage, TemaAtual);
         await _jsRuntime.InvokeVoidAsync("setRadzenTheme", TemaAtual);
-
-        TemaAlterado?.Invoke();
     }
 }

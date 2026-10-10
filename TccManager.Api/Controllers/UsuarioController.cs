@@ -45,7 +45,7 @@ public class UsuarioController : ControllerBase
     // rate limiting — mesmo padrão já usado em todos os outros endpoints de listagem do
     // sistema (ex.: CoordenadorController.GetProfessores).
     [HttpGet]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = nameof(TipoUsuario.Admin))]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetUsuarios([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
@@ -124,7 +124,7 @@ public class UsuarioController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = nameof(TipoUsuario.Admin))]
     public async Task<IActionResult> CreateUsuario([FromBody] UsuarioDto dto)
     {
         if(await _context.Usuarios.AnyAsync(u => u.Email == dto.Email))
@@ -397,7 +397,7 @@ public class UsuarioController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = nameof(TipoUsuario.Admin))]
     public async Task<IActionResult> DeleteUsuario(int id)
     {
         var usuario = await _context.Usuarios.FindAsync(id);

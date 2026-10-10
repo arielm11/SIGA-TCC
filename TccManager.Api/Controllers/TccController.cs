@@ -51,7 +51,7 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("meu-tcc")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetMeuTcc()
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -89,7 +89,7 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("professores")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
@@ -105,7 +105,7 @@ public class TccController : ControllerBase
     }
 
     [HttpPost("proposta")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> SubmeterProposta([FromBody] PropostaTccDto dto)
     {
@@ -179,7 +179,7 @@ public class TccController : ControllerBase
     }
 
     [HttpDelete("proposta/{id}")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> ExcluirProposta(int id)
     {
@@ -223,7 +223,7 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("entregas")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
@@ -255,7 +255,7 @@ public class TccController : ControllerBase
     }
 
     [HttpPost("entregas")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
     [EnableRateLimiting(RateLimitingSetup.UploadPolicyName)]
     public async Task<IActionResult> EnviarEntrega(
@@ -528,7 +528,7 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("entregas/{idEntrega}/feedbacks")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetFeedbackEntrega(int idEntrega) 
     { 
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -553,8 +553,8 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("acompanhamentos")]
-    [Authorize(Roles ="Aluno")]
-    public async Task<IActionResult> GetAcompanhentos() 
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    public async Task<IActionResult> GetAcompanhamentos()
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
@@ -582,7 +582,7 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("minha-banca")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetMinhaBanca() 
     { 
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

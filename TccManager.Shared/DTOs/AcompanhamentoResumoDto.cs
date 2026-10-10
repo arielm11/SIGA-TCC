@@ -3,7 +3,7 @@ using TccManager.Shared.Models;
 namespace TccManager.Shared.DTOs;
 
 // Issue #144 (achado A4): substitui a entidade Acompanhamento crua devolvida por
-// GetAcompanhentos/GetDetalhesTcc. Distinto de AcompanhamentoDto (OrientadorDtos.cs), que é
+// GetAcompanhamentos/GetDetalhesTcc. Distinto de AcompanhamentoDto (OrientadorDtos.cs), que é
 // o corpo de escrita (POST/PUT) e não tem Id.
 public class AcompanhamentoResumoDto
 {

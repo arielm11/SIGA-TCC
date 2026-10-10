@@ -11,7 +11,7 @@ namespace TccManager.Tests.Controllers;
 
 /// <summary>
 /// Issue #144 (achados A3/A4/B7/B8): GetDetalhesTcc, GetMeuTcc, SubmeterProposta,
-/// GetMinhasEntregas, EnviarEntrega e GetAcompanhentos devolviam a entidade EF Core crua —
+/// GetMinhasEntregas, EnviarEntrega e GetAcompanhamentos devolviam a entidade EF Core crua —
 /// mesma classe de risco do vazamento de Usuario.SenhaHash corrigido na #137. Estes testes
 /// provam, no payload bruto, que os campos irrelevantes/sensíveis que só existiam por essa
 /// entidade crua (PrecisaTrocarSenha/LimiteOrientandos/AceitandoOrientandos/Ativo do Aluno,
@@ -142,7 +142,7 @@ public class EntidadeCrua_ProjetadaParaDto_Tests
     }
 
     [Fact]
-    public async Task GetAcompanhentos_PayloadBruto_NaoContemCampoTcc()
+    public async Task GetAcompanhamentos_PayloadBruto_NaoContemCampoTcc()
     {
         var (factory, tccId, _) = await PrepararCenarioAsync();
         using (var context = factory.CriarContextoDireto())

@@ -45,15 +45,15 @@
                         <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center"
                                      Wrap="FlexWrap.Wrap" style="width: 100%;">
                             <RadzenButton Text="Rascunho" Icon="description" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                          IsBusy="@(bancaIdBaixandoRascunho == banca.TccId)" BusyText="Baixando..."
-                                          Disabled="@(bancaIdBaixandoRascunho == banca.TccId)"
-                                          Click="@(() => BaixarAtaRascunho(banca.TccId))" />
+                                          IsBusy="@(bancaIdBaixandoRascunho == banca.BancaId)" BusyText="Baixando..."
+                                          Disabled="@(bancaIdBaixandoRascunho == banca.BancaId)"
+                                          Click="@(() => BaixarAtaRascunho(banca.BancaId))" />
 
                             @if (banca.MembrosExternos.Any())
                             {
                                 <RadzenSplitButton Text="Reenviar Rascunho" Icon="forward_to_inbox" ButtonStyle="ButtonStyle.Warning"
                                                     Variant="Variant.Outlined" Size="ButtonSize.Small" AlwaysOpenPopup="true"
-                                                    Click="@(args => ReenviarRascunho(banca.TccId, args))">
+                                                    Click="@(args => ReenviarRascunho(banca.BancaId, args))">
                                     @foreach (var membro in banca.MembrosExternos)
                                     {
                                         <RadzenSplitButtonItem Text="@membro.Nome" Value="@membro.MembroExternoId.ToString()"
@@ -63,7 +63,7 @@
                             }
 
                             <RadzenButton Text="Registrar Resultado" Icon="upload_file" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
-                                          Click="@(() => AbrirModal(banca.TccId, banca.NomeAluno))" />
+                                          Click="@(() => AbrirModal(banca.BancaId, banca.NomeAluno))" />
                         </RadzenStack>
                     </Template>
                 </RadzenDataGridColumn>

@@ -1,11 +1,9 @@
 @page "/usuarios"
 @using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
 @using TccManager.Client.Services
 @attribute [Authorize(Roles = "Admin")]
-@inject AuthenticationStateProvider AuthStateProvider
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject DialogService DialogService
@@ -65,11 +63,6 @@
     private RadzenDataGrid<UsuarioDto>? grid;
     private List<UsuarioDto> usuarios = new();
     private int count;
-
-    protected override async Task OnInitializedAsync()
-    {
-        await AuthStateProvider.GetAuthenticationStateAsync();
-    }
 
     // Issue #154 (achado D5): endpoint passou a paginar no servidor (antes devolvia a lista
     // inteira de uma vez, único endpoint de listagem administrativa sem essa proteção) —

@@ -116,7 +116,7 @@ public class StatusTccEmAndamento_GrupoA_Regressao_Tests
         await ctx.SaveChangesAsync();
     }
 
-    // ── OrientadorController.GetDaboard ───────────────────────────────────────────────────
+    // ── OrientadorController.GetDashboard ───────────────────────────────────────────────────
 
     [Fact]
     public async Task DashboardDoOrientador_ListaTantoOTccAprovadoQuantoOEmAndamento()
