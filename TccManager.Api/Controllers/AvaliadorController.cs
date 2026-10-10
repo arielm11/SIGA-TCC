@@ -118,13 +118,6 @@ public class AvaliadorController : ControllerBase
                 profId, idBanca);
         }
 
-        return resultado.Status switch
-        {
-            AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf"),
-            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
-            AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
-            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
-            _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
-        };
+        return this.ResultadoAtaPdfParaActionResult(resultado, $"ata-rascunho-{idBanca}.pdf");
     }
 }
