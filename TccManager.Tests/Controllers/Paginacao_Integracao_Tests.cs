@@ -179,7 +179,7 @@ public class Paginacao_Integracao_Tests
         var response = await client.GetAsync("/api/usuario");
 
         response.EnsureSuccessStatusCode();
-        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
         Assert.NotNull(pagina);
         // +1 pelo próprio Admin semeado.
@@ -196,7 +196,7 @@ public class Paginacao_Integracao_Tests
         var response = await client.GetAsync("/api/usuario?page=2&pageSize=10");
 
         response.EnsureSuccessStatusCode();
-        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
         Assert.NotNull(pagina);
         Assert.Equal(26, pagina!.TotalCount);
@@ -215,7 +215,7 @@ public class Paginacao_Integracao_Tests
         var response = await client.GetAsync("/api/usuario/professores?page=2&pageSize=10");
 
         response.EnsureSuccessStatusCode();
-        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioDto>>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
         Assert.NotNull(pagina);
         Assert.Equal(25, pagina!.TotalCount);

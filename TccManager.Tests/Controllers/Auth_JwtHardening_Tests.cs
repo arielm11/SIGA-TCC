@@ -122,7 +122,7 @@ public class Auth_JwtHardening_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var dto = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var dto = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(IdUsuario, dto!.Id);
     }
 

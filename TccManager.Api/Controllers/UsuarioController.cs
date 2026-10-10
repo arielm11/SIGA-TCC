@@ -49,17 +49,21 @@ public class UsuarioController : ControllerBase
     [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
     public async Task<IActionResult> GetUsuarios([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
-        var usuarios = await _context.Usuarios
+        var pagina = await _context.Usuarios
+            .AsNoTracking()
             .OrderBy(u => u.Nome)
-            .Select(u => new UsuarioDto
-            {
-                Id = u.Id,
-                Nome = u.Nome,
-                Email = u.Email,
-                Tipo = u.Tipo,
-                Ativo = u.Ativo
-            })
             .ToPagedResultAsync(paginacao, cancellationToken);
+
+        // Issue #165 (achados A1/B3): projeta para UsuarioResponseDto em vez de devolver a
+        // entidade Usuario crua (não expõe SenhaHash) — mesmo padrão de EntregaDto/TccDetalheDto.
+        var usuarios = new PagedResult<UsuarioResponseDto>
+        {
+            Items = pagina.Items.Select(UsuarioResponseDto.DeEntidade).ToList(),
+            TotalCount = pagina.TotalCount,
+            TotalPages = pagina.TotalPages,
+            CurrentPage = pagina.CurrentPage,
+            PageSize = pagina.PageSize
+        };
 
         return Ok(usuarios);
     }
@@ -78,16 +82,7 @@ public class UsuarioController : ControllerBase
         if (usuario == null)
             return NotFound("Usuário não encontrado.");
 
-        var usuarioDto = new UsuarioDto
-        {
-            Id = usuario.Id,
-            Nome = usuario.Nome,
-            Email = usuario.Email,
-            Tipo = usuario.Tipo,
-            Ativo = usuario.Ativo
-        };
-
-        return Ok(usuarioDto);
+        return Ok(UsuarioResponseDto.DeEntidade(usuario));
     }
 
     [HttpGet("{id}")]
@@ -111,16 +106,7 @@ public class UsuarioController : ControllerBase
         if (usuario == null)
             return NotFound("Usuário não encontrado");
 
-        var usuarioDto = new UsuarioDto
-        {
-            Id = usuario.Id,
-            Nome = usuario.Nome,
-            Email = usuario.Email,
-            Tipo = usuario.Tipo,
-            Ativo = usuario.Ativo
-        };
-
-        return Ok(usuarioDto);
+        return Ok(UsuarioResponseDto.DeEntidade(usuario));
     }
 
     [HttpPost]
@@ -176,16 +162,7 @@ public class UsuarioController : ControllerBase
             newUsuario.Id,
             newUsuario.Tipo);
 
-        var novoUsuarioDto = new UsuarioDto
-        {
-            Id = newUsuario.Id,
-            Nome = newUsuario.Nome,
-            Email = newUsuario.Email,
-            Tipo = newUsuario.Tipo,
-            Ativo = newUsuario.Ativo
-        };
-
-        return Ok(novoUsuarioDto);
+        return Ok(UsuarioResponseDto.DeEntidade(newUsuario));
     }
 
     [HttpPut("{id}")]
@@ -378,16 +355,7 @@ public class UsuarioController : ControllerBase
             if (bloqueadoPorUnicoAdmin)
                 return Conflict(mensagemBloqueio);
 
-            var usuarioDto = new UsuarioDto
-            {
-                Id = usuario.Id,
-                Nome = usuario.Nome,
-                Email = usuario.Email,
-                Tipo = usuario.Tipo,
-                Ativo = usuario.Ativo
-            };
-
-            return Ok(usuarioDto);
+            return Ok(UsuarioResponseDto.DeEntidade(usuario));
         }
         finally
         {
@@ -506,18 +474,22 @@ public class UsuarioController : ControllerBase
     {
         // Issue #154 (achado D5): faltava paginação — tinha rate limiting (issue #74) mas
         // ainda materializava a lista inteira de professores ativos de uma vez.
-        var professores = await _context.Usuarios
+        var pagina = await _context.Usuarios
+            .AsNoTracking()
             .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
             .OrderBy(u => u.Nome)
-            .Select(u => new UsuarioDto
-            {
-                Id = u.Id,
-                Nome = u.Nome,
-                Email = u.Email,
-                Tipo = u.Tipo,
-                Ativo = u.Ativo
-            })
             .ToPagedResultAsync(paginacao, cancellationToken);
+
+        // Issue #165 (achados A1/B3): projeta para UsuarioResponseDto em vez de devolver a
+        // entidade Usuario crua (não expõe SenhaHash) — mesmo padrão de EntregaDto/TccDetalheDto.
+        var professores = new PagedResult<UsuarioResponseDto>
+        {
+            Items = pagina.Items.Select(UsuarioResponseDto.DeEntidade).ToList(),
+            TotalCount = pagina.TotalCount,
+            TotalPages = pagina.TotalPages,
+            CurrentPage = pagina.CurrentPage,
+            PageSize = pagina.PageSize
+        };
 
         return Ok(professores);
     }

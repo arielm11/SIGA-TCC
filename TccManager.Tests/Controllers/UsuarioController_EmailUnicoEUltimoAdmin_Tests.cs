@@ -143,7 +143,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal("Aluno Com Nome Novo", retornado!.Nome);
         Assert.Equal("aluno@teste.com", retornado.Email);
 
@@ -204,7 +204,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal("aluno-email-novo@teste.com", retornado!.Email);
 
         using var context = factory.CriarContextoDireto();
@@ -612,7 +612,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal(TipoUsuario.Professor, retornado!.Tipo);
 
         using var context = factory.CriarContextoDireto();
@@ -671,7 +671,7 @@ public class UsuarioController_EmailUnicoEUltimoAdmin_Tests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var retornado = await response.Content.ReadFromJsonAsync<UsuarioDto>();
+        var retornado = await response.Content.ReadFromJsonAsync<UsuarioResponseDto>();
         Assert.Equal("Admin Atualizado", retornado!.Nome);
         Assert.Equal("admin-atualizado@teste.com", retornado.Email);
         Assert.Equal(TipoUsuario.Admin, retornado.Tipo);

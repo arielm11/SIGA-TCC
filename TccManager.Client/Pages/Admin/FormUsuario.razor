@@ -100,8 +100,20 @@
         {
             try
             {
-                usuario = await Http.GetFromJsonAsync<UsuarioDto>($"api/usuario/{Id}");
-                usuario!.Senha = string.Empty;
+                // Issue #165 (achado A1/B3): GET devolve UsuarioResponseDto (sem Senha) —
+                // "usuario" aqui é o modelo de escrita (UsuarioDto), populado a partir da
+                // leitura; Senha fica vazia ("manter a atual", comportamento já existente).
+                var lido = await Http.GetFromJsonAsync<UsuarioResponseDto>($"api/usuario/{Id}");
+                if (lido != null)
+                {
+                    usuario = new UsuarioDto
+                    {
+                        Nome = lido.Nome,
+                        Email = lido.Email,
+                        Tipo = lido.Tipo,
+                        Ativo = lido.Ativo
+                    };
+                }
             }
             catch (Exception)
             {
