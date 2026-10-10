@@ -1,7 +1,6 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Services.Auth;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Services.Pdf;
@@ -29,17 +28,14 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         // a invariante "no máximo 1 token ativo por par" (ver docs/dados, seção 3.1).
         await RevogarAtivosSemSalvarAsync(bancaId, membroExternoId);
 
-        // CSPRNG (não Guid.NewGuid): o token é uma credencial de portador, precisa de
-        // garantia de imprevisibilidade criptográfica, não apenas unicidade — mesmo
-        // raciocínio já usado em AuthTokenService para o refresh token.
-        var tokenBruto = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var tokenBruto = OpaqueTokenHelper.GerarTokenBruto();
         var agora = DateTime.UtcNow;
 
         var novoToken = new RascunhoAtaToken
         {
             BancaId = bancaId,
             MembroExternoId = membroExternoId,
-            TokenHash = CalcularHash(tokenBruto),
+            TokenHash = OpaqueTokenHelper.CalcularHash(tokenBruto),
             CreatedAtUtc = agora,
             ExpiresAtUtc = banca.DataHora
         };
@@ -71,13 +67,13 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
 
         foreach (var membroExternoId in ids)
         {
-            var tokenBruto = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            var tokenBruto = OpaqueTokenHelper.GerarTokenBruto();
 
             _context.RascunhoAtaTokens.Add(new RascunhoAtaToken
             {
                 BancaId = banca.Id,
                 MembroExternoId = membroExternoId,
-                TokenHash = CalcularHash(tokenBruto),
+                TokenHash = OpaqueTokenHelper.CalcularHash(tokenBruto),
                 CreatedAtUtc = agora,
                 ExpiresAtUtc = banca.DataHora
             });
@@ -94,7 +90,7 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
 
     public async Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto)
     {
-        var hash = CalcularHash(tokenBruto);
+        var hash = OpaqueTokenHelper.CalcularHash(tokenBruto);
 
         var token = await _context.RascunhoAtaTokens
             .Include(t => t.Banca)
@@ -194,11 +190,5 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         }
 
         return true;
-    }
-
-    private static string CalcularHash(string valor)
-    {
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(valor));
-        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }

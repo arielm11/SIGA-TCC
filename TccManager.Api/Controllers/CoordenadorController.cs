@@ -633,18 +633,7 @@ public class CoordenadorController : ControllerBase
     {
         var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca, cancellationToken);
 
-        // Sucesso é o único ramo que lê PdfBytes (e é o único caso em que
-        // AtaPdfService garante que ele vem preenchido) — default vira 500, não sucesso
-        // silencioso, para nunca cair num "!"/NullReferenceException aqui se um novo status
-        // for adicionado ao enum e esquecido neste switch (issue #72).
-        return resultado.Status switch
-        {
-            AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-defesa-{idBanca}.pdf"),
-            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
-            AtaPdfResultadoStatus.ResultadoNaoRegistrado => Conflict("O resultado desta banca ainda não foi registrado. Gere a ata após registrar a nota final."),
-            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
-            _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
-        };
+        return this.ResultadoAtaPdfParaActionResult(resultado, $"ata-defesa-{idBanca}.pdf");
     }
 
     /// <summary>
@@ -706,14 +695,7 @@ public class CoordenadorController : ControllerBase
     {
         var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca, cancellationToken);
 
-        return resultado.Status switch
-        {
-            AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf"),
-            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
-            AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
-            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
-            _ => StatusCode(StatusCodes.Status500InternalServerError, "Erro inesperado ao gerar o PDF.")
-        };
+        return this.ResultadoAtaPdfParaActionResult(resultado, $"ata-rascunho-{idBanca}.pdf");
     }
 
     /// <summary>

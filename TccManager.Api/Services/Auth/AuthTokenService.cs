@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using TccManager.Api.Data;
@@ -74,7 +72,7 @@ public class AuthTokenService : IAuthTokenService
 
     public async Task<TokenPairDto?> RefreshAsync(string refreshTokenBruto)
     {
-        var hash = CalcularHash(refreshTokenBruto);
+        var hash = OpaqueTokenHelper.CalcularHash(refreshTokenBruto);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
 
         var tokenAtual = await _context.RefreshTokens
@@ -201,7 +199,7 @@ public class AuthTokenService : IAuthTokenService
 
     public async Task LogoutAsync(string refreshTokenBruto)
     {
-        var hash = CalcularHash(refreshTokenBruto);
+        var hash = OpaqueTokenHelper.CalcularHash(refreshTokenBruto);
 
         var token = await _context.RefreshTokens
             .FirstOrDefaultAsync(rt => rt.TokenHash == hash);
@@ -247,14 +245,12 @@ public class AuthTokenService : IAuthTokenService
     {
         var (accessToken, expiresAtUtc) = _tokenService.GerarAccessToken(usuario);
 
-        // CSPRNG (não Guid.NewGuid): o refresh token é uma credencial de portador de 7 dias,
-        // precisa de garantia de imprevisibilidade criptográfica, não apenas unicidade.
-        var refreshTokenBruto = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var refreshTokenBruto = OpaqueTokenHelper.GerarTokenBruto();
 
         var novoRefreshToken = new RefreshToken
         {
             UsuarioId = usuario.Id,
-            TokenHash = CalcularHash(refreshTokenBruto),
+            TokenHash = OpaqueTokenHelper.CalcularHash(refreshTokenBruto),
             CreatedAtUtc = agora,
             ExpiresAtUtc = agora.AddDays(RefreshTokenDays)
         };
@@ -276,14 +272,4 @@ public class AuthTokenService : IAuthTokenService
 
     /// <summary>Chave de cache do replay idempotente (D4) — TTL = janela de graça.</summary>
     private static string ChaveReplay(string tokenHash) => $"refresh-replay:{tokenHash}";
-
-    /// <summary>
-    /// SHA-256 em hex, sempre minúsculo — garante comparação confiável de igualdade em
-    /// <c>TokenHash</c> independentemente da collation do banco (ver docs/dados).
-    /// </summary>
-    private static string CalcularHash(string valor)
-    {
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(valor));
-        return Convert.ToHexString(hashBytes).ToLowerInvariant();
-    }
 }
