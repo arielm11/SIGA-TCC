@@ -599,16 +599,21 @@ public class TccController : ControllerBase
             .AsNoTracking()
             .Include(b => b.Avaliadores)
                 .ThenInclude(a => a.Professor)
+            .Include(b => b.Avaliadores)
+                .ThenInclude(a => a.MembroExterno)
             .FirstOrDefaultAsync(b => b.TccId == tcc.Id);
 
         if (banca == null)
             return NoContent();
 
+        // Issue #160 (achado G1): faltava o nome do avaliador externo — um BancaAvaliador
+        // tem exatamente um dos dois (Professor XOR MembroExterno), nunca os dois nem nenhum
+        // (mesma invariante validada em AtaPdfService.TentarValidarConsistencia).
         var resultado = new
         {
             DataHora = banca.DataHora,
             Local = banca.Local,
-            Professores = banca.Avaliadores.Select(a => a.Professor?.Nome).ToList()
+            Professores = banca.Avaliadores.Select(a => a.Professor?.Nome ?? a.MembroExterno?.Nome).ToList()
         };
 
         return Ok(resultado);
