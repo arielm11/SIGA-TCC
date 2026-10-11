@@ -96,7 +96,10 @@ public class RefreshTokenCookie
         // 5.3: Secure=false SÓ em Development — nunca condicionado a Request.IsHttps/Scheme
         // (8.2 do documento de arquitetura: quem decide se envia um cookie Secure é o navegador,
         // com base na conexão dele, não no esquema visto pela API atrás de um eventual proxy).
-        Secure = !_env.IsDevelopment(),
+        // NOSONAR (csharpsquid:S2092): falso positivo — a análise estática não enxerga que
+        // Secure=false só é alcançável em Development (decisão 5.3, confirmada pelo usuário);
+        // fora de Development este valor é sempre true.
+        Secure = !_env.IsDevelopment(), // NOSONAR
         // D2/L3: em Development, restringe o cookie a /api/auth — não viaja em toda requisição à
         // API, só nos endpoints que de fato o leem/gravam/expiram. Montado com PathBase para não
         // quebrar silenciosamente se a API for publicada sob um prefixo de caminho. Fora de

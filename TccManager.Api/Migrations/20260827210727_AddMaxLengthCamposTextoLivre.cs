@@ -10,6 +10,15 @@ namespace TccManager.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Achado SonarCloud (csharpsquid:S8747, 2026-10-11): ALTER COLUMN estreitando
+            // nvarchar(max) para um tamanho fixo falha (SQL Server) se alguma linha já
+            // existente tiver um valor mais longo que o novo limite — a validação do lado da
+            // aplicação (FluentValidation) só vale para escritas feitas depois dela existir,
+            // não para dados já persistidos antes desta migration. Cada UPDATE abaixo trunca
+            // só o que exceder o novo limite (LEN/LEFT contam caracteres, não bytes — correto
+            // para nvarchar), tornando o ALTER COLUMN seguro em qualquer banco, incluindo um
+            // já semeado antes deste limite existir.
+            migrationBuilder.Sql("UPDATE [usuarios] SET [Nome] = LEFT([Nome], 200) WHERE LEN([Nome]) > 200;");
             migrationBuilder.AlterColumn<string>(
                 name: "Nome",
                 table: "usuarios",
@@ -19,6 +28,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Tccs] SET [Titulo] = LEFT([Titulo], 200) WHERE LEN([Titulo]) > 200;");
             migrationBuilder.AlterColumn<string>(
                 name: "Titulo",
                 table: "Tccs",
@@ -28,6 +38,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Tccs] SET [Resumo] = LEFT([Resumo], 4000) WHERE LEN([Resumo]) > 4000;");
             migrationBuilder.AlterColumn<string>(
                 name: "Resumo",
                 table: "Tccs",
@@ -37,6 +48,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Tccs] SET [MotivoRejeicao] = LEFT([MotivoRejeicao], 2000) WHERE LEN([MotivoRejeicao]) > 2000;");
             migrationBuilder.AlterColumn<string>(
                 name: "MotivoRejeicao",
                 table: "Tccs",
@@ -47,6 +59,7 @@ namespace TccManager.Api.Migrations
                 oldType: "nvarchar(max)",
                 oldNullable: true);
 
+            migrationBuilder.Sql("UPDATE [MembrosExternos] SET [Nome] = LEFT([Nome], 200) WHERE LEN([Nome]) > 200;");
             migrationBuilder.AlterColumn<string>(
                 name: "Nome",
                 table: "MembrosExternos",
@@ -56,6 +69,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [MembrosExternos] SET [Instituicao] = LEFT([Instituicao], 300) WHERE LEN([Instituicao]) > 300;");
             migrationBuilder.AlterColumn<string>(
                 name: "Instituicao",
                 table: "MembrosExternos",
@@ -65,6 +79,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [MembrosExternos] SET [Email] = LEFT([Email], 450) WHERE LEN([Email]) > 450;");
             migrationBuilder.AlterColumn<string>(
                 name: "Email",
                 table: "MembrosExternos",
@@ -74,6 +89,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Entregas] SET [Titulo] = LEFT([Titulo], 200) WHERE LEN([Titulo]) > 200;");
             migrationBuilder.AlterColumn<string>(
                 name: "Titulo",
                 table: "Entregas",
@@ -83,6 +99,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Entregas] SET [Feedback] = LEFT([Feedback], 2000) WHERE LEN([Feedback]) > 2000;");
             migrationBuilder.AlterColumn<string>(
                 name: "Feedback",
                 table: "Entregas",
@@ -93,6 +110,7 @@ namespace TccManager.Api.Migrations
                 oldType: "nvarchar(max)",
                 oldNullable: true);
 
+            migrationBuilder.Sql("UPDATE [Banca] SET [Local] = LEFT([Local], 300) WHERE LEN([Local]) > 300;");
             migrationBuilder.AlterColumn<string>(
                 name: "Local",
                 table: "Banca",
@@ -102,6 +120,7 @@ namespace TccManager.Api.Migrations
                 oldClrType: typeof(string),
                 oldType: "nvarchar(max)");
 
+            migrationBuilder.Sql("UPDATE [Acompanhamentos] SET [Ata] = LEFT([Ata], 4000) WHERE LEN([Ata]) > 4000;");
             migrationBuilder.AlterColumn<string>(
                 name: "Ata",
                 table: "Acompanhamentos",
