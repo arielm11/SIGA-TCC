@@ -1,4 +1,3 @@
-using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Services.Auth;
@@ -14,7 +13,7 @@ public interface IAuthTokenService
     /// Revoga todos os refresh tokens ativos do usuário (sessão única — RF04) e emite um
     /// novo par (JWT + refresh token).
     /// </summary>
-    Task<TokenPairDto> LoginAsync(Usuario usuario);
+    Task<TokenPair> LoginAsync(Usuario usuario);
 
     /// <summary>
     /// Valida o refresh token informado (existe, não revogado, não expirado). Em caso
@@ -30,7 +29,7 @@ public interface IAuthTokenService
     /// comportamento é o de sempre: reuse-detection integral, revoga todas as sessões do
     /// usuário. Ver docs/arquitetura/2026-09-03-reuse-detection-falso-positivo-multi-aba.md.
     /// </summary>
-    Task<TokenPairDto?> RefreshAsync(string refreshTokenBruto);
+    Task<TokenPair?> RefreshAsync(string refreshTokenBruto);
 
     /// <summary>
     /// Revoga o refresh token informado (RF05). Idempotente: token inexistente ou já

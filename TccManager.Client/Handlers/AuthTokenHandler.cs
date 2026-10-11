@@ -15,19 +15,6 @@ namespace TccManager.Client.Handlers;
 /// </summary>
 public class AuthTokenHandler : DelegatingHandler
 {
-    private static readonly string[] RotasAuthSemRefresh =
-    {
-        "api/auth/login",
-        "api/auth/refresh",
-        "api/auth/logout",
-        // Issue #88: [AllowAnonymous], sem token de sessão em jogo. Um 401 aqui significa
-        // "senha atual incorreta"/"credenciais inválidas" (AuthController), não uma sessão
-        // expirada — sem o bypass, o interceptor tentaria renovar via refreshToken (que este
-        // fluxo nunca teve, por construção: D8) e acabaria encerrando a "sessão" inexistente,
-        // mascarando o erro real com um redirect para /login?expirado=1.
-        "api/auth/trocar-senha-obrigatoria"
-    };
-
     private readonly ILocalStorageService _localStorage;
     private readonly ITokenRefreshCoordinator _refreshCoordinator;
     private readonly Uri _apiBaseUri;
@@ -111,11 +98,8 @@ public class AuthTokenHandler : DelegatingHandler
             StringComparison.OrdinalIgnoreCase) == 0;
     }
 
-    private static bool EhRotaAuth(HttpRequestMessage request)
-    {
-        var path = request.RequestUri?.AbsolutePath.Trim('/').ToLowerInvariant() ?? string.Empty;
-        return RotasAuthSemRefresh.Any(rota => path.EndsWith(rota, StringComparison.Ordinal));
-    }
+    private static bool EhRotaAuth(HttpRequestMessage request) =>
+        RotasAuth.Corresponde(request, RotasAuth.SemInterceptorDeRefresh);
 
     private static async Task<byte[]?> BufferizarConteudoAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

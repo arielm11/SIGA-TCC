@@ -121,7 +121,11 @@ public class Auth_Auditoria_Contrato_Tests
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var dto = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
         Assert.False(string.IsNullOrWhiteSpace(dto!.Token));
-        Assert.False(string.IsNullOrWhiteSpace(dto.RefreshToken));
+
+        // Issue #171: o refresh token não vai mais no corpo (RF02) — é entregue via
+        // Set-Cookie HttpOnly.
+        Assert.NotNull(resp.Headers.GetValues("Set-Cookie").FirstOrDefault(
+            v => v.StartsWith("siga_refresh=", StringComparison.Ordinal)));
     }
 
     // ─────────── UsuarioController: ramos auditados mantêm o contrato ───────────

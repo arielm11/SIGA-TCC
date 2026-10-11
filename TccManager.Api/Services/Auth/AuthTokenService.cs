@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using TccManager.Api.Data;
-using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Services.Auth;
@@ -58,7 +57,7 @@ public class AuthTokenService : IAuthTokenService
 
     private string? IpDeOrigem => _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
 
-    public async Task<TokenPairDto> LoginAsync(Usuario usuario)
+    public async Task<TokenPair> LoginAsync(Usuario usuario)
     {
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
 
@@ -70,7 +69,7 @@ public class AuthTokenService : IAuthTokenService
         return par;
     }
 
-    public async Task<TokenPairDto?> RefreshAsync(string refreshTokenBruto)
+    public async Task<TokenPair?> RefreshAsync(string refreshTokenBruto)
     {
         var hash = OpaqueTokenHelper.CalcularHash(refreshTokenBruto);
         var agora = _timeProvider.GetUtcNow().UtcDateTime;
@@ -90,7 +89,7 @@ public class AuthTokenService : IAuthTokenService
         // login preenchem só RevokedAtUtc, o que já distingue rotação de revogação manual.
         if (tokenAtual.RevokedAtUtc != null && tokenAtual.ReplacedByTokenHash != null)
         {
-            return await TratarTokenRotacionadoReapresentadoAsync(tokenAtual, hash, agora);
+            return await TratarTokenRotacionadoReapresentadoAsync(tokenAtual, agora);
         }
 
         if (tokenAtual.Usuario == null || !tokenAtual.Usuario.Ativo || !EhUtilizavel(tokenAtual, agora))
@@ -117,46 +116,111 @@ public class AuthTokenService : IAuthTokenService
     }
 
     /// <summary>
-    /// Classifica a reapresentação de um token já rotacionado: corrida benigna (replay
-    /// idempotente do par vigente) ou reuso real (reuse-detection integral, inalterada).
-    /// Ver D2 e a seção 5.2 do documento de arquitetura para o desenho completo.
+    /// Limite de saltos que <see cref="TratarTokenRotacionadoReapresentadoAsync"/> caminha na
+    /// cadeia de rotações antes de desistir e tratar como reuso. Achado L1 da revisão de
+    /// segurança de #171 (ver seção 6.5 do documento de arquitetura
+    /// <c>docs/arquitetura/2026-10-10-refresh-token-cookie-httponly.md</c>): com 3+ abas, o
+    /// sucessor imediato do token reapresentado pode já não ser mais a ponta ativa (outra aba
+    /// rotacionou de novo nesse meio-tempo) sem que isso seja reuso real. "N pequeno" por design:
+    /// cada salto já precisa caber dentro da janela de graça (ver
+    /// <see cref="RefreshReuseGraceSeconds"/>), então este limite só existe para não deixar a
+    /// combinação "muitos saltos, cada um dentro da janela" se tornar, na prática, uma forma de a
+    /// janela de graça nunca expirar (uma cadeia de N saltos pode somar até N × janela).
     /// </summary>
-    private async Task<TokenPairDto?> TratarTokenRotacionadoReapresentadoAsync(
-        RefreshToken tokenAtual, string hashApresentado, DateTime agora)
+    private const int MaxSaltosCadeiaReplay = 5;
+
+    /// <summary>
+    /// Classifica a reapresentação de um token já rotacionado: corrida benigna (replay
+    /// idempotente do par vigente, agora reconhecendo uma cadeia de rotações — não só um salto)
+    /// ou reuso real (reuse-detection integral, inalterada). Ver seção 6.5 do documento de
+    /// arquitetura para o desenho completo (achado L1 da revisão de segurança de #171).
+    /// </summary>
+    private async Task<TokenPair?> TratarTokenRotacionadoReapresentadoAsync(
+        RefreshToken tokenAtual, DateTime agora)
     {
         var janelaSegundos = RefreshReuseGraceSeconds;
 
-        // janelaSegundos <= 0 precisa produzir dentroDaJanela = false SEMPRE, mesmo se
-        // RevokedAtUtc == agora (relógio congelado em teste, ou timing real coincidente):
-        // é isso que faz "0" significar "estritamente o comportamento da issue #62".
-        var dentroDaJanela = janelaSegundos > 0
-            && (agora - tokenAtual.RevokedAtUtc!.Value) <= TimeSpan.FromSeconds(janelaSegundos);
+        // janelaSegundos <= 0 precisa recusar SEMPRE, mesmo se RevokedAtUtc == agora (relógio
+        // congelado em teste, ou timing real coincidente): é isso que faz "0" significar
+        // "estritamente o comportamento da issue #62", sem nenhuma tentativa de reconhecer cadeia.
+        if (janelaSegundos <= 0)
+            return await RevogarPorReusoAsync(tokenAtual, agora);
 
-        RefreshToken? sucessor = null;
-        if (dentroDaJanela)
+        var janela = TimeSpan.FromSeconds(janelaSegundos);
+
+        // Caminha a cadeia de rotações a partir do token reapresentado (elo) até achar a ponta
+        // ativa. Cada salto só é aceito se ocorreu dentro da janela de graça CONTADA A PARTIR DO
+        // INSTANTE EM QUE O ELO ANTERIOR FOI ROTACIONADO (não da rotação original até agora) —
+        // é essa comparação salto a salto, e não "agora - revogação original <= janela", que
+        // impede que uma cadeia de muitos saltos rápidos vire uma janela de graça sem fim.
+        var elo = tokenAtual;
+
+        for (var salto = 0; salto < MaxSaltosCadeiaReplay; salto++)
         {
-            sucessor = await _context.RefreshTokens
-                .FirstOrDefaultAsync(rt => rt.TokenHash == tokenAtual.ReplacedByTokenHash);
+            if (elo.ReplacedByTokenHash == null)
+            {
+                // Revogado sem sucessor no meio da cadeia (logout/revogação manual): a sessão
+                // foi legitimamente encerrada, não há par vigente para repetir.
+                return await RevogarPorReusoAsync(tokenAtual, agora);
+            }
+
+            var proximo = await _context.RefreshTokens
+                .FirstOrDefaultAsync(rt => rt.TokenHash == elo.ReplacedByTokenHash);
+
+            if (proximo == null)
+                return await RevogarPorReusoAsync(tokenAtual, agora);
+
+            // Se "proximo" ainda não foi rotacionado, o limite superior do salto é "agora"
+            // (equivalente ao caso de 1 salto de antes). Se já foi, o limite é o instante em que
+            // ELE foi rotacionado — o salto tem que ter sido rápido, não a reapresentação atual.
+            var limiteDoSalto = proximo.RevokedAtUtc ?? agora;
+            var saltoDentroDaJanela = (limiteDoSalto - elo.RevokedAtUtc!.Value) <= janela;
+
+            if (!saltoDentroDaJanela)
+                return await RevogarPorReusoAsync(tokenAtual, agora);
+
+            if (proximo.RevokedAtUtc == null)
+            {
+                if (proximo.ExpiresAtUtc <= agora)
+                    return await RevogarPorReusoAsync(tokenAtual, agora);
+
+                // ── corrida benigna — nenhuma escrita no banco neste caminho ──
+                return MontarReplayIdempotente(tokenAtual, elo, proximo);
+            }
+
+            elo = proximo;
         }
 
-        var sucessorEhPontaAtiva = sucessor != null
-            && sucessor.RevokedAtUtc == null
-            && sucessor.ExpiresAtUtc > agora;
+        // Cadeia maior que o limite defensável: mesma postura conservadora de "sucessor não é a
+        // ponta ativa" — trata como reuso.
+        return await RevogarPorReusoAsync(tokenAtual, agora);
+    }
 
-        if (!(dentroDaJanela && sucessorEhPontaAtiva))
-        {
-            _logger.LogWarning(
-                "Reuso de refresh token detectado para usuário {UsuarioId}, IP de origem: {IpOrigem} — sessão revogada por precaução",
-                tokenAtual.UsuarioId, IpDeOrigem);
+    /// <summary>Reuse-detection integral da issue #62: revoga todas as sessões do usuário.</summary>
+    private async Task<TokenPair?> RevogarPorReusoAsync(RefreshToken tokenAtual, DateTime agora)
+    {
+        _logger.LogWarning(
+            "Reuso de refresh token detectado para usuário {UsuarioId}, IP de origem: {IpOrigem} — sessão revogada por precaução",
+            tokenAtual.UsuarioId, IpDeOrigem);
 
-            await RevokeAllForUserAsync(tokenAtual.UsuarioId, agora);
-            await _context.SaveChangesAsync();
+        await RevokeAllForUserAsync(tokenAtual.UsuarioId, agora);
+        await _context.SaveChangesAsync();
 
-            return null;
-        }
+        return null;
+    }
 
-        // ── corrida benigna a partir daqui — nenhuma escrita no banco neste caminho ──
-
+    /// <summary>
+    /// Monta a resposta de replay idempotente depois que a cadeia foi validada como benigna.
+    /// <paramref name="penultimo"/> é o elo imediatamente anterior à ponta ativa
+    /// (<paramref name="pontaAtiva"/>) — no caso de 1 salto, é o próprio <paramref name="tokenAtual"/>.
+    /// O bruto devolvido vem do cache gravado quando ESSE salto (penúltimo → ponta ativa)
+    /// aconteceu, não do salto do token originalmente reapresentado: numa cadeia de N saltos, só
+    /// aquele cache tem o valor bruto da ponta ativa atual. Síncrono de propósito: nenhum caminho
+    /// aqui toca o banco (D7/D6) — só <see cref="RevogarPorReusoAsync"/> escreve.
+    /// </summary>
+    private TokenPair? MontarReplayIdempotente(
+        RefreshToken tokenAtual, RefreshToken penultimo, RefreshToken pontaAtiva)
+    {
         // D7: o replay emite um access token novo. Sem esta guarda aqui (e não só no caminho
         // normal de rotação), a issue #59 (usuário desativado não deveria renovar) regride
         // pela porta dos fundos.
@@ -170,7 +234,7 @@ public class AuthTokenService : IAuthTokenService
 
         // D6: fail-safe de cache frio (restart da API, ou — no futuro — múltiplas instâncias
         // sem afinidade). Nunca cai na revogação em massa por isso; apenas recusa a chamada.
-        if (!_cache.TryGetValue(ChaveReplay(hashApresentado), out string? sucessorBruto) ||
+        if (!_cache.TryGetValue(ChaveReplay(penultimo.TokenHash), out string? sucessorBruto) ||
             string.IsNullOrEmpty(sucessorBruto))
         {
             _auditLogger.LogInformation(
@@ -189,10 +253,11 @@ public class AuthTokenService : IAuthTokenService
             "Corrida benigna de refresh token para usuário {UsuarioId}, IP de origem: {IpOrigem} — replay idempotente do par vigente",
             tokenAtual.UsuarioId, IpDeOrigem);
 
-        return new TokenPairDto
+        return new TokenPair
         {
             Token = accessToken,
-            RefreshToken = sucessorBruto
+            RefreshToken = sucessorBruto,
+            RefreshTokenExpiresAtUtc = pontaAtiva.ExpiresAtUtc
         };
     }
 
@@ -240,7 +305,7 @@ public class AuthTokenService : IAuthTokenService
         }
     }
 
-    private (TokenPairDto Par, RefreshToken NovoRefreshToken) CriarNovoPar(Usuario usuario, DateTime agora)
+    private (TokenPair Par, RefreshToken NovoRefreshToken) CriarNovoPar(Usuario usuario, DateTime agora)
     {
         var (accessToken, _) = _tokenService.GerarAccessToken(usuario);
 
@@ -256,10 +321,11 @@ public class AuthTokenService : IAuthTokenService
 
         _context.RefreshTokens.Add(novoRefreshToken);
 
-        var par = new TokenPairDto
+        var par = new TokenPair
         {
             Token = accessToken,
-            RefreshToken = refreshTokenBruto
+            RefreshToken = refreshTokenBruto,
+            RefreshTokenExpiresAtUtc = novoRefreshToken.ExpiresAtUtc
         };
 
         return (par, novoRefreshToken);

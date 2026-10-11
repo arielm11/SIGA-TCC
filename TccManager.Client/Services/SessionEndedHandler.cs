@@ -23,6 +23,8 @@ public class SessionEndedHandler : ISessionEndedHandler
     public async Task EncerrarSessaoAsync()
     {
         await _localStorage.RemoveItemAsync("authToken");
+        // D9 (issue #171): "refreshToken" é a chave legada do localStorage — desde a migração
+        // para o cookie HttpOnly, o Client nunca mais escreve nem lê o valor dela, só remove.
         await _localStorage.RemoveItemAsync("refreshToken");
 
         _authStateProvider.NotifyUserLogout();

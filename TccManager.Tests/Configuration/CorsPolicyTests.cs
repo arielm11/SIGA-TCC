@@ -21,6 +21,7 @@ public class CorsPolicyTests
 {
     private const string Rota = "/api/usuario/me";
     private const string HeaderAllowOrigin = "Access-Control-Allow-Origin";
+    private const string HeaderAllowCredentials = "Access-Control-Allow-Credentials";
 
     private const string OrigemDevHttps = "https://localhost:7249";
     private const string OrigemDevHttp = "http://localhost:5075";
@@ -46,6 +47,11 @@ public class CorsPolicyTests
 
     private static string? AllowOrigin(HttpResponseMessage resposta) =>
         resposta.Headers.TryGetValues(HeaderAllowOrigin, out var valores)
+            ? valores.FirstOrDefault()
+            : null;
+
+    private static string? AllowCredentials(HttpResponseMessage resposta) =>
+        resposta.Headers.TryGetValues(HeaderAllowCredentials, out var valores)
             ? valores.FirstOrDefault()
             : null;
 
@@ -113,17 +119,61 @@ public class CorsPolicyTests
         Assert.False(resposta.Headers.Contains("Access-Control-Allow-Methods"));
     }
 
-    [Fact]
-    public async Task PoliticaNaoLiberaCredenciais()
+    // Issue #171 (migração do refresh token para cookie HttpOnly — docs/arquitetura/
+    // 2026-10-10-refresh-token-cookie-httponly.md, decisão 5.2/D5): substitui
+    // PoliticaNaoLiberaCredenciais. A ausência de AllowCredentials era a proteção documentada
+    // antes desta migração; o cookie de refresh HttpOnly exige envio de credenciais
+    // cross-origin, então a política passou a ter AllowCredentials() deliberadamente. A
+    // proteção contra um site terceiro reaproveitar a sessão não desapareceu, só mudou de
+    // lugar — ver D5 do documento de arquitetura:
+    //   1. SameSite=Strict no cookie de refresh (RefreshTokenCookie) — o navegador não o
+    //      envia em requisição originada de outro *site*;
+    //   2. WithOrigins explícito nesta mesma política (sem wildcard, inalterado) — nenhuma
+    //      origem fora da lista recebe Access-Control-Allow-Origin;
+    //   3. Path do cookie — em Development, Path=/api/auth restringe aos endpoints de
+    //      login/refresh/logout; fora de Development, o prefixo __Host- (achado L3) exige
+    //      Path=/, mas o cookie continua HttpOnly/SameSite=Strict e sem outro leitor.
+
+    [Theory]
+    [InlineData(OrigemDevHttps)]
+    [InlineData(OrigemDevHttp)]
+    public async Task OrigemConfigurada_RequisicaoSimples_RecebeAllowCredentials(string origem)
     {
-        // Guarda de regressão: a política nunca teve AllowCredentials. Combinado com
-        // origens explícitas, é o que impede um site terceiro de reaproveitar sessão.
         using var factory = new TccApiFactory();
         var client = factory.CreateClient();
 
-        var resposta = await client.SendAsync(RequisicaoSimples(OrigemDevHttps));
+        var resposta = await client.SendAsync(RequisicaoSimples(origem));
 
-        Assert.False(resposta.Headers.Contains("Access-Control-Allow-Credentials"));
+        Assert.Equal(origem, AllowOrigin(resposta));
+        Assert.Equal("true", AllowCredentials(resposta));
+    }
+
+    [Fact]
+    public async Task OrigemConfigurada_Preflight_RecebeAllowCredentials()
+    {
+        using var factory = new TccApiFactory();
+        var client = factory.CreateClient();
+
+        var resposta = await client.SendAsync(Preflight(OrigemDevHttps, "POST", "content-type"));
+
+        Assert.Equal(HttpStatusCode.NoContent, resposta.StatusCode);
+        Assert.Equal(OrigemDevHttps, AllowOrigin(resposta));
+        Assert.Equal("true", AllowCredentials(resposta));
+    }
+
+    [Fact]
+    public async Task OrigemForaDaConfiguracao_NaoRecebeAllowCredentials()
+    {
+        // Mesma garantia que o teste já tinha para Allow-Origin, estendida a Allow-Credentials:
+        // uma origem fora da lista não ganha NENHUM cabeçalho de CORS, nem Allow-Origin, nem
+        // Allow-Credentials — AllowCredentials() não amplia a lista de origens aceitas.
+        using var factory = new TccApiFactory();
+        var client = factory.CreateClient();
+
+        var resposta = await client.SendAsync(RequisicaoSimples("https://malicioso.example.com"));
+
+        Assert.Null(AllowOrigin(resposta));
+        Assert.Null(AllowCredentials(resposta));
     }
 
     // ── Origens vindas de configuração customizada ────────────────────────────────────────

@@ -168,6 +168,22 @@ try
         corsAllowedOrigins = ["https://localhost:7249", "http://localhost:5075"];
     }
 
+    // Issue #171 (migração do refresh token para cookie HttpOnly — decisão 5.2/D5 do documento
+    // de arquitetura docs/arquitetura/2026-10-10-refresh-token-cookie-httponly.md): AllowCredentials()
+    // passou a ser necessário para o navegador enviar/aceitar o cookie de refresh em chamadas
+    // cross-origin do Client (login/refresh/logout). Isso substitui a proteção que a AUSÊNCIA de
+    // AllowCredentials dava antes (teste CorsPolicyTests.PoliticaNaoLiberaCredenciais, removido) —
+    // a proteção não desapareceu, só mudou de lugar:
+    //   1. SameSite=Strict no cookie — o navegador não o envia em requisição originada de outro
+    //      *site* (é a defesa real contra um site terceiro reaproveitar a sessão);
+    //   2. WithOrigins explícito (sem wildcard) — nenhuma origem fora da lista recebe
+    //      Access-Control-Allow-Origin, logo não consegue ler nenhuma resposta credenciada;
+    //   3. Path do cookie (RefreshTokenCookie) + cookie host-only — em Development, Path=/api/auth
+    //      restringe o cookie aos endpoints de login/renovação/revogação; fora de Development, o
+    //      prefixo __Host- (achado L3 da revisão de segurança) exige Path=/, então o cookie viaja
+    //      em toda a API, mas continua HttpOnly/SameSite=Strict e nenhuma outra rota o lê.
+    // AllowAnyOrigin()+AllowCredentials() continua proibido pelo próprio ASP.NET Core; como esta
+    // política já usa origens explícitas, a combinação é compatível.
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowBlazorClient",
@@ -175,7 +191,8 @@ try
             {
                 policy.WithOrigins(corsAllowedOrigins)
                       .AllowAnyHeader()
-                      .AllowAnyMethod();
+                      .AllowAnyMethod()
+                      .AllowCredentials();
             });
     });
 
@@ -187,6 +204,7 @@ try
 
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IAuthTokenService, AuthTokenService>();
+    builder.Services.AddScoped<RefreshTokenCookie>();
 
     builder.Services.AddEmailNotifications(builder.Configuration);
     builder.Services.AddAtaPdf(builder.Configuration);
