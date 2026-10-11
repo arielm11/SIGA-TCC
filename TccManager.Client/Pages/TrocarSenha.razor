@@ -162,8 +162,9 @@
                 var resultado = await loginResponse.Content.ReadFromJsonAsync<LoginResponseDto>();
                 if (resultado != null)
                 {
+                    // Issue #171: o refresh token não vem mais no corpo — o servidor já o
+                    // gravou via Set-Cookie HttpOnly (siga_refresh). Só o authToken é salvo.
                     await LocalStorage.SetItemAsync("authToken", resultado.Token);
-                    await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
                     AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
                     NotificationService.NotificarSucesso("Senha alterada", "Sua senha foi alterada com sucesso.");

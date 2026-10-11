@@ -31,6 +31,11 @@ namespace TccManager.Tests.Controllers;
 ///   graça vive em <see cref="AuthController_RefreshJanelaDeGraca_Tests"/>; aqui ficam apenas os
 ///   pares que preservam a intenção original destes testes.
 ///
+/// • Issue #171 — o refresh token passou a ser transportado via cookie HttpOnly ("siga_refresh"),
+///   não mais no corpo. Os testes usam <see cref="CookieTestHelpers.ClienteSemCookies"/> e
+///   controlam o cookie manualmente (ver justificativa no cabeçalho de
+///   <c>AuthController_RefreshToken_Tests</c>).
+///
 /// Isolamento: uma <see cref="TccApiFactory"/> por teste (banco InMemory e rate limiter
 /// próprios). O orçamento da política "refresh" é de 15 chamadas/janela por IP, e nenhum
 /// teste aqui passa de 5 — não há risco de 429 mascarar um 401.
@@ -70,18 +75,22 @@ public class AuthController_RefreshSeguranca_Tests
     private static string CalcularHash(string valor) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(valor))).ToLowerInvariant();
 
-    private static async Task<LoginResponseDto> FazerLoginAsync(HttpClient client)
+    private static async Task<(LoginResponseDto Dto, string RefreshTokenBruto)> FazerLoginAsync(HttpClient client)
     {
         var resp = await client.PostAsJsonAsync(RotaLogin,
             new LoginDto { Email = EmailPadrao, Senha = SenhaValida });
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var dto = await resp.Content.ReadFromJsonAsync<LoginResponseDto>();
         Assert.NotNull(dto);
-        return dto!;
+
+        var refreshTokenBruto = CookieTestHelpers.ExtrairValorCookieRefresh(resp);
+        Assert.False(string.IsNullOrWhiteSpace(refreshTokenBruto));
+
+        return (dto!, refreshTokenBruto!);
     }
 
-    private static Task<HttpResponseMessage> RefreshAsync(HttpClient client, string refreshToken) =>
-        client.PostAsJsonAsync(RotaRefresh, new RefreshRequestDto { RefreshToken = refreshToken });
+    private static Task<HttpResponseMessage> RefreshAsync(HttpClient client, string? refreshToken) =>
+        client.SendAsync(CookieTestHelpers.RequisicaoComCookieRefresh(HttpMethod.Post, RotaRefresh, refreshToken));
 
     // ══════════════════ Issue #59 — usuário desativado ══════════════════
 
@@ -90,22 +99,22 @@ public class AuthController_RefreshSeguranca_Tests
     {
         var factory = new TccApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, loginToken) = await FazerLoginAsync(client);
 
         // O refresh token continua íntegro (não revogado, não expirado): a única razão
         // para a recusa é o usuário ter deixado de estar ativo.
         using (var context = factory.CriarContextoDireto())
         {
-            var persistido = context.RefreshTokens.Single(rt => rt.TokenHash == CalcularHash(login.RefreshToken));
+            var persistido = context.RefreshTokens.Single(rt => rt.TokenHash == CalcularHash(loginToken));
             Assert.Null(persistido.RevokedAtUtc);
             Assert.True(persistido.ExpiresAtUtc > DateTime.UtcNow);
         }
 
         await DesativarUsuarioAsync(factory, usuario.Id);
 
-        var resp = await RefreshAsync(client, login.RefreshToken);
+        var resp = await RefreshAsync(client, loginToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
     }
@@ -116,17 +125,17 @@ public class AuthController_RefreshSeguranca_Tests
         // Controle do teste acima: a checagem de Ativo não pode ter quebrado o caminho feliz.
         var factory = new TccApiFactory();
         await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, loginToken) = await FazerLoginAsync(client);
 
-        var resp = await RefreshAsync(client, login.RefreshToken);
+        var resp = await RefreshAsync(client, loginToken);
 
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
-        var par = await resp.Content.ReadFromJsonAsync<TokenPairDto>();
-        Assert.NotNull(par);
-        Assert.NotEqual(login.RefreshToken, par!.RefreshToken);
+        var novoRefreshToken = CookieTestHelpers.ExtrairValorCookieRefresh(resp);
+        Assert.False(string.IsNullOrWhiteSpace(novoRefreshToken));
+        Assert.NotEqual(loginToken, novoRefreshToken);
     }
 
     [Fact]
@@ -136,18 +145,18 @@ public class AuthController_RefreshSeguranca_Tests
         // persistida para um usuário desativado.
         var factory = new TccApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, loginToken) = await FazerLoginAsync(client);
         await DesativarUsuarioAsync(factory, usuario.Id);
 
-        var resp = await RefreshAsync(client, login.RefreshToken);
+        var resp = await RefreshAsync(client, loginToken);
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
 
         using var context = factory.CriarContextoDireto();
         var tokensDoUsuario = context.RefreshTokens.Where(rt => rt.UsuarioId == usuario.Id).ToList();
         var unico = Assert.Single(tokensDoUsuario);
-        Assert.Equal(CalcularHash(login.RefreshToken), unico.TokenHash);
+        Assert.Equal(CalcularHash(loginToken), unico.TokenHash);
         Assert.Null(unico.ReplacedByTokenHash);
     }
 
@@ -157,7 +166,7 @@ public class AuthController_RefreshSeguranca_Tests
         // Regressão do caminho que já existia: a checagem de Ativo no login permanece.
         var factory = new TccApiFactory();
         await SemearUsuarioAsync(factory, ativo: false);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         var resp = await client.PostAsJsonAsync(RotaLogin,
             new LoginDto { Email = EmailPadrao, Senha = SenhaValida });
@@ -176,19 +185,20 @@ public class AuthController_RefreshSeguranca_Tests
         // classificada como benigna — e era exatamente esse falso positivo que a #85 corrigiu.
         using var factory = new RefreshJanelaDeGracaApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         // A: token emitido no login. B: token que substituiu A na rotação.
-        var login = await FazerLoginAsync(client);
+        var (_, tokenA) = await FazerLoginAsync(client);
 
-        var rotacao = await RefreshAsync(client, login.RefreshToken);
+        var rotacao = await RefreshAsync(client, tokenA);
         Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
-        var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
+        var tokenB = CookieTestHelpers.ExtrairValorCookieRefresh(rotacao);
+        Assert.False(string.IsNullOrWhiteSpace(tokenB));
 
         factory.Relogio.Avancar(TimeSpan.FromSeconds(31));
 
         // Reapresentação tardia de A (revogado + ReplacedByTokenHash preenchido) = sinal de vazamento.
-        var reuso = await RefreshAsync(client, login.RefreshToken);
+        var reuso = await RefreshAsync(client, tokenA);
         Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
 
         // Evidência de que a resposta foi "derrubar a sessão" e não apenas "recusar A":
@@ -197,7 +207,7 @@ public class AuthController_RefreshSeguranca_Tests
         Assert.Equal(HttpStatusCode.Unauthorized, aposReuso.StatusCode);
 
         using var context = factory.CriarContextoDireto();
-        var persistidoB = context.RefreshTokens.Single(rt => rt.TokenHash == CalcularHash(tokenB));
+        var persistidoB = context.RefreshTokens.Single(rt => rt.TokenHash == CalcularHash(tokenB!));
         Assert.NotNull(persistidoB.RevokedAtUtc);
 
         Assert.DoesNotContain(
@@ -215,22 +225,23 @@ public class AuthController_RefreshSeguranca_Tests
         // teste descrevendo o bug").
         using var factory = new RefreshJanelaDeGracaApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, tokenA) = await FazerLoginAsync(client);
 
-        var rotacao = await RefreshAsync(client, login.RefreshToken);
+        var rotacao = await RefreshAsync(client, tokenA);
         Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
-        var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
+        var tokenB = CookieTestHelpers.ExtrairValorCookieRefresh(rotacao);
+        Assert.False(string.IsNullOrWhiteSpace(tokenB));
 
-        var replay = await RefreshAsync(client, login.RefreshToken);
+        var replay = await RefreshAsync(client, tokenA);
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
 
         // Idempotência: o perdedor da corrida recebe o par que a aba vencedora já tem.
-        var par = await replay.Content.ReadFromJsonAsync<TokenPairDto>();
-        Assert.NotNull(par);
-        Assert.Equal(tokenB, par!.RefreshToken);
-        Assert.False(string.IsNullOrWhiteSpace(par.Token));
+        var replaySucessor = CookieTestHelpers.ExtrairValorCookieRefresh(replay);
+        Assert.Equal(tokenB, replaySucessor);
+        var corpoReplay = await replay.Content.ReadFromJsonAsync<RefreshResponseDto>();
+        Assert.False(string.IsNullOrWhiteSpace(corpoReplay!.Token));
 
         // Nada foi revogado: a sessão da aba vencedora segue de pé, que é o sintoma que o
         // usuário percebia (as duas abas deslogadas sem ter feito nada).
@@ -249,9 +260,9 @@ public class AuthController_RefreshSeguranca_Tests
         // não é sinal de vazamento — a resposta agressiva não deve disparar.
         var factory = new TccApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, loginToken) = await FazerLoginAsync(client);
 
         var expiradoBruto = Guid.NewGuid().ToString();
         using (var context = factory.CriarContextoDireto())
@@ -271,7 +282,7 @@ public class AuthController_RefreshSeguranca_Tests
         Assert.Equal(HttpStatusCode.Unauthorized, recusado.StatusCode);
 
         // A sessão legítima segue viva.
-        var legitimo = await RefreshAsync(client, login.RefreshToken);
+        var legitimo = await RefreshAsync(client, loginToken);
         Assert.Equal(HttpStatusCode.OK, legitimo.StatusCode);
     }
 
@@ -282,9 +293,9 @@ public class AuthController_RefreshSeguranca_Tests
         // Reapresentá-lo deve apenas falhar, sem punir a sessão ativa do usuário.
         var factory = new TccApiFactory();
         var usuario = await SemearUsuarioAsync(factory);
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var login = await FazerLoginAsync(client);
+        var (_, loginToken) = await FazerLoginAsync(client);
 
         var revogadoBruto = Guid.NewGuid().ToString();
         using (var context = factory.CriarContextoDireto())
@@ -304,7 +315,7 @@ public class AuthController_RefreshSeguranca_Tests
         var recusado = await RefreshAsync(client, revogadoBruto);
         Assert.Equal(HttpStatusCode.Unauthorized, recusado.StatusCode);
 
-        var legitimo = await RefreshAsync(client, login.RefreshToken);
+        var legitimo = await RefreshAsync(client, loginToken);
         Assert.Equal(HttpStatusCode.OK, legitimo.StatusCode);
     }
 
@@ -316,17 +327,17 @@ public class AuthController_RefreshSeguranca_Tests
         // alcançável fora da janela de graça (issue #85), o relógio do host é avançado
         // antes da reapresentação; o resto do teste é o original.
         using var factory = new RefreshJanelaDeGracaApiFactory();
-        var (loginVitima, loginOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
+        var (tokenVitima, tokenOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
 
-        var rotacao = await RefreshAsync(client, loginVitima.RefreshToken);
+        var rotacao = await RefreshAsync(client, tokenVitima);
         Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
 
         factory.Relogio.Avancar(TimeSpan.FromSeconds(31));
 
-        var reuso = await RefreshAsync(client, loginVitima.RefreshToken);
+        var reuso = await RefreshAsync(client, tokenVitima);
         Assert.Equal(HttpStatusCode.Unauthorized, reuso.StatusCode);
 
-        var outroSegueValido = await RefreshAsync(client, loginOutro.RefreshToken);
+        var outroSegueValido = await RefreshAsync(client, tokenOutro);
         Assert.Equal(HttpStatusCode.OK, outroSegueValido.StatusCode);
     }
 
@@ -336,26 +347,27 @@ public class AuthController_RefreshSeguranca_Tests
         // Contraparte benigna: a mesma sequência dentro da janela não revoga nada de ninguém —
         // nem do outro usuário (fronteira do escopo) nem do próprio (que era o falso positivo).
         using var factory = new RefreshJanelaDeGracaApiFactory();
-        var (loginVitima, loginOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
+        var (tokenVitima, tokenOutro, client) = await SemearDoisUsuariosLogadosAsync(factory);
 
-        var rotacao = await RefreshAsync(client, loginVitima.RefreshToken);
+        var rotacao = await RefreshAsync(client, tokenVitima);
         Assert.Equal(HttpStatusCode.OK, rotacao.StatusCode);
-        var tokenB = (await rotacao.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken;
+        var tokenB = CookieTestHelpers.ExtrairValorCookieRefresh(rotacao);
 
-        var replay = await RefreshAsync(client, loginVitima.RefreshToken);
+        var replay = await RefreshAsync(client, tokenVitima);
         Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
-        Assert.Equal(tokenB, (await replay.Content.ReadFromJsonAsync<TokenPairDto>())!.RefreshToken);
+        Assert.Equal(tokenB, CookieTestHelpers.ExtrairValorCookieRefresh(replay));
 
-        var outroSegueValido = await RefreshAsync(client, loginOutro.RefreshToken);
+        var outroSegueValido = await RefreshAsync(client, tokenOutro);
         Assert.Equal(HttpStatusCode.OK, outroSegueValido.StatusCode);
     }
 
     /// <summary>
-    /// Duas contas ativas, ambas com sessão aberta pelo mesmo cliente HTTP. Devolve os dois
-    /// logins (vítima e terceiro) e o cliente usado — a fronteira entre eles é o que os dois
+    /// Duas contas ativas, cada uma logada com seu próprio cliente sem cookies (os dois sobre o
+    /// mesmo host/factory). Devolve o refresh token bruto de cada sessão e o cliente da vítima,
+    /// usado nas chamadas subsequentes de /refresh — a fronteira entre elas é o que os dois
     /// testes acima exercitam.
     /// </summary>
-    private static async Task<(LoginResponseDto Vitima, LoginResponseDto Outro, HttpClient Client)>
+    private static async Task<(string TokenVitima, string TokenOutro, HttpClient Client)>
         SemearDoisUsuariosLogadosAsync(TccApiFactory factory)
     {
         await SemearUsuarioAsync(factory);
@@ -373,15 +385,16 @@ public class AuthController_RefreshSeguranca_Tests
             await context.SaveChangesAsync();
         }
 
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
-        var loginVitima = await FazerLoginAsync(client);
+        var (_, tokenVitima) = await FazerLoginAsync(client);
 
         var respOutro = await client.PostAsJsonAsync(RotaLogin,
             new LoginDto { Email = "outro@teste.com", Senha = SenhaValida });
         Assert.Equal(HttpStatusCode.OK, respOutro.StatusCode);
-        var loginOutro = (await respOutro.Content.ReadFromJsonAsync<LoginResponseDto>())!;
+        var tokenOutro = CookieTestHelpers.ExtrairValorCookieRefresh(respOutro);
+        Assert.False(string.IsNullOrWhiteSpace(tokenOutro));
 
-        return (loginVitima, loginOutro, client);
+        return (tokenVitima, tokenOutro!, client);
     }
 }

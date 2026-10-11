@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using TccManager.Shared.DTOs;
+using TccManager.Tests.Fixtures;
 using Xunit;
 
 namespace TccManager.Tests.Configuration;
@@ -10,6 +11,11 @@ namespace TccManager.Tests.Configuration;
 /// Antes desta correção o endpoint compartilhava a política "login" (5 req/janela), o que
 /// fazia a renovação silenciosa do cliente competir pelo mesmo orçamento das tentativas de
 /// login e, na prática, derrubar sessões legítimas.
+///
+/// Issue #171: o refresh token passou a viajar via cookie HttpOnly ("siga_refresh"), não mais
+/// no corpo — as chamadas de /refresh e /logout aqui enviam um cookie inválido/ausente (em vez
+/// de <c>RefreshRequestDto</c>/<c>LogoutRequestDto</c>, removidos). As asserções de limite não
+/// mudam: o rate limiting acontece antes do controller tentar ler o cookie.
 ///
 /// Valores esperados vêm do appsettings.json versionado da API
 /// (<c>RateLimiting:Refresh</c> = 15 req / 60 s / QueueLimit 0), no mesmo padrão já adotado
@@ -22,12 +28,18 @@ public class RateLimitingRefreshTests
 {
     private const string RotaLogin = "/api/auth/login";
     private const string RotaRefresh = "/api/auth/refresh";
+    private const string RotaLogout = "/api/auth/logout";
 
     private const int LimiteRefresh = 15;
     private const int LimiteLogin = 5;
 
-    private static RefreshRequestDto TokenInvalido() =>
-        new() { RefreshToken = Guid.NewGuid().ToString() };
+    private static Task<HttpResponseMessage> ChamarRefreshComCookieInvalido(HttpClient client) =>
+        client.SendAsync(CookieTestHelpers.RequisicaoComCookieRefresh(
+            HttpMethod.Post, RotaRefresh, Guid.NewGuid().ToString()));
+
+    private static Task<HttpResponseMessage> ChamarLogoutComCookieInvalido(HttpClient client) =>
+        client.SendAsync(CookieTestHelpers.RequisicaoComCookieRefresh(
+            HttpMethod.Post, RotaLogout, Guid.NewGuid().ToString()));
 
     private static LoginDto CredencialInvalida() =>
         new() { Email = "naoexiste@teste.com", Senha = "errada" };
@@ -37,11 +49,11 @@ public class RateLimitingRefreshTests
     {
         // No código anterior (política "login" compartilhada) a 6ª chamada já viria 429.
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= LimiteRefresh; i++)
         {
-            var resp = await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+            var resp = await ChamarRefreshComCookieInvalido(client);
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }
     }
@@ -50,15 +62,15 @@ public class RateLimitingRefreshTests
     public async Task DecimaSextaChamadaDentroDaJanela_Retorna429ComRetryAfter()
     {
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= LimiteRefresh; i++)
         {
-            var permitida = await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+            var permitida = await ChamarRefreshComCookieInvalido(client);
             Assert.NotEqual(HttpStatusCode.TooManyRequests, permitida.StatusCode);
         }
 
-        var bloqueada = await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+        var bloqueada = await ChamarRefreshComCookieInvalido(client);
 
         Assert.Equal(HttpStatusCode.TooManyRequests, bloqueada.StatusCode);
         Assert.True(bloqueada.Headers.Contains("Retry-After"),
@@ -76,7 +88,7 @@ public class RateLimitingRefreshTests
         // Núcleo da correção: as duas rotas passaram a ter orçamentos independentes.
         // No código anterior, esgotar o /login também esgotava o /refresh.
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= LimiteLogin; i++)
         {
@@ -86,7 +98,7 @@ public class RateLimitingRefreshTests
         var loginBloqueado = await client.PostAsJsonAsync(RotaLogin, CredencialInvalida());
         Assert.Equal(HttpStatusCode.TooManyRequests, loginBloqueado.StatusCode);
 
-        var refresh = await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+        var refresh = await ChamarRefreshComCookieInvalido(client);
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
     }
 
@@ -96,14 +108,14 @@ public class RateLimitingRefreshTests
         // Recíproca: o inverso também precisa valer, senão um cliente com renovação em
         // loop impediria o usuário de refazer login manualmente.
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= LimiteRefresh; i++)
         {
-            await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+            await ChamarRefreshComCookieInvalido(client);
         }
 
-        var refreshBloqueado = await client.PostAsJsonAsync(RotaRefresh, TokenInvalido());
+        var refreshBloqueado = await ChamarRefreshComCookieInvalido(client);
         Assert.Equal(HttpStatusCode.TooManyRequests, refreshBloqueado.StatusCode);
 
         var login = await client.PostAsJsonAsync(RotaLogin, CredencialInvalida());
@@ -118,7 +130,7 @@ public class RateLimitingRefreshTests
         // conseguir bloquear o logout de usuários legítimos (e vice-versa). Substitui o teste
         // anterior, que travava deliberadamente o comportamento antigo.
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= LimiteLogin; i++)
         {
@@ -128,8 +140,7 @@ public class RateLimitingRefreshTests
         var loginBloqueado = await client.PostAsJsonAsync(RotaLogin, CredencialInvalida());
         Assert.Equal(HttpStatusCode.TooManyRequests, loginBloqueado.StatusCode);
 
-        var logout = await client.PostAsJsonAsync("/api/auth/logout",
-            new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
+        var logout = await ChamarLogoutComCookieInvalido(client);
 
         Assert.NotEqual(HttpStatusCode.TooManyRequests, logout.StatusCode);
     }
@@ -139,17 +150,15 @@ public class RateLimitingRefreshTests
     {
         const int limiteLogout = 15;
         var factory = new TccApiFactory();
-        var client = factory.CreateClient();
+        var client = CookieTestHelpers.ClienteSemCookies(factory);
 
         for (var i = 1; i <= limiteLogout; i++)
         {
-            var resposta = await client.PostAsJsonAsync("/api/auth/logout",
-                new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
+            var resposta = await ChamarLogoutComCookieInvalido(client);
             Assert.NotEqual(HttpStatusCode.TooManyRequests, resposta.StatusCode);
         }
 
-        var bloqueado = await client.PostAsJsonAsync("/api/auth/logout",
-            new LogoutRequestDto { RefreshToken = Guid.NewGuid().ToString() });
+        var bloqueado = await ChamarLogoutComCookieInvalido(client);
 
         Assert.Equal(HttpStatusCode.TooManyRequests, bloqueado.StatusCode);
         Assert.True(bloqueado.Headers.Contains("Retry-After"));

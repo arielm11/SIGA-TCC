@@ -79,8 +79,9 @@
             if (response.IsSuccessStatusCode)
             {
                 var resultado = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+                // Issue #171: o refresh token não vem mais no corpo — o servidor já o gravou
+                // via Set-Cookie HttpOnly (siga_refresh). O Client guarda só o authToken.
                 await LocalStorage.SetItemAsync("authToken", resultado!.Token);
-                await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
                 AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
                 Navigation.NavigateTo("/");
