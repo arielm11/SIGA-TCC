@@ -7,10 +7,21 @@
     <!--
         Issue #148 (achado B9): defesa em profundidade contra injeção de script/estilo/objeto
         de terceiros. object-src/base-uri restritos sem efeito colateral conhecido.
-        script-src/style-src precisam de 'unsafe-inline' (os dois <script> inline abaixo, sem
-        infraestrutura de nonce num index.html estático) e script-src precisa de
-        'wasm-unsafe-eval' (exigência própria do runtime do Blazor WebAssembly para compilar o
-        módulo .wasm) — CSP mais estrita exigiria nonce por build, fora de escopo desta issue.
+        Achado SonarCloud (Web:S7039, 2026-10-11): script-src não precisa mais de
+        'unsafe-inline' — o único <script> inline que existia (bootstrap do tema, anti-flash)
+        foi extraído para wwwroot/js/temaAntiFlash.js; carregado via <script src>, continua
+        bloqueante e na mesma posição no <head>, então o timing (antes do WASM iniciar, antes
+        do primeiro paint) não muda. script-src ainda precisa de 'wasm-unsafe-eval'
+        (exigência própria do runtime do Blazor WebAssembly para compilar o módulo .wasm — não
+        é a mesma coisa que 'unsafe-inline', esse token permanece).
+        style-src continua com 'unsafe-inline' deliberadamente: o Client usa atributos
+        style="..." inline extensivamente nos componentes Razor (Radzen e páginas próprias) —
+        eliminar isso exigiria nonce por requisição, impossível servindo index.html como
+        arquivo estático (Blazor WASM standalone, sem host ASP.NET Core por trás que gere um
+        nonce novo a cada request), ou reescrever todo estilo inline como classe CSS em todos
+        os componentes — refactor desproporcional ao risco residual (estilo injetado não lê
+        localStorage/cookies, o impacto prático de um estilo malicioso é vandalismo visual, não
+        exfiltração).
         connect-src permite qualquer origem https:/wss: (não restrito a 'self'): a URL base da
         API é configurada em runtime (appsettings*.json do Client) e pode estar em outra porta/
         subdomínio — não é conhecida em build-time deste arquivo estático. Ainda bloqueia
@@ -20,7 +31,7 @@
         (nginx/IIS/etc.), fora do código deste repositório.
     -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" />
+          content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" />
     <title>TccManager.Client</title>
     <base href="/" />
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
@@ -47,30 +58,12 @@
 
     <!--
         Aplica o tema Radzen (Standard / Standard Dark) ANTES do WASM iniciar, para não haver
-        flash do tema errado no primeiro paint. Lê a mesma chave de localStorage
-        ("preferenciaTema") usada pelo TccManager.Client/Services/TemaService.cs. Usamos a
-        variante "-base" dos temas porque o app convive com Bootstrap nas páginas ainda não
-        migradas para Radzen (a variante "-base" não reseta elementos HTML globais).
+        flash do tema errado no primeiro paint. Extraído para js/temaAntiFlash.js (2026-10-11,
+        achado SonarCloud Web:S7039) para eliminar 'unsafe-inline' de script-src — <script src>
+        sem defer/async carrega e executa de forma síncrona e bloqueante, na mesma posição no
+        <head>, então o timing não muda.
     -->
-    <script>
-        (function () {
-            var tema = 'standard-base';
-            try {
-                var valorSalvo = window.localStorage.getItem('preferenciaTema');
-                if (valorSalvo && valorSalvo.replace(/"/g, '') === 'standard-dark') {
-                    tema = 'standard-dark-base';
-                }
-            } catch (e) {
-                // localStorage indisponível (ex.: navegação privada) — mantém o tema claro padrão.
-            }
-
-            var link = document.createElement('link');
-            link.id = 'radzen-theme';
-            link.rel = 'stylesheet';
-            link.href = '_content/Radzen.Blazor/css/' + tema + '.css';
-            document.head.appendChild(link);
-        })();
-    </script>
+    <script src="js/temaAntiFlash.js"></script>
 </head>
 
 <body>
