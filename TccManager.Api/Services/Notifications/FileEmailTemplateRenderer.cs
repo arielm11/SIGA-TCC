@@ -14,7 +14,7 @@ public class FileEmailTemplateRenderer : IEmailTemplateRenderer
 {
     private static readonly ConcurrentDictionary<string, string> Cache = new();
 
-    private static readonly Regex PlaceholderRegex = new(@"\{\{(\w+)\}\}", RegexOptions.Compiled);
+    private static readonly Regex PlaceholderRegex = new(@"\{\{(\w+)\}\}", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
     private readonly ILogger<FileEmailTemplateRenderer> _logger;
 

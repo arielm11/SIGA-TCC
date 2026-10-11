@@ -97,7 +97,7 @@ public class AvaliadorController : ControllerBase
             return Unauthorized();
 
         var ehAvaliadorDaBanca = await _context.BancaAvaliadores
-            .AnyAsync(ba => ba.BancaId == idBanca && ba.ProfessorId == profId);
+            .AnyAsync(ba => ba.BancaId == idBanca && ba.ProfessorId == profId, cancellationToken);
 
         if (!ehAvaliadorDaBanca)
         {
