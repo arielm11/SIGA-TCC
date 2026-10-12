@@ -10,6 +10,11 @@ namespace TccManager.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Achado SonarCloud (csharpsquid:S8747, 2026-10-11) — mesmo raciocínio da migration
+            // AddMaxLengthCamposTextoLivre: trunca qualquer valor já persistido mais longo que o
+            // novo limite antes do ALTER COLUMN, para o narrowing nunca falhar num banco
+            // existente. Só afeta bootstraps futuros a partir do zero.
+            migrationBuilder.Sql("UPDATE [usuarios] SET [Email] = LEFT([Email], 450) WHERE LEN([Email]) > 450;");
             migrationBuilder.AlterColumn<string>(
                 name: "Email",
                 table: "usuarios",
