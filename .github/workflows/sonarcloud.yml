@@ -55,6 +55,12 @@ jobs:
       - name: Iniciar análise Sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        # sonar.issue.ignore.multicriteria (achado Web:S7039, aceito pelo usuário em
+        # 2026-10-12): style-src 'unsafe-inline' em index.html é um residual estrutural —
+        # nonce não cobre atributos style="...", e o Radzen.Blazor.js embutido já exige o
+        # token independente do código próprio (ver comentário em wwwroot/index.html).
+        # NOSONAR não suprime achados do analisador de HTML/Web do SonarCloud (testado,
+        # permanece reportado na mesma linha); este é o mecanismo correto para esse caso.
         run: >
           dotnet sonarscanner begin
           /k:"arielm11_SIGA-TCC"
@@ -64,6 +70,9 @@ jobs:
           /d:sonar.cs.vstest.reportsPaths="**/*.trx"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
           /d:sonar.coverage.exclusions="**/Migrations/**"
+          /d:sonar.issue.ignore.multicriteria="e1"
+          /d:sonar.issue.ignore.multicriteria.e1.ruleKey="Web:S7039"
+          /d:sonar.issue.ignore.multicriteria.e1.resourceKey="**/index.html"
 
       - name: Restore
         run: dotnet restore

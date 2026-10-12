@@ -15,16 +15,17 @@
         (exigência própria do runtime do Blazor WebAssembly para compilar o módulo .wasm — não
         é a mesma coisa que 'unsafe-inline', esse token permanece).
         style-src continua com 'unsafe-inline' deliberadamente (achado Web:S7039 residual,
-        aceito pelo usuário em 2026-10-12 — NOSONAR abaixo): nonce só cobre elementos
-        <style>, nunca o atributo style="..." (confirmado via documentação do CSP); a
-        alternativa 'unsafe-hashes' exige valor estático, incompatível com estilo computado
-        por render do Blazor. O Client usa style="..." inline extensivamente nos componentes
-        Razor próprios (116 ocorrências) e o próprio Radzen.Blazor.js manipula .style
-        diretamente em JS (167 ocorrências) — eliminar isso exigiria reescrever todo estilo
-        inline do app E não remover a dependência de Radzen, que sozinho já exige
-        'unsafe-inline'. Refactor desproporcional ao risco residual (estilo injetado não lê
-        localStorage/cookies, o impacto prático de um estilo malicioso é vandalismo visual, não
-        exfiltração).
+        aceito pelo usuário em 2026-10-12 — suprimido via sonar.issue.ignore.multicriteria em
+        .github/workflows/sonarcloud.yml; NOSONAR não tem efeito aqui, o analisador de
+        HTML/Web do SonarCloud não suporta esse marcador): nonce só cobre elementos <style>,
+        nunca o atributo style="..." (confirmado via documentação do CSP); a alternativa
+        'unsafe-hashes' exige valor estático, incompatível com estilo computado por render do
+        Blazor. O Client usa style="..." inline extensivamente nos componentes Razor próprios
+        (116 ocorrências) e o próprio Radzen.Blazor.js manipula .style diretamente em JS (167
+        ocorrências) — eliminar isso exigiria reescrever todo estilo inline do app E não
+        remover a dependência de Radzen, que sozinho já exige 'unsafe-inline'. Refactor
+        desproporcional ao risco residual (estilo injetado não lê localStorage/cookies, o
+        impacto prático de um estilo malicioso é vandalismo visual, não exfiltração).
         connect-src permite qualquer origem https:/wss: (não restrito a 'self'): a URL base da
         API é configurada em runtime (appsettings*.json do Client) e pode estar em outra porta/
         subdomínio — não é conhecida em build-time deste arquivo estático. Ainda bloqueia
@@ -33,7 +34,8 @@
         via header HTTP) — precisa ser configurado na camada de hospedagem estática do Client
         (nginx/IIS/etc.), fora do código deste repositório.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" /> <!-- NOSONAR -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" />
     <title>TccManager.Client</title>
     <base href="/" />
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
