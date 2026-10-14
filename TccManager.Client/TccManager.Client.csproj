@@ -16,6 +16,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Achado CI 2026-10-14: mesmo dentro da mesma feature band (global.json, issue #94/A03-4),
+         um patch do SDK no runner trocou a versão do Microsoft.NET.ILLink.Tasks injetada
+         implicitamente (9.0.20 -> 9.0.21), quebrando o restore em modo locked (NU1004) — a
+         suposição de que a feature band sozinha bastava para estabilidade do lock estava
+         incompleta. Fixa a versão explicitamente para não depender de qual patch exato do SDK
+         o ambiente tem instalado. -->
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="9.0.21" />
     <PackageReference Include="Blazored.LocalStorage" Version="4.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.4" />

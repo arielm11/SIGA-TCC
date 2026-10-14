@@ -775,6 +775,11 @@
           "Microsoft.JSInterop": "9.0.12"
         }
       },
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Transitive",
+        "resolved": "9.0.21",
+        "contentHash": "ryionTSVk0ZU5/gW6r6Kh6LxvUzuF8HIcO0CLHoHhn7ZHZLbpGGYSe3duYzaNTtZK/AOQfqtYLUEW5LfbhSw3w=="
+      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "1.6.17",
@@ -1064,8 +1069,8 @@
       },
       "System.Security.Cryptography.Pkcs": {
         "type": "Transitive",
-        "resolved": "8.0.1",
-        "contentHash": "CoCRHFym33aUSf/NtWSVSZa99dkd0Hm7OCZUxORBjRB16LNhIEOf8THPqzIYlvKM0nNDAPTRBa1FxEECrgaxxA=="
+        "resolved": "9.0.21",
+        "contentHash": "KD+oHoYIxwNCajjVe58WVwq9cRpum+Pg3tRveDRtkcaw6w3oc7sNBoMRtb5P5OehI3bgv1ucMpgjf8lpj5J96A=="
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
@@ -1179,6 +1184,7 @@
           "Serilog.Settings.Configuration": "[10.0.0, )",
           "Serilog.Sinks.File": "[7.0.0, )",
           "Swashbuckle.AspNetCore": "[6.6.2, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )",
           "TccManager.Shared": "[1.0.0, )"
         }
       },
@@ -1189,6 +1195,7 @@
           "Microsoft.AspNetCore.Components.Authorization": "[9.0.0, )",
           "Microsoft.AspNetCore.Components.WebAssembly": "[9.0.4, )",
           "Microsoft.Extensions.Http": "[9.0.4, )",
+          "Microsoft.NET.ILLink.Tasks": "[9.0.21, )",
           "Radzen.Blazor": "[11.1.4, )",
           "TccManager.Shared": "[1.0.0, )"
         }
