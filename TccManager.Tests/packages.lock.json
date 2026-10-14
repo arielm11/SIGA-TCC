@@ -780,6 +780,11 @@
         "resolved": "9.0.21",
         "contentHash": "ryionTSVk0ZU5/gW6r6Kh6LxvUzuF8HIcO0CLHoHhn7ZHZLbpGGYSe3duYzaNTtZK/AOQfqtYLUEW5LfbhSw3w=="
       },
+      "Microsoft.NET.Sdk.WebAssembly.Pack": {
+        "type": "Transitive",
+        "resolved": "9.0.21",
+        "contentHash": "g9jC6OR7cJdvy/6Mzm4C7PPB4V+7KPQaG76DykKqOaMguUuk1ZI9otwyPpZY7Oj803kIZIB5Qpx/3lP56zSerg=="
+      },
       "Microsoft.OpenApi": {
         "type": "Transitive",
         "resolved": "1.6.17",
@@ -1196,6 +1201,7 @@
           "Microsoft.AspNetCore.Components.WebAssembly": "[9.0.4, )",
           "Microsoft.Extensions.Http": "[9.0.4, )",
           "Microsoft.NET.ILLink.Tasks": "[9.0.21, )",
+          "Microsoft.NET.Sdk.WebAssembly.Pack": "[9.0.21, )",
           "Radzen.Blazor": "[11.1.4, )",
           "TccManager.Shared": "[1.0.0, )"
         }

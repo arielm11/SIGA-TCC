@@ -62,9 +62,9 @@
       },
       "Microsoft.NET.Sdk.WebAssembly.Pack": {
         "type": "Direct",
-        "requested": "[9.0.20, )",
-        "resolved": "9.0.20",
-        "contentHash": "aTBvcbUM71rbYpSk90C1RBhZ6TMJ6h00JHfhgvGVYuccrd90JwxOR0tqRyxPvNdTArece4Kq/96/2LXksDCngQ=="
+        "requested": "[9.0.21, )",
+        "resolved": "9.0.21",
+        "contentHash": "g9jC6OR7cJdvy/6Mzm4C7PPB4V+7KPQaG76DykKqOaMguUuk1ZI9otwyPpZY7Oj803kIZIB5Qpx/3lP56zSerg=="
       },
       "Radzen.Blazor": {
         "type": "Direct",
