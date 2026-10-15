@@ -36,9 +36,9 @@
       },
       "Microsoft.AspNetCore.Components.WebAssembly.DevServer": {
         "type": "Direct",
-        "requested": "[9.0.4, )",
-        "resolved": "9.0.4",
-        "contentHash": "XaFkWZzoDpiqiRgsJYJu5kB1Rpf8kbHju0Crjq0x4EjMtBzzpdmMUHWCj4eQ46/+r8GZNtWIo42a1FY6bc6pfQ=="
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "OiAxY/6QswScTloO6Yzkhiey71Xw/iHKa6pFqaWovE9MJwqCYU5J8Jqp5upgY2aeajn+rYaZ/fOFu/B1L9dUmw=="
       },
       "Microsoft.Extensions.Http": {
         "type": "Direct",
