@@ -273,10 +273,10 @@
       },
       "Microsoft.AspNetCore.OpenApi": {
         "type": "Transitive",
-        "resolved": "9.0.4",
-        "contentHash": "GfZWPbZz1aAtEO3wGCkpeyRc0gzr/+VRHnUgY/YjqVPDlHbeKWCXw3IxKarQdo9myC2O1QBf652Mo50QqbXYRg==",
+        "resolved": "9.0.21",
+        "contentHash": "UNKsxZ1NEkYXnAWyig/12o23nh4eq51/Ax9jP0VI4fk2ENV4nvDG184Yaf9/NycWW2beW1Oc/7kjiXmfuyDdHg==",
         "dependencies": {
-          "Microsoft.OpenApi": "1.6.17"
+          "Microsoft.OpenApi": "1.6.31"
         }
       },
       "Microsoft.AspNetCore.TestHost": {
@@ -794,8 +794,8 @@
       },
       "Microsoft.OpenApi": {
         "type": "Transitive",
-        "resolved": "1.6.17",
-        "contentHash": "Le+kehlmrlQfuDFUt1zZ2dVwrhFQtKREdKBo+rexOwaCoYP0/qpgT9tLxCsZjsgR5Itk1UKPcbgO+FyaNid/bA=="
+        "resolved": "1.6.31",
+        "contentHash": "58ggc22i0BKvHuVoj5oVVQ7EbMkEMY0FvGeoQ/yBemk36pUbroDoj1XxRTnCi+fsgDTDuf+YZmigHkEzs5B2wA=="
       },
       "Microsoft.SqlServer.Server": {
         "type": "Transitive",
@@ -1191,7 +1191,7 @@
           "HtmlSanitizer": "[9.2.1039, )",
           "MailKit": "[4.18.1, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[9.0.21, )",
-          "Microsoft.AspNetCore.OpenApi": "[9.0.4, )",
+          "Microsoft.AspNetCore.OpenApi": "[9.0.21, )",
           "Microsoft.EntityFrameworkCore": "[9.0.0, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[9.0.0, )",
           "QuestPDF": "[2026.7.1, )",
