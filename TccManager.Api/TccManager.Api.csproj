@@ -19,18 +19,22 @@
          partir de 10.0.13 (10.0.0-10.0.12 são vulneráveis) — por isso 10.0.13, não 9.0.21. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.21" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.4" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.0">
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.21" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.21" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.21">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.0">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.21" />
+    <!-- Dependabot propôs 10.0.13 (PR #218) — rejeitado: mistura a linha .NET 10 no
+         toolchain fixado em 9.0.100 (global.json) sem benefício, mesmo raciocínio do PR #207
+         (DevServer). Mantido em 9.0.21, igual ao resto da família EFCore. Reavaliar quando o
+         projeto migrar pra .NET 10. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.21">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="QuestPDF" Version="2026.7.1" />
+    <PackageReference Include="QuestPDF" Version="2026.9.1" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.0" />
