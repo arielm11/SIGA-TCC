@@ -99,7 +99,7 @@ try
             // CRLF) forje uma linha extra no sink de arquivo (achado A05-1).
             logger.LogWarning(
                 "Falha de validação em {Method} {RequestPath}. Ator: {Ator}, Campos: {Campos}",
-                context.HttpContext.Request.Method,
+                context.HttpContext.Request.Method.Replace("\r", "").Replace("\n", ""),
                 RequestPathRedactor.Redigir(context.HttpContext.Request.Path.Value),
                 ator,
                 campos);

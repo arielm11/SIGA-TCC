@@ -34,7 +34,10 @@ public class GlobalExceptionHandler : IExceptionHandler
         HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
         var correlationId = httpContext.Items[CorrelationIdMiddleware.ItemsKey] as string;
-        var metodo = httpContext.Request.Method;
+        // Achado CodeQL (cs/log-forging, CWE-117): Method é controlado pelo cliente (um método
+        // HTTP customizado pode conter qualquer token, inclusive, em tese, CR/LF) — remove
+        // antes de logar, mesma defesa aplicada ao path em RequestPathRedactor.
+        var metodo = httpContext.Request.Method.Replace("\r", "").Replace("\n", "");
         var rota = RequestPathRedactor.Redigir(httpContext.Request.Path.Value);
 
         // Cliente cancelou a requisição (aba fechada, navegação, timeout do lado dele): não é
