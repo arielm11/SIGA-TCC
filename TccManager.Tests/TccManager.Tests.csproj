@@ -17,13 +17,13 @@
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
 		<PackageReference Include="xunit" Version="2.9.2" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
-		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.21" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
-		<PackageReference Include="coverlet.collector" Version="6.0.2" />
+		<PackageReference Include="coverlet.collector" Version="10.1.0" />
 		<!-- Issue #75: infraestrutura de testes bUnit ausente para o Client — sem isso, a
 		     suite so cobria logica pura extraida via reflection (new Componente() + campos
 		     privados), sem nenhum componente Blazor de fato renderizado. -->
-		<PackageReference Include="bunit" Version="2.9.0" />
+		<PackageReference Include="bunit" Version="2.11.3" />
 		<!-- Issue #75: sem lib de extracao de texto de PDF no repo, o conteudo gerado por
 		     AtaPdfDocument (QuestPDF) so era verificavel pela assinatura %PDF e tamanho de
 		     bytes, nunca pelo texto real (nome do aluno, titulo, nota, etc). -->
