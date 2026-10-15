@@ -61,6 +61,13 @@ jobs:
         # token independente do código próprio (ver comentário em wwwroot/index.html).
         # NOSONAR não suprime achados do analisador de HTML/Web do SonarCloud (testado,
         # permanece reportado na mesma linha); este é o mecanismo correto para esse caso.
+        #
+        # sonar.coverage.exclusions (achado 2026-10-15): **/wwwroot/** nunca pode ser coberto
+        # porque o relatório de cobertura vem só dos testes .NET (opencover) — não existe
+        # instrumentação de JS neste projeto. Sem essa exclusão, qualquer linha nova em
+        # wwwroot/js (ex.: theme.js) conta como "new code" não coberto e pode sozinha derrubar
+        # new_coverage abaixo do threshold, já que o total de "new lines to cover" do projeto
+        # costuma ser pequeno. Mesmo raciocínio já aplicado a **/Migrations/**.
         run: >
           dotnet sonarscanner begin
           /k:"arielm11_SIGA-TCC"
@@ -69,7 +76,7 @@ jobs:
           /d:sonar.host.url="https://sonarcloud.io"
           /d:sonar.cs.vstest.reportsPaths="**/*.trx"
           /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
-          /d:sonar.coverage.exclusions="**/Migrations/**"
+          /d:sonar.coverage.exclusions="**/Migrations/**,**/wwwroot/**"
           /d:sonar.issue.ignore.multicriteria="e1"
           /d:sonar.issue.ignore.multicriteria.e1.ruleKey="Web:S7039"
           /d:sonar.issue.ignore.multicriteria.e1.resourceKey="**/index.html"
