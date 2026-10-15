@@ -136,8 +136,8 @@
       },
       "BCrypt.Net-Next": {
         "type": "Transitive",
-        "resolved": "4.0.3",
-        "contentHash": "W+U9WvmZQgi5cX6FS5GDtDoPzUCV4LkBLkywq/kRZhuDwcbavOzcDAr3LXJFqHUi952Yj3LEYoWW0jbEUQChsA=="
+        "resolved": "4.2.0",
+        "contentHash": "gwLD2KfCuwQesP17aVh4h6lpiMPEVt5Lbpndo0ej903hNUUTtyxt3ARdDjmuydBRTAUICc7OVKVbaOvc6SQYXA=="
       },
       "Blazored.LocalStorage": {
         "type": "Transitive",
@@ -1174,7 +1174,7 @@
       "tccmanager.api": {
         "type": "Project",
         "dependencies": {
-          "BCrypt.Net-Next": "[4.0.3, )",
+          "BCrypt.Net-Next": "[4.2.0, )",
           "FluentValidation": "[12.1.1, )",
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "HtmlSanitizer": "[9.2.1039, )",
