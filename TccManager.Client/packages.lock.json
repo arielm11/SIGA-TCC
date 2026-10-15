@@ -13,12 +13,12 @@
       },
       "Microsoft.AspNetCore.Components.Authorization": {
         "type": "Direct",
-        "requested": "[9.0.0, )",
-        "resolved": "9.0.0",
-        "contentHash": "LD5ApnnUgMAyFDMKXqhyKFksnnxicGxE15dvC6rnOynFzj11Rvf7bENjTP9HUIbD64MYug+wlhl06A4nicw+RQ==",
+        "requested": "[9.0.21, )",
+        "resolved": "9.0.21",
+        "contentHash": "HadCJcaoZnKfn7SPI/LfItBU+zGDJ4xtjfwOwE+2nwEjAyjwBr/YeGYbqS4NOJeATDPewB7cfd2TjnZEMw0/cA==",
         "dependencies": {
-          "Microsoft.AspNetCore.Authorization": "9.0.0",
-          "Microsoft.AspNetCore.Components": "9.0.0"
+          "Microsoft.AspNetCore.Authorization": "9.0.21",
+          "Microsoft.AspNetCore.Components": "9.0.21"
         }
       },
       "Microsoft.AspNetCore.Components.WebAssembly": {
