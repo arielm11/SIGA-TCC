@@ -82,8 +82,12 @@ public class OrientadorController : ControllerBase
 
         // Issue #151 (achado C3): leitura pura (nunca salva) que materializava a entidade
         // completa rastreada sem necessidade.
+        // Achado SonarCloud (csharpsquid:S8733): duas collection navigations (Entregas e
+        // Acompanhamentos) no mesmo Include multiplicam linhas (produto cartesiano) — split
+        // query gera uma query SQL por collection em vez de um JOIN único.
         var tcc = await _context.Tccs
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(t => t.Aluno)
             .Include(t => t.Entregas.OrderByDescending(e => e.DataEnvio))
             .Include(t => t.Acompanhamentos.OrderByDescending(a => a.DataReuniao))
