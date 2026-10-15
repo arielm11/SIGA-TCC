@@ -15,8 +15,14 @@ public static class RequestPathRedactor
         if (string.IsNullOrEmpty(path))
             return "unknown";
 
-        return path.StartsWith(RascunhoAtaPathPrefix, StringComparison.OrdinalIgnoreCase)
+        var redigido = path.StartsWith(RascunhoAtaPathPrefix, StringComparison.OrdinalIgnoreCase)
             ? $"{RascunhoAtaPathPrefix}[REDACTED]"
             : path;
+
+        // Achado CodeQL (CWE-117, "Log entries created from user input", 2026-10-11):
+        // Request.Path é controlado pelo cliente — sem isso, um path com \r/\n decodificado
+        // forjaria linhas falsas no log (log forging). Remove qualquer caractere de controle
+        // antes de qualquer uso em log, nos 4 pontos que passam por este método.
+        return redigido.Replace("\r", "").Replace("\n", "");
     }
 }
