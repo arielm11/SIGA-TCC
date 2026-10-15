@@ -839,8 +839,8 @@
       },
       "QuestPDF": {
         "type": "Transitive",
-        "resolved": "2026.7.1",
-        "contentHash": "GsBxQb48dFAGmvI1eP3SHyz0Pua4uH6aUHX7f0ywTin6hordAviZRAiTiIQiKMLwq6hN1FmgS+qLjfh2v7vhOg=="
+        "resolved": "2026.9.1",
+        "contentHash": "i2BT/v+Ui6Hg9+BZbOci/VfsyvmtY8nlQqAOmFt8iOZ4Hm9aKZZRgZZ+LfrKWYXAHRb3l1EjDcMVfjRaZTt+Cw=="
       },
       "Radzen.Blazor": {
         "type": "Transitive",
@@ -1185,7 +1185,7 @@
           "Microsoft.AspNetCore.OpenApi": "[9.0.21, )",
           "Microsoft.EntityFrameworkCore": "[9.0.21, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[9.0.21, )",
-          "QuestPDF": "[2026.7.1, )",
+          "QuestPDF": "[2026.9.1, )",
           "Serilog.AspNetCore": "[10.0.0, )",
           "Serilog.Enrichers.Environment": "[3.0.1, )",
           "Serilog.Settings.Configuration": "[10.0.0, )",
