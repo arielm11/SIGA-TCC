@@ -3,10 +3,12 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @attribute [Authorize]
 @inject Blazored.LocalStorage.ILocalStorageService LocalStorage
 @inject HttpClient Http
 @inject AuthenticationStateProvider AuthStateProvider
+@inject ITokenRefreshCoordinator TokenRefreshCoordinator
 @inject NotificationService NotificationService
 @inject NavigationManager Navigation
 
@@ -31,23 +33,23 @@
     else if (usuario != null)
     {
         <RadzenCard Variant="Variant.Filled" class="rz-shadow-2">
-            <EditForm Model="usuario" OnValidSubmit="SalvarAlteracoes">
+            <EditForm Model="editForm" OnValidSubmit="SalvarAlteracoes">
                 <DataAnnotationsValidator />
 
                 <RadzenStack Gap="1rem">
                     <RadzenRow Gap="1rem">
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="Nome Completo" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenTextBox Name="Nome" @bind-Value="usuario.Nome" style="width: 100%;" />
+                                <RadzenTextBox Name="Nome" @bind-Value="editForm.Nome" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Nome)" />
+                            <ValidationMessage For="@(() => editForm.Nome)" />
                         </RadzenColumn>
 
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="E-mail" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenTextBox Name="Email" @bind-Value="usuario.Email" style="width: 100%;" />
+                                <RadzenTextBox Name="Email" @bind-Value="editForm.Email" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Email)" />
+                            <ValidationMessage For="@(() => editForm.Email)" />
                         </RadzenColumn>
                     </RadzenRow>
 
@@ -61,9 +63,17 @@
 
                         <RadzenColumn SizeMD="6" SizeXS="12">
                             <RadzenFormField Text="Alterar Senha" Variant="Variant.Outlined" style="width: 100%;">
-                                <RadzenPassword Name="Senha" @bind-Value="usuario.Senha" Placeholder="Deixe em branco para manter a atual" style="width: 100%;" />
+                                <RadzenPassword Name="Senha" @bind-Value="editForm.Senha" Placeholder="Deixe em branco para manter a atual" style="width: 100%;" />
                             </RadzenFormField>
-                            <ValidationMessage For="@(() => usuario.Senha)" />
+                            <ValidationMessage For="@(() => editForm.Senha)" />
+                        </RadzenColumn>
+                    </RadzenRow>
+
+                    <RadzenRow Gap="1rem">
+                        <RadzenColumn SizeMD="6" SizeXS="12">
+                            <RadzenFormField Text="Senha Atual" Variant="Variant.Outlined" style="width: 100%;">
+                                <RadzenPassword Name="SenhaAtual" @bind-Value="editForm.SenhaAtual" Placeholder="Necessária para alterar e-mail ou senha" style="width: 100%;" />
+                            </RadzenFormField>
                         </RadzenColumn>
                     </RadzenRow>
 
@@ -88,7 +98,11 @@
 </RadzenStack>
 
 @code {
-    private UsuarioDto? usuario;
+    // Issue #165 (achado A1/B3): a resposta de GET passou a ser UsuarioResponseDto (sem
+    // Senha/SenhaAtual) — editForm é o modelo de escrita, separado do de leitura, inicializado
+    // a partir de "usuario" a cada recarga.
+    private UsuarioResponseDto? usuario;
+    private UsuarioDto editForm = new();
     private bool carregando = true;
     private bool salvando = false;
     private int usuarioId;
@@ -115,13 +129,7 @@
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro: ID do usuário não encontrado no token.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", "Erro: ID do usuário não encontrado no token.");
             }
         }
         catch (Exception ex)
@@ -138,25 +146,26 @@
     {
         try
         {
-            var token = await LocalStorage.GetItemAsStringAsync("authToken");
-            if (!string.IsNullOrWhiteSpace(token))
+            // Issue #158 (achado D12): AuthTokenHandler já anexa o Bearer em toda requisição
+            // via DelegatingHandler (fonte única documentada) — setar
+            // Http.DefaultRequestHeaders.Authorization aqui era redundante e, por Http ser um
+            // HttpClient de escopo efetivamente singleton em Blazor WASM, podia manter um
+            // token antigo sendo enviado após logout/troca de usuário na mesma aba.
+            usuario = await Http.GetFromJsonAsync<UsuarioResponseDto>("api/usuario/me");
+            if (usuario != null)
             {
-                token = token.Replace("\"", "");
-                Http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                editForm = new UsuarioDto
+                {
+                    Nome = usuario.Nome,
+                    Email = usuario.Email,
+                    Tipo = usuario.Tipo,
+                    Ativo = usuario.Ativo
+                };
             }
-
-            usuario = await Http.GetFromJsonAsync<UsuarioDto>("api/usuario/me");
-            if (usuario != null) usuario.Senha = string.Empty;
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Falha ao carregar",
-                Detail = "Falha ao comunicar com o servidor.",
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Falha ao carregar", "Falha ao comunicar com o servidor.");
         }
     }
 
@@ -165,7 +174,7 @@
         salvando = true;
         try
         {
-            var response = await Http.PutAsJsonAsync($"api/usuario/{usuarioId}", usuario);
+            var response = await Http.PutAsJsonAsync($"api/usuario/{usuarioId}", editForm);
 
             if (response.IsSuccessStatusCode)
             {
@@ -175,35 +184,26 @@
                 // antes do usuário conseguir vê-la) — decisão registrada na arquitetura (seção 7.2/11, P3).
                 await CarregarDados();
 
-                NotificationService.Notify(new NotificationMessage
+                // Nome/e-mail exibidos no NavMenu vêm de claims presas no token já emitido —
+                // força a renovação do par para que o token novo carregue os dados atuais do
+                // banco, sem exigir logout/login (o refresh já recarrega a entidade do usuário).
+                var tokenAtual = await LocalStorage.GetItemAsStringAsync("authToken");
+                if (!string.IsNullOrWhiteSpace(tokenAtual))
                 {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Sucesso",
-                    Detail = "Dados atualizados com sucesso!",
-                    Duration = 5000
-                });
+                    await TokenRefreshCoordinator.EnsureRefreshedAsync(tokenAtual.Replace("\"", string.Empty));
+                }
+
+                NotificationService.NotificarSucesso("Sucesso", "Dados atualizados com sucesso!");
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao salvar",
-                    Detail = $"Erro ao salvar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao salvar", $"Erro ao salvar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao tentar salvar.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao tentar salvar.");
         }
         finally
         {

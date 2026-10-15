@@ -5,10 +5,24 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  schedule:
+    # Issue #94 (achado A03-7): mesma cadência do codeql.yml — pega um advisory divulgado
+    # depois do último push, mesmo sem nenhum PR novo (Dependabot cobre o lock file; isto
+    # cobre o build/teste/gate completo rodando direto em dev).
+    - cron: '0 8 * * 1'
   workflow_dispatch:
 
 env:
   DOTNET_VERSION: "9.0.x"
+  # RNF-02 (migração Radzen) nunca teve um número — medido em 2026-08-29 (issue #78):
+  # publish Release sem o workload wasm-tools (CI/dev não o têm instalado, então este é o
+  # bundle real hoje) deu ~4.94 MB (4937970 bytes) em Brotli, o formato que todo navegador
+  # moderno baixa. 6 MB dá ~20% de folga sobre a medição — ajuste este número se o orçamento
+  # precisar mudar, é só um valor de configuração.
+  WASM_BUDGET_BYTES: 6000000
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
@@ -23,13 +37,50 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore --locked-mode
+        # --locked-mode: falha se os packages.lock.json estiverem dessincronizados
+        # dos .csproj. Ao alterar/adicionar um PackageReference, regenere os locks
+        # localmente com "dotnet restore --force-evaluate" e commite o resultado.
+        # TccManager.Client não gera lock (ver comentário no .csproj dele).
 
       - name: Verificar formatação (dotnet format)
         run: dotnet format --verify-no-changes --verbosity diagnostic
         continue-on-error: true
         # continue-on-error: true por enquanto — troque para "false" quando
         # o time estiver confortável com o gate de formatação bloqueando PRs.
+
+      - name: Relatório de vulnerabilidades em pacotes
+        # Issue #94 (achados A03-1/A03-2): o GATE de verdade agora é o "Restore dependencies"
+        # acima — NuGetAudit (Directory.Build.props: NuGetAuditMode=all, NuGetAuditLevel=low,
+        # WarningsAsErrors em NU1901-4) faz o restore falhar de cara ao encontrar um advisory
+        # conhecido, sem depender de parsing de saída (não chega a este step se isso
+        # acontecer). Este step é só um RELATÓRIO legível na aba Summary do run — não bloqueia
+        # nada por si só, e roda sempre (mesmo sem achado, para deixar visível que o scan
+        # rodou e voltou limpo).
+        if: always()
+        continue-on-error: true
+        # Puramente informativo — se o Restore acima já falhou (advisory bloqueado pelo
+        # NuGetAudit), este step pode não ter nada pra listar; nunca deve mascarar nem
+        # duplicar o motivo real da falha do job.
+        run: |
+          set -o pipefail
+          dotnet list TccManager.sln package --vulnerable --include-transitive --no-restore \
+            | tee vulnerable-packages.txt
+          {
+            echo "## Relatório de vulnerabilidades de pacotes"
+            echo ""
+            echo '```'
+            cat vulnerable-packages.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar relatório de vulnerabilidades
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vulnerable-packages-report
+          path: vulnerable-packages.txt
+          if-no-files-found: ignore
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
@@ -47,3 +98,28 @@ jobs:
         with:
           name: test-results
           path: ./TestResults
+
+      - name: Orçamento do bundle WASM (issue #78)
+        run: |
+          set -o pipefail
+          dotnet publish TccManager.Client/TccManager.Client.csproj \
+            --no-restore --configuration Release --output ./publish-client
+
+          # Soma só os .br: é o formato Brotli que todo navegador moderno baixa (o servidor
+          # negocia Content-Encoding e serve o pré-comprimido, nunca o .wasm/.dll cru).
+          total_bytes=$(find ./publish-client/wwwroot/_framework -name "*.br" -printf "%s\n" | awk '{s+=$1} END {print s+0}')
+          total_mb=$(awk "BEGIN { printf \"%.2f\", $total_bytes / 1000000 }")
+          budget_mb=$(awk "BEGIN { printf \"%.2f\", $WASM_BUDGET_BYTES / 1000000 }")
+
+          {
+            echo "## Orçamento do bundle WASM"
+            echo ""
+            echo "_framework em Brotli (download real de um navegador moderno): **${total_mb} MB** — orçamento: ${budget_mb} MB"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Bundle WASM (_framework, .br): ${total_mb} MB / orçamento ${budget_mb} MB"
+
+          if [ "$total_bytes" -gt "$WASM_BUDGET_BYTES" ]; then
+            echo "::error::Bundle WASM (${total_mb} MB) ultrapassou o orçamento de ${budget_mb} MB — veja issue #78."
+            exit 1
+          fi

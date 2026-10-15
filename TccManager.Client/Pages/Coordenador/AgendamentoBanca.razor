@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject NotificationService NotificationService
@@ -41,6 +42,7 @@
             </RadzenColumn>
 
             <RadzenColumn SizeMD="7" SizeXS="12">
+                <RadzenText TextStyle="TextStyle.H6" class="rz-mb-2">Dados do Agendamento</RadzenText>
                 @if (tccSelecionadoId > 0)
                 {
                     <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
@@ -116,7 +118,11 @@
 
     private int tccSelecionadoId = 0;
     private string orientadorNome = "";
-    private AgendarBancaDto agendamento = new();
+    // Issue #146: o valor-padrão de DataHora (preenchimento inicial do formulário) agora é
+    // responsabilidade do Client, não mais do DTO compartilhado — o inicializador no DTO
+    // mascarava a ausência do campo quando a requisição não vinha deste formulário (ver
+    // AgendarBancaDtoValidator, regra "deve ser futura").
+    private AgendarBancaDto agendamento = new() { DataHora = DateTime.Now.AddDays(7) };
 
     private IEnumerable<int> professoresSelecionados = new List<int>();
     private IEnumerable<int> externosSelecionados = new List<int>();
@@ -153,7 +159,7 @@
     {
         tccSelecionadoId = id;
         orientadorNome = tccsProntos.FirstOrDefault(t => t.Id == id)?.NomeOrientador ?? "";
-        agendamento = new AgendarBancaDto();
+        agendamento = new AgendarBancaDto { DataHora = DateTime.Now.AddDays(7) };
         professoresSelecionados = new List<int>();
         externosSelecionados = new List<int>();
     }
@@ -163,29 +169,24 @@
         agendamento.ProfessoresIds = professoresSelecionados?.ToList() ?? new();
         agendamento.MembrosExternosIds = externosSelecionados?.ToList() ?? new();
 
-        var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
-        if (resp.IsSuccessStatusCode)
+        try
         {
-            NotificationService.Notify(new NotificationMessage
+            var resp = await Http.PostAsJsonAsync($"api/coordenador/tcc/{tccSelecionadoId}/banca", agendamento);
+            if (resp.IsSuccessStatusCode)
             {
-                Severity = NotificationSeverity.Success,
-                Summary = "Banca agendada",
-                Detail = "Banca agendada com sucesso!",
-                Duration = 5000
-            });
-            tccSelecionadoId = 0;
-            await CarregarListas();
+                NotificationService.NotificarSucesso("Banca agendada", "Banca agendada com sucesso!");
+                tccSelecionadoId = 0;
+                await CarregarListas();
+            }
+            else
+            {
+                var erro = await resp.Content.ReadAsStringAsync();
+                NotificationService.NotificarErro("Erro ao agendar", erro);
+            }
         }
-        else
+        catch
         {
-            var erro = await resp.Content.ReadAsStringAsync();
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro ao agendar",
-                Detail = erro,
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao agendar a banca.");
         }
     }
 

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Issue #94 (achado A03-7): sem isto, um advisory divulgado depois do último push manual
+  # nunca era detectado até alguém rodar o restore de novo — o gate de vulnerabilidade
+  # (NuGetAudit, Directory.Build.props) só audita o que já está no lock file.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10

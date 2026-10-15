@@ -1,10 +1,14 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
+using TccManager.Api.Services.Notifications;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
@@ -20,23 +24,44 @@ public class TccController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ISanitizerService _sanitizerService;
     private readonly IStorageService _storageService;
+    private readonly ITccNotificationService _notificationService;
+    private readonly ILogger<TccController> _logger;
 
-    public TccController(AppDbContext context, ISanitizerService sanitizerService, IStorageService storageService)
+    // Categoria dedicada de auditoria (upload/compensação/download de entrega): o
+    // MinimumLevel padrão do Serilog é Warning, que descartaria eventos de auditoria em
+    // Information. "TccManager.Api.Auditoria" tem Override explícito em appsettings.json
+    // para não perder essa trilha — mesmo padrão de "TccManager.Api.RateLimiting" em
+    // RateLimitingSetup. Ver docs/seguranca/2026-08-18-fix-upload-storage-hardening.md, A09-1.
+    private readonly ILogger _auditLogger;
+
+    public TccController(
+        AppDbContext context,
+        ISanitizerService sanitizerService,
+        IStorageService storageService,
+        ITccNotificationService notificationService,
+        ILogger<TccController> logger,
+        ILoggerFactory loggerFactory)
     {
         _context = context;
         _sanitizerService = sanitizerService;
         _storageService = storageService;
+        _notificationService = notificationService;
+        _logger = logger;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("meu-tcc")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetMeuTcc()
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
             return Unauthorized("Sessão inválida.");
 
+        // Issue #151 (achado C3): leitura pura (nunca salva); NomeOrientadorSolicitado é
+        // [NotMapped] e não participa do change tracker de qualquer forma.
         var tcc = await _context.Tccs
+            .AsNoTracking()
             .Include(t => t.Entregas)
             .Where(t => t.AlunoId == alunoId)
             .OrderByDescending(t => t.DataCriacao)
@@ -45,11 +70,43 @@ public class TccController : ControllerBase
         if (tcc == null)
             return NoContent();
 
-        return Ok(tcc);
+        // Issue #112 (RF04/D7): nome do professor solicitado, via consulta projetada — nunca
+        // via Include(t => t.OrientadorSolicitado) (D6: evita popular a navegação, que fica
+        // sempre [JsonIgnore] como defesa em profundidade, mas a projeção também não carrega a
+        // entidade Usuario rastreada). Um único round-trip extra, só quando aplicável.
+        if (tcc.OrientadorSolicitadoId != null)
+        {
+            tcc.NomeOrientadorSolicitado = await _context.Usuarios
+                .Where(u => u.Id == tcc.OrientadorSolicitadoId)
+                .Select(u => u.Nome)
+                .FirstOrDefaultAsync();
+        }
+
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Tcc crua —
+        // mesma classe de risco do vazamento de SenhaHash corrigido na #137 (qualquer campo
+        // novo em Tcc/Usuario sem [JsonIgnore] vazava automaticamente por este endpoint).
+        return Ok(TccDetalheDto.DeEntidade(tcc));
+    }
+
+    [HttpGet("professores")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
+    {
+        // Issue #112 (RF02/D4): mesma projeção de CoordenadorController.GetProfessores
+        // (UsuarioQueries.ProfessoresAtivosComCarga) — só informativa aqui (decisão de produto
+        // 4.1: nada bloqueia a escolha do aluno), não um endpoint compartilhado com o
+        // Coordenador (rota/autorização do Coordenador continuam intocadas).
+        var professores = await _context.ProfessoresAtivosComCarga()
+            .OrderBy(p => p.Nome)
+            .ToPagedResultAsync(paginacao, cancellationToken);
+
+        return Ok(professores);
     }
 
     [HttpPost("proposta")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> SubmeterProposta([FromBody] PropostaTccDto dto)
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -60,23 +117,70 @@ public class TccController : ControllerBase
         if (existeTccAtivo)
             return BadRequest("Você já possui um TCC ativo. Não é possível submeter outra proposta.");
 
+        // Issue #112 (RF01/RF02, campo opcional — P1): mesma validação de "professor válido" já
+        // usada em DesignarOrientador, mais Ativo (decisão de produto: "Professor ativo" para a
+        // submissão — divergência deliberada, DesignarOrientador não muda). AnyAsync, nunca
+        // FindAsync/FirstOrDefaultAsync (D6): evita relationship fix-up popular
+        // tcc.OrientadorSolicitado com uma entidade Usuario rastreada.
+        if (dto.OrientadorSolicitadoId.HasValue)
+        {
+            var professorValido = await _context.Usuarios.AnyAsync(u =>
+                u.Id == dto.OrientadorSolicitadoId.Value && u.Tipo == TipoUsuario.Professor && u.Ativo);
+            if (!professorValido)
+                return BadRequest("Professor inválido.");
+        }
+
         var tcc = new Tcc
         {
             Titulo = _sanitizerService.Sanitizar(dto.Titulo)!,
             Resumo = _sanitizerService.Sanitizar(dto.Resumo)!,
             AlunoId = alunoId,
+            OrientadorSolicitadoId = dto.OrientadorSolicitadoId,
             Status = StatusTcc.Pendente,
             DataCriacao = DateTime.UtcNow
         };
 
         _context.Tccs.Add(tcc);
-        await _context.SaveChangesAsync();
 
-        return Ok(tcc);
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Issue #145 (achado B11): backstop atômico do índice único filtrado
+            // (UX_Tccs_AlunoId_Ativo) contra o pre-check de aplicação acima (existeTccAtivo),
+            // que sozinho não impede duas requisições concorrentes de passarem no pre-check e
+            // criarem 2 TCCs ativos para o mesmo Aluno.
+            _auditLogger.LogWarning(
+                "Falha ao submeter proposta: possível violação da restrição de unicidade de TCC ativo por Aluno. AlunoId: {AlunoId}",
+                alunoId);
+            return Conflict("Você já possui um TCC ativo. Não é possível submeter outra proposta.");
+        }
+
+        // Auditoria (D10, recomendado — RNF-01): evento que concede a um Professor autoridade
+        // sobre a proposta, relevante para investigar qualquer questão de RBAC depois.
+        if (tcc.OrientadorSolicitadoId != null)
+        {
+            _auditLogger.LogInformation(
+                "Proposta submetida com professor solicitado. TccId: {TccId}, AlunoId: {AlunoId}, OrientadorSolicitadoId: {OrientadorSolicitadoId}",
+                tcc.Id,
+                alunoId,
+                tcc.OrientadorSolicitadoId);
+        }
+
+        // D8: disparado depois do SaveChanges, só quando há professor solicitado — nunca lança
+        // (fachada best-effort).
+        if (tcc.OrientadorSolicitadoId != null)
+            await _notificationService.NotificarPropostaSolicitadaAsync(tcc.Id);
+
+        // Issue #144 (achado A3): mesma projeção de GetMeuTcc, pelo mesmo motivo.
+        return Ok(TccDetalheDto.DeEntidade(tcc));
     }
 
     [HttpDelete("proposta/{id}")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    [EnableRateLimiting(RateLimitingSetup.PropostaPolicyName)]
     public async Task<IActionResult> ExcluirProposta(int id)
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -91,33 +195,73 @@ public class TccController : ControllerBase
             return BadRequest("Apenas propostas pendentes podem ser excluídas.");
 
         _context.Tccs.Remove(tcc);
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado D6): mesma corrida já tratada em DesignarOrientador/
+            // RejeitarProposta/AprovarPropostaSolicitada/RejeitarPropostaSolicitada — o
+            // Coordenador (ou o professor solicitado) decidiu sobre esta proposta entre o
+            // read e este DELETE (RowVersion mudou), e o EF inclui RowVersion no WHERE do
+            // DELETE também.
+            _auditLogger.LogWarning(
+                "Exclusão de proposta recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a página e tente novamente.");
+        }
+
+        // Issue #143 (achado M6): exclusão de proposta não tinha nenhum registro de
+        // auditoria.
+        _auditLogger.LogInformation(
+            "Proposta excluída pelo próprio Aluno. TccId: {TccId}, AlunoId: {AlunoId}",
+            id, alunoId);
 
         return Ok("Proposta excluída com sucesso.");
     }
 
     [HttpGet("entregas")]
-    [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao)
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetMinhasEntregas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado, cancellationToken);
         if (tcc == null) return NotFound("TCC não encontrado.");
 
-        var entregas = await _context.Entregas
+        var pagina = await _context.Entregas
             .Where(e => e.TccId == tcc.Id)
             .OrderByDescending(e => e.DataEnvio)
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
+
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Entrega
+        // crua (não expõe ArquivoCaminho, mesma classe de risco das demais correções desta
+        // issue).
+        var entregas = new PagedResult<EntregaDto>
+        {
+            Items = pagina.Items.Select(EntregaDto.DeEntidade).ToList(),
+            TotalCount = pagina.TotalCount,
+            TotalPages = pagina.TotalPages,
+            CurrentPage = pagina.CurrentPage,
+            PageSize = pagina.PageSize
+        };
 
         return Ok(entregas);
     }
 
     [HttpPost("entregas")]
-    [Authorize(Roles = "Aluno")]
-    public async Task<IActionResult> EnviarEntrega([FromForm] string tituloEntrega, [FromForm] TipoEntrega tipo, IFormFile arquivo)
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
+    [EnableRateLimiting(RateLimitingSetup.UploadPolicyName)]
+    public async Task<IActionResult> EnviarEntrega(
+        [FromForm] string tituloEntrega,
+        [FromForm] TipoEntrega tipo,
+        IFormFile arquivo)
     {
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoIdClaim) || !int.TryParse(alunoIdClaim, out int alunoId))
@@ -125,15 +269,62 @@ public class TccController : ControllerBase
 
         var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
 
-        if (tcc == null || tcc.Status != StatusTcc.Aprovado)
+        // Issue #82 (D4/Grupo B): aceita Aprovado ("orientador designado, ainda nenhuma
+        // entrega") OU EmAndamento ("já enviou pelo menos uma") — sem isso, a transição
+        // automática logo abaixo travaria o aluno já na 2ª entrega. Mensagem de erro
+        // inalterada: os estados recusados (Pendente/Reprovado/AguardandoDefesa/Finalizado)
+        // continuam corretamente descritos como "precisa estar aprovado".
+        if (tcc == null || (tcc.Status != StatusTcc.Aprovado && tcc.Status != StatusTcc.EmAndamento))
             return BadRequest("Seu TCC precisa estar aprovado para enviar entregas.");
 
-        var jaEnviouFinal = await _context.Entregas.AnyAsync(e => e.TccId == tcc.Id && e.Tipo == TipoEntrega.Final);
-        if (jaEnviouFinal)
-            return BadRequest("A versão FINAL já foi enviada. O ciclo de entregas está encerrado.");
+        // Issue #81 (D6): o bloqueio deixou de ser "existe qualquer Final" e passou a ser
+        // "existe uma Final NÃO rejeitada" — precisa ser o mesmo predicado do índice único
+        // filtrado UX_Entregas_TccId_Final (AppDbContext), essa igualdade é a invariante
+        // central da issue. Busca-se o Status (em vez de um AnyAsync booleano) para
+        // diferenciar as mensagens de 400 entre Final aprovada e Final ainda pendente de
+        // avaliação — só uma Final Rejeitada deixa o ciclo reabrir (o aluno pode enviar
+        // tanto Parcial quanto uma nova Final).
+        var statusFinalBloqueante = await _context.Entregas
+            .Where(e => e.TccId == tcc.Id && e.Tipo == TipoEntrega.Final && e.Status != StatusEntrega.Rejeitada)
+            .Select(e => (StatusEntrega?)e.Status)
+            .FirstOrDefaultAsync();
+
+        if (statusFinalBloqueante == StatusEntrega.Aprovada)
+            return BadRequest("A versão FINAL já foi aprovada pelo orientador. O ciclo de entregas está encerrado.");
+        if (statusFinalBloqueante == StatusEntrega.Pendente)
+            return BadRequest("Sua versão FINAL está aguardando a avaliação do orientador.");
+
+        // Issue #73 (achado A10-1 da revisão de segurança,
+        // docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md): tituloEntrega é
+        // parâmetro de form escalar, não passa pelo FluentValidationActionFilter — e não dá
+        // pra usar [StringLength] no parâmetro porque isso validaria o valor CRU, não o
+        // sanitizado que de fato é persistido (HtmlSanitizer só CODIFICA entidades, nunca
+        // decodifica — um título de 200 caracteres crus pode virar mais de 200 depois de
+        // sanitizado, e estourar a coluna nvarchar(200) no INSERT). Sanitiza primeiro, mede
+        // depois, ANTES do upload do arquivo (para não deixar arquivo órfão em storage por
+        // causa de um título grande demais).
+        var tituloSanitizado = _sanitizerService.Sanitizar(tituloEntrega) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(tituloSanitizado))
+            return BadRequest("O título da entrega é obrigatório.");
+        if (tituloSanitizado.Length > 200)
+            return BadRequest("O título da entrega deve ter no máximo 200 caracteres.");
 
         if (arquivo == null || arquivo.Length == 0)
             return BadRequest("Nenhum arquivo enviado.");
+
+        // Issue #75: [RequestSizeLimit] (abaixo, no atributo do método) já protege a conexão
+        // Kestrel real, abortando a leitura do corpo ao ultrapassar o teto — mas esse corte é
+        // uma característica do transporte Kestrel, não reproduzida pelo TestServer em
+        // memória usado pelos testes de integração (confirmado empiricamente: sem esta
+        // checagem, um corpo gigante passava batido pelo TestServer direto até aqui). Esta
+        // checagem explícita sobre IFormFile.Length é a segunda camada — não evita I/O de
+        // disco em si (o model binder do multipart já spoola partes grandes para um arquivo
+        // temporário do SO antes do corpo da ação executar, com ou sem esta checagem; quem
+        // evita esse spool é o [RequestSizeLimit] acima, abortando mais cedo), mas evita a
+        // gravação no storage da aplicação e a persistência no banco — e é a única camada que
+        // os testes conseguem exercitar de verdade.
+        if (arquivo.Length > UploadLimits.MaxArquivoUploadBytes)
+            return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
 
         var extensoesPermitidas = new[] { ".pdf", ".doc", ".docx", ".zip" };
         var extensao = Path.GetExtension(arquivo.FileName).ToLowerInvariant();
@@ -145,28 +336,199 @@ public class TccController : ControllerBase
             return BadRequest("Você não pode enviar a versão FINAL sem ter um Orientador definido (RN03).");
 
         string caminho;
-        using (var stream = arquivo.OpenReadStream())
+        using (var streamOriginal = arquivo.OpenReadStream())
         {
-            caminho = await _storageService.UploadAsync(stream, arquivo.FileName, CategoriaArquivo.Entregas);
+            var (assinaturaValida, streamParaUpload) = await AssinaturaArquivoValidator.ValidarAsync(
+                streamOriginal, extensao, HttpContext.RequestAborted);
+
+            try
+            {
+                if (!assinaturaValida)
+                    return BadRequest("Conteúdo do arquivo não corresponde à extensão informada.");
+
+                caminho = await _storageService.UploadAsync(
+                    streamParaUpload, arquivo.FileName, CategoriaArquivo.Entregas, HttpContext.RequestAborted);
+            }
+            finally
+            {
+                if (!ReferenceEquals(streamParaUpload, streamOriginal))
+                    await streamParaUpload.DisposeAsync();
+            }
         }
 
         var entrega = new Entrega
         {
             TccId = tcc.Id,
-            Titulo = _sanitizerService.Sanitizar(tituloEntrega)!,
+            Titulo = tituloSanitizado,
             ArquivoCaminho = caminho,
             Tipo = tipo,
             DataEnvio = DateTime.UtcNow
         };
 
-        _context.Entregas.Add(entrega);
-        await _context.SaveChangesAsync();
+        // Issue #82 (D2): primeira entrega do aluno transiciona o TCC de Aprovado
+        // ("orientador designado, nada enviado") para EmAndamento ("aluno já começou").
+        // Invariante: Aprovado <=> zero Entregas, então o próprio Status já é o marcador de
+        // "é a primeira" — não precisa (nem deve) contar linhas em Entregas (ver 4.2 do
+        // documento de arquitetura: um AnyAsync seria auto-corretivo do jeito errado, deixando
+        // um TCC preso em Aprovado se algum dado legado já tivesse entregas). Monotônica: nada
+        // volta de EmAndamento para Aprovado. Qualquer TipoEntrega dispara (D3).
+        var iniciouAcompanhamento = tcc.Status == StatusTcc.Aprovado;
+        if (iniciouAcompanhamento)
+            tcc.Status = StatusTcc.EmAndamento;
 
-        return Ok(entrega);
+        _context.Entregas.Add(entrega);
+
+        try
+        {
+            // Insere a Entrega e grava o novo Status do Tcc na mesma transação implícita do
+            // EF Core (mesmo DbContext, um único SaveChanges) — sem isso haveria uma janela
+            // observável de "status mudou mas a entrega não entrou". Herda os dois catch
+            // abaixo: se o INSERT falhar, o UPDATE de Status também não é persistido.
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Backstop atômico do índice único filtrado (UX_Entregas_TccId_Final) contra o
+            // AnyAsync de aplicação acima, que sozinho não impede duas requisições
+            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL. Não
+            // logar a exceção crua (mesmo padrão de UsuarioController).
+            _auditLogger.LogWarning(
+                "Falha ao salvar entrega em POST /api/tcc/entregas: possível violação da restrição de unicidade de entrega FINAL. TccId: {TccId}",
+                tcc.Id);
+            await CompensarUploadOrfaoAsync(caminho, tcc.Id, "violação de unicidade de entrega FINAL");
+            return Conflict("A versão FINAL já foi enviada. O ciclo de entregas está encerrado.");
+        }
+        catch (Exception)
+        {
+            // Compensação manual: o arquivo já foi gravado em disco antes do SaveChanges
+            // (não há transação distribuída entre disco e banco) — sem isso, uma falha
+            // aqui deixaria o arquivo órfão em wwwroot/uploads/entregas.
+            await CompensarUploadOrfaoAsync(caminho, tcc.Id, "falha ao salvar entrega no banco de dados");
+            throw;
+        }
+
+        _auditLogger.LogInformation(
+            "Entrega enviada com sucesso. TccId: {TccId}, EntregaId: {EntregaId}, Tipo: {Tipo}",
+            tcc.Id,
+            entrega.Id,
+            entrega.Tipo);
+
+        // Issue #82 (D6): única transição de Tcc.Status sem autor humano identificável (todas
+        // as outras são atos deliberados de um usuário autorizado) — por isso é a que mais
+        // precisa de trilha, não a que menos. Só ids/metadados, sem PII, mesma disciplina dos
+        // demais logs desta categoria.
+        if (iniciouAcompanhamento)
+        {
+            _auditLogger.LogInformation(
+                "TCC transicionado automaticamente para EmAndamento pela primeira entrega do aluno. TccId: {TccId}, AlunoId: {AlunoId}, EntregaId: {EntregaId}, Tipo: {Tipo}",
+                tcc.Id,
+                alunoId,
+                entrega.Id,
+                entrega.Tipo);
+        }
+
+        // Issue #144 (achado A3): projeta para DTO em vez de devolver a entidade Entrega
+        // crua.
+        return Ok(EntregaDto.DeEntidade(entrega));
+    }
+
+    // Remove o arquivo já gravado em disco quando o SaveChangesAsync que persistiria a
+    // Entrega falha por qualquer motivo — best-effort, nunca propaga (não pode mascarar o
+    // erro original que causou a chamada). Log de auditoria sem PII: apenas ids/metadados,
+    // nunca o nome original do arquivo.
+    //
+    // Issue #105: a mecânica de "apagar e logar o resultado" foi extraída para
+    // CompensacaoUploadOrfao, compartilhada com CoordenadorController.RegistrarResultadoBanca
+    // — este método continua existindo só para fixar as propriedades estruturadas (TccId)
+    // específicas de entrega.
+    private Task CompensarUploadOrfaoAsync(string caminho, int tccId, string motivo) =>
+        CompensacaoUploadOrfao.ExecutarAsync(
+            _storageService,
+            caminho,
+            logSucesso: () => _auditLogger.LogInformation(
+                "Arquivo de entrega removido por compensação após falha ao salvar no banco. TccId: {TccId}, Motivo: {Motivo}",
+                tccId,
+                motivo),
+            logFalha: () => _auditLogger.LogWarning(
+                "Falha ao remover arquivo órfão em compensação de upload de entrega. TccId: {TccId}, Motivo: {Motivo}",
+                tccId,
+                motivo));
+
+    /// <summary>
+    /// Download autenticado do arquivo da entrega (substitui o acesso direto e sem
+    /// autorização via UseStaticFiles/wwwroot). Autorizado para: o Aluno dono do TCC, o
+    /// Orientador do TCC, um Coordenador, ou um Professor avaliador da banca do TCC.
+    /// </summary>
+    [HttpGet("entregas/{idEntrega}/download")]
+    public async Task<IActionResult> DownloadEntrega(int idEntrega)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int usuarioId))
+            return Unauthorized();
+
+        var entrega = await _context.Entregas
+            .Include(e => e.Tcc)
+            .FirstOrDefaultAsync(e => e.Id == idEntrega);
+
+        // Resposta uniforme (404, nunca 403) para entrega inexistente E para entrega sem
+        // autorização: evita que um usuário autenticado distinga "id não existe" de "id
+        // existe mas não é seu" e enumere o espaço de ids de Entregas.
+        if (entrega?.Tcc == null)
+            return NotFound("Entrega não encontrada.");
+
+        var tcc = entrega.Tcc;
+
+        // Issue #139: defesa em profundidade além da validação de avaliadores em
+        // AgendarBanca — mesmo que um BancaAvaliador.ProfessorId inválido chegue a existir no
+        // banco (ex.: dado legado), exigir o papel de Professor aqui impede que ele seja
+        // usado para dar a um Aluno acesso de download de entregas de outro Aluno.
+        var autorizado = tcc.AlunoId == usuarioId
+            || tcc.OrientadorId == usuarioId
+            || User.IsInRole("Coordenador")
+            || (User.IsInRole("Professor")
+                && await _context.BancaAvaliadores.AnyAsync(ba => ba.ProfessorId == usuarioId && ba.Banca!.TccId == tcc.Id));
+
+        if (!autorizado)
+        {
+            _auditLogger.LogWarning(
+                "Acesso negado em GET /api/tcc/entregas/{{idEntrega}}/download. Solicitante: {SolicitanteId}, EntregaId: {EntregaId}, TccId: {TccId}",
+                usuarioId,
+                idEntrega,
+                tcc.Id);
+            return NotFound("Entrega não encontrada.");
+        }
+
+        Stream? stream;
+        try
+        {
+            stream = await _storageService.AbrirLeituraAsync(entrega.ArquivoCaminho, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            // Caminho persistido inconsistente (fora do diretório de uploads) ou arquivo
+            // bloqueado/sem permissão de leitura pelo SO — não deve virar 500. Não logar o
+            // caminho do arquivo, só ids.
+            _auditLogger.LogWarning(
+                "Falha ao abrir arquivo para download em GET /api/tcc/entregas/{{idEntrega}}/download. EntregaId: {EntregaId}",
+                entrega.Id);
+            return NotFound("Arquivo não encontrado.");
+        }
+
+        if (stream == null)
+            return NotFound("Arquivo não encontrado.");
+
+        _auditLogger.LogInformation(
+            "Download de entrega concedido. Solicitante: {SolicitanteId}, EntregaId: {EntregaId}, TccId: {TccId}",
+            usuarioId,
+            entrega.Id,
+            tcc.Id);
+
+        var nomeArquivo = $"entrega-{entrega.Id}{Path.GetExtension(entrega.ArquivoCaminho)}";
+        return File(stream, "application/octet-stream", nomeArquivo);
     }
 
     [HttpGet("entregas/{idEntrega}/feedbacks")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetFeedbackEntrega(int idEntrega) 
     { 
         var alunoIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -191,50 +553,67 @@ public class TccController : ControllerBase
     }
 
     [HttpGet("acompanhamentos")]
-    [Authorize(Roles ="Aluno")]
-    public async Task<IActionResult> GetAcompanhentos() 
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
+    public async Task<IActionResult> GetAcompanhamentos()
     {
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        // Issue #151 (achado C3): leitura pura (só usada para obter tcc.Id), nunca salva.
+        var tcc = await _context.Tccs.AsNoTracking().FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
         if (tcc == null)
             return NotFound("TCC não encontrado.");
 
+        // Issue #144 (achado A4): projeta para DTO em vez de devolver List<Acompanhamento>
+        // cru.
         var acompanhamentos = await _context.Acompanhamentos
             .Where(a => a.TccId == tcc.Id)
             .OrderByDescending(a => a.DataReuniao)
+            .Select(a => new AcompanhamentoResumoDto
+            {
+                Id = a.Id,
+                DataReuniao = a.DataReuniao,
+                Ata = a.Ata
+            })
             .ToListAsync();
 
         return Ok(acompanhamentos);
     }
 
     [HttpGet("minha-banca")]
-    [Authorize(Roles = "Aluno")]
+    [Authorize(Roles = nameof(TipoUsuario.Aluno))]
     public async Task<IActionResult> GetMinhaBanca() 
     { 
         var alunoClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(alunoClaim) || !int.TryParse(alunoClaim, out int alunoId))
             return Unauthorized();
 
-        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
+        // Issue #151 (achado C3): as duas leituras abaixo são puras (o retorno é um objeto
+        // anônimo projetado, nunca salvo).
+        var tcc = await _context.Tccs.AsNoTracking().FirstOrDefaultAsync(t => t.AlunoId == alunoId && t.Status != StatusTcc.Reprovado);
         if (tcc == null)
             return NotFound("TCC não encontrado.");
 
         var banca = await _context.Banca
+            .AsNoTracking()
             .Include(b => b.Avaliadores)
                 .ThenInclude(a => a.Professor)
+            .Include(b => b.Avaliadores)
+                .ThenInclude(a => a.MembroExterno)
             .FirstOrDefaultAsync(b => b.TccId == tcc.Id);
 
         if (banca == null)
             return NoContent();
 
+        // Issue #160 (achado G1): faltava o nome do avaliador externo — um BancaAvaliador
+        // tem exatamente um dos dois (Professor XOR MembroExterno), nunca os dois nem nenhum
+        // (mesma invariante validada em AtaPdfService.TentarValidarConsistencia).
         var resultado = new
         {
             DataHora = banca.DataHora,
             Local = banca.Local,
-            Professores = banca.Avaliadores.Select(a => a.Professor?.Nome).ToList()
+            Professores = banca.Avaliadores.Select(a => a.Professor?.Nome ?? a.MembroExterno?.Nome).ToList()
         };
 
         return Ok(resultado);

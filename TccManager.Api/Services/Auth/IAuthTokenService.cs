@@ -1,4 +1,3 @@
-using TccManager.Shared.DTOs;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Services.Auth;
@@ -14,18 +13,35 @@ public interface IAuthTokenService
     /// Revoga todos os refresh tokens ativos do usuário (sessão única — RF04) e emite um
     /// novo par (JWT + refresh token).
     /// </summary>
-    Task<TokenPairDto> LoginAsync(Usuario usuario);
+    Task<TokenPair> LoginAsync(Usuario usuario);
 
     /// <summary>
     /// Valida o refresh token informado (existe, não revogado, não expirado). Em caso
     /// válido, rotaciona (revoga o apresentado, emite um novo) e retorna o novo par.
     /// Retorna <c>null</c> se o refresh token for inválido/expirado/revogado.
+    ///
+    /// Issue #85: dentro de <c>Jwt:RefreshReuseGraceSeconds</c> após a rotação, reapresentar
+    /// o token recém-substituído deixa de ser tratado automaticamente como reuso — se o
+    /// sucessor ainda for a ponta ativa da cadeia, é classificado como corrida benigna
+    /// (multi-aba, resposta perdida, F5 em voo) e responde com um replay idempotente do
+    /// mesmo par (o mesmo <c>RefreshToken</c> já emitido + um <c>Token</c> novo), sem
+    /// revogar nada. Fora da janela, ou se o sucessor já não for a ponta ativa, o
+    /// comportamento é o de sempre: reuse-detection integral, revoga todas as sessões do
+    /// usuário. Ver docs/arquitetura/2026-09-03-reuse-detection-falso-positivo-multi-aba.md.
     /// </summary>
-    Task<TokenPairDto?> RefreshAsync(string refreshTokenBruto);
+    Task<TokenPair?> RefreshAsync(string refreshTokenBruto);
 
     /// <summary>
     /// Revoga o refresh token informado (RF05). Idempotente: token inexistente ou já
     /// revogado não gera erro.
     /// </summary>
     Task LogoutAsync(string refreshTokenBruto);
+
+    /// <summary>
+    /// Issue #140 (achados M5/B4): revoga todos os refresh tokens ativos do usuário, sem
+    /// emitir um novo par — usado por <c>UsuarioController.UpdateUsuario</c> sempre que a
+    /// senha do usuário muda (por qualquer caminho) ou quando um Admin altera o papel/status
+    /// Ativo de outro usuário. Idempotente: usuário sem sessão ativa não gera erro.
+    /// </summary>
+    Task RevokeAllSessionsAsync(int usuarioId);
 }

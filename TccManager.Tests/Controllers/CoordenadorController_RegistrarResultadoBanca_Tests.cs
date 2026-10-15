@@ -67,8 +67,11 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         if (motivo != null)
             form.Add(new StringContent(motivo), "motivoReprovacao");
 
-        // PDF fake mínimo só para passar da validação de "arquivo obrigatório"
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 }); // "%PDF"
+        // PDF mínimo só para passar das validações de "arquivo obrigatório", extensão e
+        // magic bytes. Issue #83: precisa ser a assinatura COMPLETA "%PDF-" (5 bytes) — o
+        // literal antigo de 4 bytes ("%PDF") agora é rejeitado com 400 pelo
+        // AssinaturaArquivoValidator, o que derrubaria todos os testes deste arquivo.
+        var pdfFake = new ByteArrayContent(ConteudoArquivoTeste.AssinaturaPdf);
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata-teste.pdf");
 
@@ -328,6 +331,96 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
         Assert.DoesNotContain("já registrado", corpoErro, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Issue #73: motivoReprovacao é parâmetro de form escalar, não passa pelo
+    // FluentValidationActionFilter (que só intercepta DTOs de corpo) — o [StringLength] no
+    // próprio parâmetro precisa gerar 400 via o model binding padrão do [ApiController].
+    [Fact]
+    public async Task MotivoReprovacaoComMaisDe2000Caracteres_DeveRetornarBadRequest()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, new string('a', 2001)));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Fact]
+    public async Task MotivoReprovacaoComExatamente2000Caracteres_DeveReprovarTcc()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+        var motivo = new string('a', 2000);
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, motivo));
+
+        response.EnsureSuccessStatusCode();
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.Reprovado, tcc.Status);
+        Assert.Equal(motivo, tcc.MotivoRejeicao);
+    }
+
+    // Achado A10-1 da revisão de segurança (docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md):
+    // HtmlSanitizer codifica "&" em "&amp;" (5x maior) — um motivo de 2000 "&" passa no
+    // limite cru mas viraria 10000 caracteres sanitizados, estourando a coluna
+    // nvarchar(2000). A checagem no controller mede o valor JÁ sanitizado, ANTES do upload
+    // do arquivo da ata (sem deixar arquivo órfão em storage).
+    [Fact]
+    public async Task MotivoReprovacaoSoComTagsHtml_SanitizaParaVazio_DeveRetornarBadRequest()
+    {
+        // Correção pós-QA da issue #73: a checagem de obrigatoriedade precisa rodar sobre o
+        // valor JÁ sanitizado, não o cru — "<b></b>" não é whitespace no valor cru, mas
+        // sanitiza para string vazia (HtmlSanitizer remove a tag e não sobra texto interno).
+        // Checar o valor cru deixaria isso passar como se fosse um motivo válido.
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, "<b></b>"));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpoErro = await response.Content.ReadAsStringAsync();
+        Assert.Contains("obrigatório informar o motivo", corpoErro, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Fact]
+    public async Task MotivoReprovacaoDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveRetornarBadRequest()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(40.0m, new string('&', 2000)));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+
+        Assert.True(!Directory.Exists(factory.PastaAtas) || Directory.GetFiles(factory.PastaAtas).Length == 0);
+    }
+
     [Fact]
     public async Task Regressao_NotaDecimal_NaoDeveSerAfetadaPelaCulturaDoSistema()
     {
@@ -368,5 +461,84 @@ public class CoordenadorController_RegistrarResultadoBanca_Tests
             Thread.CurrentThread.CurrentCulture = culturaOriginal;
             Thread.CurrentThread.CurrentUICulture = culturaOriginalUI;
         }
+    }
+
+    // Issue #75: nenhum endpoint de upload tinha limite de tamanho — ver o mesmo achado e
+    // raciocínio em TccController_EnviarEntrega_Tests.ArquivoAcimaDoLimiteDeTamanho_DeveSerRejeitado
+    // ([RequestSizeLimit] não é reproduzido pelo TestServer em memória; é a checagem explícita
+    // sobre IFormFile.Length que este teste prova).
+    [Fact]
+    public async Task ArquivoDaAtaAcimaDoLimiteDeTamanho_DeveSerRejeitado()
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent("85.0"), "notaFinal");
+        var conteudoGigante = new byte[TccManager.Api.Configuration.UploadLimits.MaxArquivoUploadBytes + 1024];
+        // Issue #83: assinatura "%PDF-" completa de propósito. O teste assere a mensagem de
+        // TAMANHO, então o conteúdo precisa ser um PDF válido — se fosse inválido, o teste
+        // continuaria verde por 400, mas por um motivo diferente do que ele afirma cobrir.
+        ConteudoArquivoTeste.AssinaturaPdf.CopyTo(conteudoGigante, 0);
+        var arquivo = new ByteArrayContent(conteudoGigante);
+        arquivo.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        form.Add(arquivo, "arquivoAta", "ata-gigante.pdf");
+
+        var response = await client.PostAsync($"/api/coordenador/banca/{bancaId}/registrar-resultado", form);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("tamanho máximo", corpo, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+    }
+
+    [Theory]
+    [InlineData(-0.01)]
+    [InlineData(100.01)]
+    [InlineData(999.99)]
+    public async Task NotaForaDaFaixaDe0A100_Retorna400ENaoAlteraOTcc(decimal notaInvalida)
+    {
+        // Issue #146 (achado B5): notaFinal é [FromForm] decimal, não passava por nenhuma
+        // validação de faixa — uma nota negativa ou acima de 100 era aceita e ia direto para
+        // a ata oficial. 999,99 é o maior valor que ainda cabe em decimal(5,2) sem estourar a
+        // coluna (o estouro em si já é coberto por outro achado, fora de escopo aqui).
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(notaInvalida, motivo: "Motivo qualquer."));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var corpo = await response.Content.ReadAsStringAsync();
+        Assert.Contains("entre 0 e 100", corpo, StringComparison.OrdinalIgnoreCase);
+
+        using var context = factory.CriarContextoDireto();
+        var tcc = await context.Tccs.FirstAsync(t => t.Id == tccId);
+        Assert.Equal(StatusTcc.AguardandoDefesa, tcc.Status);
+
+        var arquivosGravados = Directory.Exists(factory.PastaAtas) ? Directory.GetFiles(factory.PastaAtas) : Array.Empty<string>();
+        Assert.Empty(arquivosGravados);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    public async Task NotaNosLimitesDaFaixa_Permite(decimal notaValida)
+    {
+        var (factory, bancaId, tccId) = await PrepararCenarioComBancaPendente();
+        using var _ = factory;
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.PostAsync(
+            $"/api/coordenador/banca/{bancaId}/registrar-resultado",
+            MontarFormResultado(notaValida, motivo: notaValida == 0 ? "Nota mínima." : null));
+
+        response.EnsureSuccessStatusCode();
     }
 }

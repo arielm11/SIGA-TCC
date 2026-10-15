@@ -6,9 +6,10 @@
 @using System.Net.Http.Headers
 @using TccManager.Shared.DTOs
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject DialogService DialogService
 @inject NotificationService NotificationService
+@using TccManager.Client.Services
 
 @if (!resultadoRegistrado)
 {
@@ -44,7 +45,11 @@
         }
 
         <div>
-            <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-2">Arquivo da Ata Assinada (PDF)</RadzenText>
+            <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-1">Cópia assinada da ata (PDF)</RadzenText>
+            <RadzenText TextStyle="TextStyle.Caption" class="rz-mb-2">
+                Documento complementar. A ata oficial é a gerada automaticamente pelo sistema; este arquivo fica
+                arquivado e disponível para download pela Coordenação.
+            </RadzenText>
             <RadzenUpload Auto="false" Multiple="false" Accept=".pdf" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
             @if (arquivoAta != null)
             {
@@ -70,7 +75,7 @@ else
     <RadzenStack Gap="1rem" AlignItems="AlignItems.Center" class="rz-p-4" style="min-width: 380px;">
         <RadzenIcon Icon="check_circle" IconColor="var(--rz-success)" style="font-size: 3rem;" />
         <RadzenText TextAlign="TextAlign.Center" class="rz-my-0">@mensagemSucesso</RadzenText>
-        <RadzenButton Text="Baixar Ata (PDF)" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
+        <RadzenButton Text="Baixar ata gerada (PDF)" Icon="picture_as_pdf" ButtonStyle="ButtonStyle.Primary" Variant="Variant.Outlined"
                       IsBusy="baixandoAta" BusyText="Baixando..." Click="@BaixarAtaPdf" />
         <RadzenButton Text="Fechar" ButtonStyle="ButtonStyle.Base" Click="@Fechar" />
     </RadzenStack>
@@ -117,13 +122,7 @@ else
 
         if (!notaAprova && string.IsNullOrWhiteSpace(motivoReprovacao))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Motivo obrigatório",
-                Detail = "Informe o motivo da reprovação.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Motivo obrigatório", "Informe o motivo da reprovação.");
             return;
         }
 
@@ -156,13 +155,7 @@ else
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro: {erro}");
             }
         }
         finally
@@ -176,24 +169,13 @@ else
         baixandoAta = true;
         try
         {
-            var response = await Http.GetAsync($"api/coordenador/banca/{BancaId}/ata-pdf");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/coordenador/banca/{BancaId}/ata-pdf", $"ata-defesa-{BancaId}.pdf", "application/pdf");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-defesa-{BancaId}.pdf", "application/pdf", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar a ata: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar a ata: {erro}");
             }
         }
         finally

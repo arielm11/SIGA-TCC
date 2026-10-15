@@ -19,16 +19,18 @@ public class AtaPdfService : IAtaPdfService
 {
     private readonly AppDbContext _context;
     private readonly AtaInstitucionalOptions _options;
+    private readonly ILogger<AtaPdfService> _logger;
 
-    public AtaPdfService(AppDbContext context, IOptions<AtaInstitucionalOptions> options)
+    public AtaPdfService(AppDbContext context, IOptions<AtaInstitucionalOptions> options, ILogger<AtaPdfService> logger)
     {
         _context = context;
         _options = options.Value;
+        _logger = logger;
     }
 
-    public async Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca)
+    public async Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca, CancellationToken cancellationToken = default)
     {
-        var banca = await CarregarBancaComposicaoAsync(idBanca);
+        var banca = await CarregarBancaComposicaoAsync(idBanca, cancellationToken);
 
         if (banca == null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.BancaNaoEncontrada };
@@ -36,11 +38,23 @@ public class AtaPdfService : IAtaPdfService
         if (banca.NotaFinal == null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.ResultadoNaoRegistrado };
 
+        if (!TentarValidarConsistencia(banca, idBanca, out var inconsistencia))
+        {
+            _logger.LogError(
+                "Dados inconsistentes ao gerar a ata final da banca {BancaId}: {Relacao} (EntidadeId={EntidadeId}, FkId={FkId})",
+                idBanca, inconsistencia!.Value.Relacao, inconsistencia.Value.EntidadeId, inconsistencia.Value.FkId);
+            return new AtaPdfResultado { Status = AtaPdfResultadoStatus.DadosInconsistentes };
+        }
+
         // Motivo de reprovação (Tcc.MotivoRejeicao) só aparece quando a banca de fato
         // reprovou o TCC — derivado do Status já persistido (fonte de verdade histórica),
         // e não recomputado a partir da nota (ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5).
-        var motivoReprovacao = banca.Tcc!.Status == StatusTcc.Reprovado
-            ? banca.Tcc.MotivoRejeicao
+        // TentarValidarConsistencia acima já garante banca.Tcc não nulo; o "?? throw" é só um
+        // assert de invariante (issue #72), nunca deveria disparar de verdade.
+        var tcc = banca.Tcc
+            ?? throw new InvalidOperationException($"Banca {idBanca}: Tcc nulo apesar da validação de consistência.");
+        var motivoReprovacao = tcc.Status == StatusTcc.Reprovado
+            ? tcc.MotivoRejeicao
             : null;
 
         var model = MontarModel(banca, notaFinal: banca.NotaFinal, motivoReprovacao: motivoReprovacao, rascunho: false);
@@ -51,9 +65,9 @@ public class AtaPdfService : IAtaPdfService
         return new AtaPdfResultado { Status = AtaPdfResultadoStatus.Sucesso, PdfBytes = pdfBytes };
     }
 
-    public async Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca)
+    public async Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca, CancellationToken cancellationToken = default)
     {
-        var banca = await CarregarBancaComposicaoAsync(idBanca);
+        var banca = await CarregarBancaComposicaoAsync(idBanca, cancellationToken);
 
         if (banca == null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.BancaNaoEncontrada };
@@ -63,6 +77,14 @@ public class AtaPdfService : IAtaPdfService
         if (banca.NotaFinal != null)
             return new AtaPdfResultado { Status = AtaPdfResultadoStatus.ResultadoJaRegistrado };
 
+        if (!TentarValidarConsistencia(banca, idBanca, out var inconsistencia))
+        {
+            _logger.LogError(
+                "Dados inconsistentes ao gerar a ata rascunho da banca {BancaId}: {Relacao} (EntidadeId={EntidadeId}, FkId={FkId})",
+                idBanca, inconsistencia!.Value.Relacao, inconsistencia.Value.EntidadeId, inconsistencia.Value.FkId);
+            return new AtaPdfResultado { Status = AtaPdfResultadoStatus.DadosInconsistentes };
+        }
+
         var model = MontarModel(banca, notaFinal: null, motivoReprovacao: null, rascunho: true);
 
         var documento = new AtaPdfDocument(model);
@@ -71,29 +93,141 @@ public class AtaPdfService : IAtaPdfService
         return new AtaPdfResultado { Status = AtaPdfResultadoStatus.Sucesso, PdfBytes = pdfBytes };
     }
 
-    private Task<Banca?> CarregarBancaComposicaoAsync(int idBanca) =>
+    /// <summary>
+    /// Issue #72: <c>Banca.TccId</c>, <c>Tcc.AlunoId</c> e os FKs de avaliador em
+    /// <c>BancaAvaliador</c> são obrigatórios no schema (constraints de FK do banco), então em
+    /// operação normal as navegações correspondentes nunca deveriam vir nulas depois do
+    /// <see cref="CarregarBancaComposicaoAsync"/>. Mas nada nesta camada garante isso de fato —
+    /// dado inconsistente (linha órfã por edição manual do banco, migração pendente, etc.) antes
+    /// virava <see cref="NullReferenceException"/> não tratada em <see cref="MontarModel"/>.
+    /// Validar aqui devolve um status específico e diagnosticável (<see
+    /// cref="AtaPdfResultadoStatus.DadosInconsistentes"/>, mapeado para 500 pelos controllers) em
+    /// vez de deixar a exceção genérica do <c>GlobalExceptionHandler</c> (issue #71) ser a única
+    /// rede de segurança, sem indicar qual relação estava inconsistente.
+    ///
+    /// Issue #103 (achado A09-1): o motivo sai como <see cref="InconsistenciaAtaPdf"/> — campos
+    /// separados (Relacao/EntidadeId/FkId), não mais uma string pré-formatada com os ids já
+    /// interpolados dentro do texto — para que o chamador logue cada um como propriedade
+    /// estruturada do Serilog, consultável, em vez de texto livre.
+    /// </summary>
+    private static bool TentarValidarConsistencia(Banca banca, int idBanca, out InconsistenciaAtaPdf? inconsistencia)
+    {
+        if (banca.Tcc is null)
+        {
+            inconsistencia = new InconsistenciaAtaPdf("Banca.Tcc", idBanca, banca.TccId);
+            return false;
+        }
+
+        if (banca.Tcc.Aluno is null)
+        {
+            inconsistencia = new InconsistenciaAtaPdf("Tcc.Aluno", banca.Tcc.Id, banca.Tcc.AlunoId);
+            return false;
+        }
+
+        // OrientadorId é FK opcional (Tcc sem orientador atribuído é estado de negócio válido,
+        // vira "-" na ata) — mas se preenchido e a navegação não carregou, é a mesma classe de
+        // inconsistência dos demais campos, só que silenciosa até aqui: MontarModel usa
+        // "?.Nome ?? "-"", que mascararia o orientador órfão como "sem orientador".
+        if (banca.Tcc.OrientadorId is not null && banca.Tcc.Orientador is null)
+        {
+            inconsistencia = new InconsistenciaAtaPdf("Tcc.Orientador", banca.Tcc.Id, banca.Tcc.OrientadorId);
+            return false;
+        }
+
+        // Ata sem nenhum avaliador é um documento oficial estruturalmente inválido (sem
+        // membros de banca, sem linhas de assinatura) — o loop abaixo simplesmente não roda
+        // nesse caso, então o check precisa ser explícito. Sem FK único envolvido: FkId nulo.
+        if (banca.Avaliadores.Count == 0)
+        {
+            inconsistencia = new InconsistenciaAtaPdf("Banca.Avaliadores", idBanca, FkId: null);
+            return false;
+        }
+
+        foreach (var avaliador in banca.Avaliadores)
+        {
+            if (avaliador.ProfessorId is null && avaliador.MembroExternoId is null)
+            {
+                inconsistencia = new InconsistenciaAtaPdf("BancaAvaliador.ProfessorOuMembroExterno", avaliador.Id, FkId: null);
+                return false;
+            }
+
+            // Exatamente um dos dois, não "pelo menos um": com os dois preenchidos,
+            // MontarModel escolhe o Professor e descarta o MembroExterno em silêncio — o
+            // avaliador externo sumiria da ata sem nenhum log.
+            if (avaliador.ProfessorId is not null && avaliador.MembroExternoId is not null)
+            {
+                inconsistencia = new InconsistenciaAtaPdf("BancaAvaliador.ProfessorEMembroExterno", avaliador.Id, FkId: null);
+                return false;
+            }
+
+            if (avaliador.ProfessorId is not null && avaliador.Professor is null)
+            {
+                inconsistencia = new InconsistenciaAtaPdf("BancaAvaliador.Professor", avaliador.Id, avaliador.ProfessorId);
+                return false;
+            }
+
+            if (avaliador.MembroExternoId is not null && avaliador.MembroExterno is null)
+            {
+                inconsistencia = new InconsistenciaAtaPdf("BancaAvaliador.MembroExterno", avaliador.Id, avaliador.MembroExternoId);
+                return false;
+            }
+        }
+
+        inconsistencia = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Issue #103 (achado A09-1) — descreve uma inconsistência encontrada por
+    /// <see cref="TentarValidarConsistencia"/> em campos estruturados, para log estruturado do
+    /// Serilog (consultável), em vez de uma string com os ids já interpolados no texto.
+    /// </summary>
+    /// <param name="Relacao">qual relação/checagem falhou (ex.: "Tcc.Aluno", "BancaAvaliador.Professor").</param>
+    /// <param name="EntidadeId">id da linha que tem o problema (Banca, Tcc ou BancaAvaliador, conforme a relação).</param>
+    /// <param name="FkId">valor da FK que não resolveu, quando a inconsistência é sobre uma FK específica; nulo quando é sobre ausência/duplicidade estrutural.</param>
+    private readonly record struct InconsistenciaAtaPdf(string Relacao, int EntidadeId, int? FkId);
+
+    private Task<Banca?> CarregarBancaComposicaoAsync(int idBanca, CancellationToken cancellationToken) =>
         _context.Banca
             .AsNoTracking()
             .Include(b => b.Tcc).ThenInclude(t => t!.Aluno)
             .Include(b => b.Tcc).ThenInclude(t => t!.Orientador)
             .Include(b => b.Avaliadores).ThenInclude(a => a.Professor)
             .Include(b => b.Avaliadores).ThenInclude(a => a.MembroExterno)
-            .FirstOrDefaultAsync(b => b.Id == idBanca);
+            .FirstOrDefaultAsync(b => b.Id == idBanca, cancellationToken);
 
     private AtaPdfModel MontarModel(Banca banca, decimal? notaFinal, string? motivoReprovacao, bool rascunho)
     {
+        // TentarValidarConsistencia já garante Tcc/Aluno/avaliadores não nulos antes de chamar
+        // este método; os "?? throw" abaixo são asserts de invariante (issue #72), não o
+        // caminho normal de erro — nunca deveriam disparar de verdade.
+        var tcc = banca.Tcc
+            ?? throw new InvalidOperationException($"Banca {banca.Id}: Tcc nulo apesar da validação de consistência.");
+        var aluno = tcc.Aluno
+            ?? throw new InvalidOperationException($"Banca {banca.Id}: Tcc.Aluno nulo apesar da validação de consistência.");
+
         var avaliadores = banca.Avaliadores
-            .Select(a => a.ProfessorId != null
-                ? new AtaMembroBancaModel(a.Professor!.Nome, null)
-                : new AtaMembroBancaModel(a.MembroExterno!.Nome, a.MembroExterno!.Instituicao))
+            .Select(a =>
+            {
+                if (a.ProfessorId != null)
+                {
+                    var professor = a.Professor
+                        ?? throw new InvalidOperationException($"BancaAvaliador {a.Id}: Professor nulo apesar da validação de consistência.");
+                    return new AtaMembroBancaModel(professor.Nome, null);
+                }
+
+                var membroExterno = a.MembroExterno
+                    ?? throw new InvalidOperationException($"BancaAvaliador {a.Id}: MembroExterno nulo apesar da validação de consistência.");
+                return new AtaMembroBancaModel(membroExterno.Nome, membroExterno.Instituicao);
+            })
             .ToList();
 
         return new AtaPdfModel(
             Instituicao: _options.Instituicao,
             Curso: _options.Curso,
-            TccTitulo: banca.Tcc!.Titulo,
-            NomeAluno: banca.Tcc.Aluno!.Nome,
-            NomeOrientador: banca.Tcc.Orientador?.Nome ?? "-",
+            TccTitulo: tcc.Titulo,
+            NomeAluno: aluno.Nome,
+            NomeOrientador: tcc.Orientador?.Nome ?? "-",
             Avaliadores: avaliadores,
             DataHoraDefesaBrasilia: BrasiliaTimeZoneService.ConverterDeUtcParaBrasilia(banca.DataHora),
             Local: banca.Local,

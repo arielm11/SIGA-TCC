@@ -11,6 +11,7 @@ public class Acompanhamento
     [Required]
     public DateTime DataReuniao { get; set; } = DateTime.Now;
     [Required]
+    [MaxLength(4000)]
     public string Ata { get; set; } = string.Empty;
     public int TccId { get; set; }
     [ForeignKey("TccId")]

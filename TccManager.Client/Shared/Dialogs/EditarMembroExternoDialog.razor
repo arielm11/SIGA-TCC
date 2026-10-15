@@ -2,6 +2,7 @@
    Substitui o <div class="modal"> controlado por flag booleana; aberto via
    DialogService.OpenAsync<EditarMembroExternoDialog>. Fecha com bool (editado?). *@
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @inject HttpClient Http
 @inject DialogService DialogService
 @inject NotificationService NotificationService
@@ -67,24 +68,24 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Avaliador atualizado",
-                    Detail = "Avaliador atualizado com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Avaliador atualizado", "Avaliador atualizado com sucesso!");
                 DialogService.Close(true);
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
+                // Issue #99 (achado A06-2): 400/409 trazem o motivo especifico (campo invalido,
+                // e-mail duplicado) — repassar em vez de esconder atras de uma mensagem
+                // generica que nao ajuda o Coordenador a entender o que corrigir.
+                var detalhe = "Erro ao atualizar avaliador.";
+
+                if (response.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Conflict)
                 {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao atualizar",
-                    Detail = "Erro ao atualizar avaliador.",
-                    Duration = 5000
-                });
+                    var corpo = await response.Content.ReadAsStringAsync();
+                    if (!string.IsNullOrWhiteSpace(corpo))
+                        detalhe = corpo;
+                }
+
+                NotificationService.NotificarErro("Erro ao atualizar", detalhe);
             }
         }
         finally

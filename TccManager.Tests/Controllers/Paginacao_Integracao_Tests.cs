@@ -10,7 +10,6 @@ namespace TccManager.Tests.Controllers;
 public class Paginacao_Integracao_Tests
 {
     private const int idCoordenador = 1;
-    private const int idProfessor = 500;
 
     // ─────────────────────────── GET /api/coordenador/professores ───────────────────────────
 
@@ -137,42 +136,34 @@ public class Paginacao_Integracao_Tests
         Assert.Equal(PaginacaoQuery.MaxPageSize, pagina!.PageSize);
     }
 
-    // ─────────────────────────── GET /api/orientador/dashboard ───────────────────────────
+    // ─────────────────────────── GET /api/usuario (issue #154) ───────────────────────────
 
-    private static async Task<TccApiFactory> FactoryComPropostasPendentes(int quantidade)
+    private const int idAdmin = 100;
+
+    private static async Task<TccApiFactory> FactoryComUsuarios(int quantidade)
     {
         var factory = new TccApiFactory();
         using var context = factory.CriarContextoDireto();
 
         context.Usuarios.Add(new Usuario
         {
-            Id = idProfessor,
-            Nome = "Professor Orientador",
-            Email = "orientador@teste.com",
+            Id = idAdmin,
+            Nome = "Admin",
+            Email = "admin@teste.com",
             SenhaHash = "x",
-            Tipo = TipoUsuario.Professor,
+            Tipo = TipoUsuario.Admin,
             Ativo = true
         });
 
         for (int i = 1; i <= quantidade; i++)
         {
-            var alunoId = 1000 + i;
             context.Usuarios.Add(new Usuario
             {
-                Id = alunoId,
-                Nome = $"Aluno {i:D3}",
-                Email = $"aluno{i}@teste.com",
+                Nome = $"Usuario {i:D3}",
+                Email = $"usuario{i}@teste.com",
                 SenhaHash = "x",
                 Tipo = TipoUsuario.Aluno,
                 Ativo = true
-            });
-            context.Tccs.Add(new Tcc
-            {
-                Titulo = $"Proposta {i:D3}",
-                Resumo = "Resumo",
-                AlunoId = alunoId,
-                Status = StatusTcc.Pendente,
-                DataCriacao = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(i)
             });
         }
         await context.SaveChangesAsync();
@@ -180,87 +171,73 @@ public class Paginacao_Integracao_Tests
     }
 
     [Fact]
-    public async Task GetDashboard_PropostasPendentes_RetornaEnvelopePagedResult()
+    public async Task GetUsuarios_RetornaEnvelopePagedResult()
     {
-        var factory = await FactoryComPropostasPendentes(5);
-        var client = factory.CreateClientAutenticado(idProfessor, "Professor");
+        var factory = await FactoryComUsuarios(3);
+        var client = factory.CreateClientAutenticado(idAdmin, "Admin");
 
-        var response = await client.GetAsync("/api/orientador/dashboard");
+        var response = await client.GetAsync("/api/usuario");
 
         response.EnsureSuccessStatusCode();
-        var dashboard = await response.Content.ReadFromJsonAsync<DashboardOrientadorDto>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
-        Assert.NotNull(dashboard);
-        Assert.NotNull(dashboard!.PropostasPendentes);
-        Assert.Equal(5, dashboard.PropostasPendentes.TotalCount);
-        Assert.Equal(1, dashboard.PropostasPendentes.CurrentPage);
-        Assert.Equal(5, dashboard.PropostasPendentes.Items.Count);
+        Assert.NotNull(pagina);
+        // +1 pelo próprio Admin semeado.
+        Assert.Equal(4, pagina!.TotalCount);
+        Assert.Equal(4, pagina.Items.Count);
     }
 
     [Fact]
-    public async Task GetDashboard_PropostasPendentes_TotalCountRefleteTotal_ComPaginaParcial()
+    public async Task GetUsuarios_TotalCountRefleteTotalReal_MesmoComPaginaParcial()
     {
-        var factory = await FactoryComPropostasPendentes(25);
-        var client = factory.CreateClientAutenticado(idProfessor, "Professor");
+        var factory = await FactoryComUsuarios(25);
+        var client = factory.CreateClientAutenticado(idAdmin, "Admin");
 
-        var response = await client.GetAsync("/api/orientador/dashboard?page=2&pageSize=10");
+        var response = await client.GetAsync("/api/usuario?page=2&pageSize=10");
 
         response.EnsureSuccessStatusCode();
-        var dashboard = await response.Content.ReadFromJsonAsync<DashboardOrientadorDto>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
-        Assert.NotNull(dashboard);
-        var pendentes = dashboard!.PropostasPendentes;
-        Assert.Equal(25, pendentes.TotalCount);
-        Assert.Equal(3, pendentes.TotalPages);
-        Assert.Equal(2, pendentes.CurrentPage);
-        Assert.Equal(10, pendentes.Items.Count);
+        Assert.NotNull(pagina);
+        Assert.Equal(26, pagina!.TotalCount);
+        Assert.Equal(10, pagina.Items.Count);
+        Assert.Equal(2, pagina.CurrentPage);
     }
 
-    [Fact]
-    public async Task GetDashboard_PropostasPendentes_OrdenadasPorDataCriacaoDescendente()
-    {
-        var factory = await FactoryComPropostasPendentes(5);
-        var client = factory.CreateClientAutenticado(idProfessor, "Professor");
+    // ─────────────────────────── GET /api/usuario/professores (issue #154) ───────────────────────────
 
-        var response = await client.GetAsync("/api/orientador/dashboard");
+    [Fact]
+    public async Task UsuarioControllerGetProfessores_RetornaEnvelopePagedResult()
+    {
+        var factory = await FactoryComProfessores(25);
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.GetAsync("/api/usuario/professores?page=2&pageSize=10");
 
         response.EnsureSuccessStatusCode();
-        var dashboard = await response.Content.ReadFromJsonAsync<DashboardOrientadorDto>();
+        var pagina = await response.Content.ReadFromJsonAsync<PagedResult<UsuarioResponseDto>>();
 
-        var itens = dashboard!.PropostasPendentes.Items;
-        // Proposta 005 tem a maior DataCriacao (mais recente) => vem primeiro.
-        Assert.Equal("Proposta 005", itens.First().Titulo);
-        var datas = itens.Select(i => i.DataCriacao).ToList();
-        Assert.Equal(datas.OrderByDescending(d => d).ToList(), datas);
+        Assert.NotNull(pagina);
+        Assert.Equal(25, pagina!.TotalCount);
+        Assert.Equal(10, pagina.Items.Count);
+        Assert.Equal(2, pagina.CurrentPage);
+        // Ordenação por Nome mantida: página 2 começa em Prof 011.
+        Assert.Equal("Prof 011", pagina.Items.First().Nome);
     }
 
-    [Fact]
-    public async Task GetDashboard_PageSizeAlto_Funciona()
-    {
-        var factory = await FactoryComPropostasPendentes(30);
-        var client = factory.CreateClientAutenticado(idProfessor, "Professor");
-
-        var response = await client.GetAsync($"/api/orientador/dashboard?pageSize={PaginacaoQuery.MaxPageSize}");
-
-        response.EnsureSuccessStatusCode();
-        var dashboard = await response.Content.ReadFromJsonAsync<DashboardOrientadorDto>();
-
-        Assert.Equal(30, dashboard!.PropostasPendentes.TotalCount);
-        Assert.Equal(30, dashboard.PropostasPendentes.Items.Count);
-    }
-
-    [Fact]
-    public async Task GetDashboard_ValoresNaoNumericos_NaoRetornam400()
-    {
-        var factory = await FactoryComPropostasPendentes(3);
-        var client = factory.CreateClientAutenticado(idProfessor, "Professor");
-
-        var response = await client.GetAsync("/api/orientador/dashboard?page=foo&pageSize=bar");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var dashboard = await response.Content.ReadFromJsonAsync<DashboardOrientadorDto>();
-
-        Assert.Equal(PaginacaoQuery.DefaultPage, dashboard!.PropostasPendentes.CurrentPage);
-        Assert.Equal(PaginacaoQuery.DefaultPageSize, dashboard.PropostasPendentes.PageSize);
-    }
+    // ─────────────────────────── GET /api/orientador/dashboard ───────────────────────────
+    //
+    // Issue #76 (D2/D3): os 5 testes que existiam aqui cobriam a paginação de
+    // DashboardOrientadorDto.PropostasPendentes — contrato que deixou de existir. O endpoint
+    // continua respondendo (e continua sob a política de rate limiting "listagem-paginada"),
+    // mas devolve só OrientandosAtivos, que nunca foi paginado (List<T>, limitado por
+    // Usuario.LimiteOrientandos). O escopo de docs/arquitetura/2026-07-12-paginacao-listagens.md
+    // cai, portanto, de 4 para 3 endpoints paginados — não é perda silenciosa de cobertura, é
+    // remoção do caminho de RBAC indevido (qualquer Professor via TODAS as propostas pendentes).
+    //
+    // O que sobrou de cobertura desse endpoint:
+    //   - contrato pós-remoção + rotas de aprovar/rejeitar em 404:
+    //     OrientadorNotificacaoIntegracao_Tests
+    //   - listagem de pendentes (agora só do Coordenador, sem paginação):
+    //     CoordenadorController_RejeitarProposta_Tests / DashboardTests (Client)
 }

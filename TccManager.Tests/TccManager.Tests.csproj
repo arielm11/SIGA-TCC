@@ -20,6 +20,14 @@
 		<PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
 		<PackageReference Include="coverlet.collector" Version="6.0.2" />
+		<!-- Issue #75: infraestrutura de testes bUnit ausente para o Client — sem isso, a
+		     suite so cobria logica pura extraida via reflection (new Componente() + campos
+		     privados), sem nenhum componente Blazor de fato renderizado. -->
+		<PackageReference Include="bunit" Version="2.9.0" />
+		<!-- Issue #75: sem lib de extracao de texto de PDF no repo, o conteudo gerado por
+		     AtaPdfDocument (QuestPDF) so era verificavel pela assinatura %PDF e tamanho de
+		     bytes, nunca pelo texto real (nome do aluno, titulo, nota, etc). -->
+		<PackageReference Include="PdfPig" Version="0.1.16" />
 	</ItemGroup>
 
 	<ItemGroup>

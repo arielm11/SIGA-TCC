@@ -3,6 +3,9 @@
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Models
 @using TccManager.Shared.Enums
+@using TccManager.Shared.Formatting
+@using TccManager.Client.Shared
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Aluno")]
 @inject HttpClient Http
 @inject DialogService DialogService
@@ -35,7 +38,7 @@
         <RadzenCard Variant="Variant.Outlined" class="rz-shadow-2">
             <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center" class="rz-mb-3">
                 <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Situação da Proposta</RadzenText>
-                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@tccExistente.Status.ToString()" />
+                <RadzenBadge BadgeStyle="BadgeStyle.Info" Text="@StatusTccFormatter.Formatar(tccExistente.Status)" />
             </RadzenStack>
 
             <RadzenText TextStyle="TextStyle.H5" class="rz-my-0">@tccExistente.Titulo</RadzenText>
@@ -48,18 +51,48 @@
             {
                 <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" ShowIcon="true">
                     Sua proposta está sendo analisada. Se precisar alterar algo, exclua a proposta acima e envie uma nova.
+                    @if (!string.IsNullOrWhiteSpace(tccExistente.NomeOrientadorSolicitado))
+                    {
+                        <RadzenText class="rz-mt-2 rz-mb-0">
+                            Proposta enviada para: <strong>@tccExistente.NomeOrientadorSolicitado</strong> — aguardando aprovação.
+                        </RadzenText>
+                    }
                 </RadzenAlert>
             }
-            else if (tccExistente.Status == StatusTcc.Aprovado)
+            else if (tccExistente.Status == StatusTcc.Aprovado || tccExistente.Status == StatusTcc.EmAndamento)
             {
-                <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
-                    Sua proposta foi aprovada e seu TCC está em andamento!
-                </RadzenAlert>
+                @* Issue #82 (D9): o alerta único ("Sua proposta foi aprovada e seu TCC está em
+                   andamento!") era falso metade do tempo depois de Aprovado/EmAndamento
+                   virarem estados reais — dividido em dois, um por estado. *@
+                @if (tccExistente.Status == StatusTcc.Aprovado)
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                        Sua proposta foi aprovada e seu orientador já foi designado. Envie sua primeira entrega abaixo para dar início ao acompanhamento.
+                    </RadzenAlert>
+                }
+                else
+                {
+                    <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                        Seu TCC está em andamento. Continue enviando suas entregas para acompanhamento do orientador.
+                    </RadzenAlert>
+                }
 
                 <RadzenTabs RenderMode="TabRenderMode.Client">
                     <Tabs>
                         <RadzenTabsItem Text="Entregas & Arquivos" Icon="cloud_upload">
-                            @if (entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final))
+                            @{
+                                // Issue #81 (D13): "Trabalho Concluído!" só se esconde o formulário
+                                // de upload enquanto houver uma Final NÃO rejeitada — é esta linha
+                                // que materializa a reabertura do ciclo na tela do aluno depois que
+                                // o orientador rejeita a Final (espelha o pre-check de
+                                // TccController.EnviarEntrega/D6 e o filtro do índice único/D2).
+                                var finalRejeitadaMaisRecente = entregasFeitas?
+                                    .Where(e => e.Tipo == TipoEntrega.Final)
+                                    .OrderByDescending(e => e.DataEnvio)
+                                    .FirstOrDefault(e => e.Status == StatusEntrega.Rejeitada);
+                                var temFinalNaoRejeitada = entregasFeitas != null && entregasFeitas.Any(e => e.Tipo == TipoEntrega.Final && e.Status != StatusEntrega.Rejeitada);
+                            }
+                            @if (temFinalNaoRejeitada)
                             {
                                 <RadzenAlert AlertStyle="AlertStyle.Info" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
                                     <RadzenText TextStyle="TextStyle.H6" class="rz-my-0"><RadzenIcon Icon="emoji_events" IconColor="var(--rz-warning)" /> Trabalho Concluído!</RadzenText>
@@ -68,6 +101,17 @@
                             }
                             else
                             {
+                                @if (finalRejeitadaMaisRecente != null)
+                                {
+                                    <RadzenAlert AlertStyle="AlertStyle.Warning" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
+                                        <RadzenText TextStyle="TextStyle.H6" class="rz-my-0"><RadzenIcon Icon="error_outline" /> Sua versão final foi rejeitada</RadzenText>
+                                        <RadzenText class="rz-my-0">Aplique as correções apontadas pelo orientador e envie uma nova versão final abaixo.</RadzenText>
+                                        @if (!string.IsNullOrEmpty(finalRejeitadaMaisRecente.Feedback))
+                                        {
+                                            <RadzenText TextStyle="TextStyle.Body2" style="white-space: pre-line;" class="rz-mt-2 rz-mb-0"><strong>Parecer do orientador:</strong> @finalRejeitadaMaisRecente.Feedback</RadzenText>
+                                        }
+                                    </RadzenAlert>
+                                }
                                 <RadzenText TextStyle="TextStyle.H6" class="rz-mt-1 rz-mb-2"><RadzenIcon Icon="cloud_upload" /> Nova Entrega</RadzenText>
                                 <RadzenCard Variant="Variant.Flat" class="rz-mb-4">
                                     <RadzenRow Gap="1rem">
@@ -83,7 +127,7 @@
                                         </RadzenColumn>
                                         <RadzenColumn Size="12">
                                             <RadzenText TextStyle="TextStyle.Body2" class="rz-mb-2">Arquivo (.pdf, .doc, .zip)</RadzenText>
-                                            <RadzenUpload Auto="false" Multiple="false" Accept=".pdf,.doc,.docx,.zip" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
+                                            <RadzenUpload @ref="uploadEntregaRef" Auto="false" Multiple="false" Accept=".pdf,.doc,.docx,.zip" ChooseText="Selecionar Arquivo" Change="@CarregarArquivo" />
                                             @if (arquivoSelecionado != null)
                                             {
                                                 <RadzenText TextStyle="TextStyle.Body2" class="rz-mt-2 rz-my-0">
@@ -110,49 +154,52 @@
                             }
                             else
                             {
-                                <RadzenDataGrid @ref="gridEntregas" Data="@entregasFeitas" TItem="Entrega"
+                                <RadzenDataGrid @ref="gridEntregas" Data="@entregasFeitas" TItem="EntregaDto"
                                                 AllowPaging="true" PageSize="10" PageSizeOptions="@(new[] { 10, 20, 50 })"
                                                 AllowSorting="true" EmptyText="Nenhuma entrega realizada ainda." PageSizeText="Itens por página">
                                     <Columns>
-                                        <RadzenDataGridColumn TItem="Entrega" Property="Titulo" Title="Título" />
-                                        <RadzenDataGridColumn TItem="Entrega" Property="Tipo" Title="Tipo" Width="120px" TextAlign="TextAlign.Center">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="Titulo" Title="Título" />
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="Tipo" Title="Tipo" Width="120px" TextAlign="TextAlign.Center">
                                             <Template Context="entrega">
                                                 <RadzenBadge BadgeStyle="BadgeStyle.Secondary" Text="@entrega.Tipo.ToString()" />
                                             </Template>
                                         </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="Entrega" Property="DataEnvio" Title="Data de Envio" Width="170px">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Property="DataEnvio" Title="Data de Envio" Width="170px">
                                             <Template Context="entrega">
                                                 @entrega.DataEnvio.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                                             </Template>
                                         </RadzenDataGridColumn>
-                                        <RadzenDataGridColumn TItem="Entrega" Title="Parecer do Orientador" Sortable="false" Filterable="false" Width="260px">
+                                        <RadzenDataGridColumn TItem="EntregaDto" Title="Parecer do Orientador" Sortable="false" Filterable="false" Width="260px">
                                             <Template Context="entrega">
-                                                @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
-                                                {
-                                                    <RadzenButton Text="@(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")"
-                                                                  Icon="chat" ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                                                  Click="@(() => AlternarFeedback(entrega.Id))" />
+                                                <RadzenStack Gap="0.35rem">
+                                                    @* Issue #81 (D13): reflete entrega.Status (veredito explícito), não mais a
+                                                       heurística antiga de "tem Feedback preenchido" — uma entrega pode ter
+                                                       Feedback e continuar sem veredito registrado. *@
+                                                    <RadzenBadge BadgeStyle="@StatusEntregaBadgeStyle.Mapear(entrega.Status)" Text="@StatusEntregaFormatter.Formatar(entrega.Status)" />
 
-                                                    @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                                    @if (entrega.Nota.HasValue || !string.IsNullOrEmpty(entrega.Feedback))
                                                     {
-                                                        <RadzenCard Variant="Variant.Outlined" class="rz-mt-2">
-                                                            <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start">
-                                                                <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Parecer do Orientador</RadzenText>
-                                                                @if (entrega.Nota.HasValue)
-                                                                {
-                                                                    <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"Nota: {entrega.Nota}")" />
-                                                                }
-                                                            </RadzenStack>
-                                                            <RadzenText style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">
-                                                                @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
-                                                            </RadzenText>
-                                                        </RadzenCard>
+                                                        <RadzenButton Text="@(entregaSelecionadaParaFeedback == entrega.Id ? "Fechar Feedback" : "Ler Feedback")"
+                                                                      Icon="chat" ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                                                      Click="@(() => AlternarFeedback(entrega.Id))" />
+
+                                                        @if (entregaSelecionadaParaFeedback == entrega.Id)
+                                                        {
+                                                            <RadzenCard Variant="Variant.Outlined" class="rz-mt-2">
+                                                                <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.SpaceBetween" AlignItems="AlignItems.Start">
+                                                                    <RadzenText TextStyle="TextStyle.Subtitle2" class="rz-my-0">Parecer do Orientador</RadzenText>
+                                                                    @if (entrega.Nota.HasValue)
+                                                                    {
+                                                                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="@($"Nota: {entrega.Nota}")" />
+                                                                    }
+                                                                </RadzenStack>
+                                                                <RadzenText style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">
+                                                                    @(string.IsNullOrEmpty(entrega.Feedback) ? "Nenhum comentário por texto foi deixado." : entrega.Feedback)
+                                                                </RadzenText>
+                                                            </RadzenCard>
+                                                        }
                                                     }
-                                                }
-                                                else
-                                                {
-                                                    <RadzenBadge BadgeStyle="BadgeStyle.Light" Text="Aguardando Avaliação" />
-                                                }
+                                                </RadzenStack>
                                             </Template>
                                         </RadzenDataGridColumn>
                                     </Columns>
@@ -261,9 +308,12 @@
                 }
                 else
                 {
+                    @* Issue #112 (D9): a rejeição pode partir do professor solicitado ou da
+                       Coordenação, e o sistema não guarda quem decidiu — texto neutro, sem
+                       atribuir a rejeição a nenhum dos dois papéis especificamente. *@
                     <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" ShowIcon="true" class="rz-mb-4">
                         <RadzenText TextStyle="TextStyle.H6" class="rz-my-0">Proposta Rejeitada</RadzenText>
-                        <RadzenText class="rz-my-0">A sua proposta anterior ("<strong>@tccExistente.Titulo</strong>") foi avaliada e rejeitada pelo orientador.</RadzenText>
+                        <RadzenText class="rz-my-0">A sua proposta anterior ("<strong>@tccExistente.Titulo</strong>") foi avaliada e não foi aprovada.</RadzenText>
                         <RadzenText class="rz-my-0"><strong>Motivo apontado:</strong> @tccExistente.MotivoRejeicao</RadzenText>
                         <RadzenText TextStyle="TextStyle.Caption" class="rz-my-0">Por favor, ajuste o tema e submeta uma nova proposta abaixo.</RadzenText>
                     </RadzenAlert>
@@ -282,7 +332,7 @@
                 <RadzenStack Gap="1rem">
                     <div>
                         <RadzenFormField Text="Título do Trabalho" Variant="Variant.Outlined" style="width: 100%;">
-                            <RadzenTextBox Name="Titulo" @bind-Value="proposta.Titulo" Placeholder="Digite o título..." style="width: 100%;" />
+                            <RadzenTextBox Name="Titulo" @bind-Value="proposta.Titulo" Placeholder="Digite o título..." MaxLength="200" style="width: 100%;" />
                         </RadzenFormField>
                         <ValidationMessage For="@(() => proposta.Titulo)" />
                     </div>
@@ -292,6 +342,20 @@
                             <RadzenTextArea Name="Resumo" @bind-Value="proposta.Resumo" Rows="6" Placeholder="Descreva seu projeto..." style="width: 100%;" />
                         </RadzenFormField>
                         <ValidationMessage For="@(() => proposta.Resumo)" />
+                    </div>
+
+                    @* Issue #112 (RF01/4.1): seleção opcional de professor. A lista mostra a carga
+                       atual só como informação (nada bloqueia a escolha, decisão de produto 4.1). *@
+                    <div>
+                        <RadzenFormField Text="Professor desejado (opcional)" Variant="Variant.Outlined" style="width: 100%;">
+                            <RadzenDropDown TValue="int?" Data="@professoresOptions" TextProperty="Display" ValueProperty="Id"
+                                            @bind-Value="proposta.OrientadorSolicitadoId"
+                                            Placeholder="-- Nenhum (a Coordenação decide) --"
+                                            AllowClear="true" AllowFiltering="true" style="width: 100%;" />
+                        </RadzenFormField>
+                        <RadzenText TextStyle="TextStyle.Caption" class="rz-mt-1">
+                            Você pode indicar um professor de sua preferência. A carga exibida é apenas informativa.
+                        </RadzenText>
                     </div>
 
                     <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
@@ -307,7 +371,7 @@
 @code {
     private bool carregando = true;
     private bool enviando = false;
-    private Tcc? tccExistente;
+    private TccDetalheDto? tccExistente;
     private PropostaTccDto proposta = new();
     private string novaEntregaTitulo = "";
     private TipoEntrega novaEntregaTipo = TipoEntrega.Parcial;
@@ -315,18 +379,48 @@
         .Select(t => new KeyValuePair<TipoEntrega, string>(t, t.ToString()))
         .ToList();
     private Radzen.FileInfo? arquivoSelecionado;
-    private List<Entrega>? entregasFeitas;
+    private RadzenUpload? uploadEntregaRef;
+    private List<EntregaDto>? entregasFeitas;
     private int? entregaSelecionadaParaFeedback;
     private List<Acompanhamento>? meusAcompanhamentos;
     private BancaInfoDto? minhaBanca;
     private bool carregouBanca = false;
 
-    private RadzenDataGrid<Entrega>? gridEntregas;
+    // Issue #112 (RF01/6.4): lista de professores para o dropdown de seleção na submissão.
+    private List<ProfessorOpcao> professoresOptions = new();
+
+    private RadzenDataGrid<EntregaDto>? gridEntregas;
     private bool gridEntregasReloadFeita;
 
     protected override async Task OnInitializedAsync()
     {
         await CarregarDadosDoTcc();
+
+        if (tccExistente == null || tccExistente.Status == StatusTcc.Reprovado)
+        {
+            await CarregarProfessores();
+        }
+    }
+
+    private async Task CarregarProfessores()
+    {
+        try
+        {
+            var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/tcc/professores?pageSize={PaginacaoQuery.MaxPageSize}");
+            var professores = professoresPaginado?.Items ?? new();
+            professoresOptions = professores.Select(p => new ProfessorOpcao
+            {
+                Id = p.Id,
+                Display = p.AceitandoOrientandos
+                    ? $"{p.Nome} (Carga: {p.CargaAtual}/{p.LimiteOrientandos})"
+                    : $"{p.Nome} (Carga: {p.CargaAtual}/{p.LimiteOrientandos} — não está aceitando orientandos no momento)"
+            }).ToList();
+        }
+        catch (Exception)
+        {
+            // Best-effort: sem a lista, o aluno ainda consegue submeter a proposta sem
+            // solicitar um professor específico (campo opcional).
+        }
     }
 
     // Grid de entregas é client-side (Data), não depende de LoadData/Reload para a carga
@@ -355,8 +449,8 @@
                 }
                 else
                 {
-                    tccExistente = await response.Content.ReadFromJsonAsync<Tcc>();
-                    if (tccExistente != null && tccExistente.Status == StatusTcc.Aprovado)
+                    tccExistente = await response.Content.ReadFromJsonAsync<TccDetalheDto>();
+                    if (tccExistente != null && (tccExistente.Status == StatusTcc.Aprovado || tccExistente.Status == StatusTcc.EmAndamento))
                     {
                         await CarregarEntregas();
                     }
@@ -365,13 +459,7 @@
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
         }
         finally
         {
@@ -381,7 +469,7 @@
 
     private async Task CarregarEntregas()
     {
-        var entregasPaginado = await Http.GetFromJsonAsync<PagedResult<Entrega>>($"api/tcc/entregas?pageSize={PaginacaoQuery.MaxPageSize}");
+        var entregasPaginado = await Http.GetFromJsonAsync<PagedResult<EntregaDto>>($"api/tcc/entregas?pageSize={PaginacaoQuery.MaxPageSize}");
         entregasFeitas = entregasPaginado?.Items ?? new();
 
         meusAcompanhamentos = await Http.GetFromJsonAsync<List<Acompanhamento>>("api/tcc/acompanhamentos");
@@ -403,13 +491,7 @@
     {
         if (arquivoSelecionado == null || string.IsNullOrWhiteSpace(novaEntregaTitulo))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Campos obrigatórios",
-                Detail = "Preencha o título e selecione um arquivo.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Campos obrigatórios", "Preencha o título e selecione um arquivo.");
             return;
         }
 
@@ -429,38 +511,24 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Entrega enviada",
-                    Detail = "Entrega enviada com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Entrega enviada", "Entrega enviada com sucesso!");
                 novaEntregaTitulo = "";
                 arquivoSelecionado = null;
+                if (uploadEntregaRef != null)
+                {
+                    await uploadEntregaRef.ClearFiles();
+                }
                 await CarregarEntregas(); // Atualiza a lista na tela
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao enviar",
-                    Detail = $"Erro ao enviar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao enviar", $"Erro ao enviar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Ocorreu um erro ao enviar o arquivo. Verifique o tamanho.",
-                Duration = 6000
-            });
+            NotificationService.NotificarErro("Erro", "Ocorreu um erro ao enviar o arquivo. Verifique o tamanho.");
         }
         finally
         {
@@ -477,37 +545,19 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Proposta enviada",
-                    Detail = "Proposta enviada com sucesso!",
-                    Duration = 4000
-                });
+                NotificationService.NotificarSucesso("Proposta enviada", "Proposta enviada com sucesso!");
                 proposta = new PropostaTccDto();
                 await CarregarDadosDoTcc();
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao enviar",
-                    Detail = $"Erro ao enviar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao enviar", $"Erro ao enviar: {erro}");
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão ao enviar a proposta.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao enviar a proposta.");
         }
         finally
         {
@@ -530,36 +580,19 @@
 
                 if (response.IsSuccessStatusCode)
                 {
-                    NotificationService.Notify(new NotificationMessage
-                    {
-                        Severity = NotificationSeverity.Success,
-                        Summary = "Proposta excluída",
-                        Detail = "Proposta excluída com sucesso.",
-                        Duration = 4000
-                    });
+                    NotificationService.NotificarSucesso("Proposta excluída", "Proposta excluída com sucesso.");
                     tccExistente = null;
+                    await CarregarProfessores(); // o formulário de nova proposta reaparece
                 }
                 else
                 {
                     var erro = await response.Content.ReadAsStringAsync();
-                    NotificationService.Notify(new NotificationMessage
-                    {
-                        Severity = NotificationSeverity.Error,
-                        Summary = "Erro ao excluir",
-                        Detail = $"Erro ao excluir: {erro}",
-                        Duration = 6000
-                    });
+                    NotificationService.NotificarErro("Erro ao excluir", $"Erro ao excluir: {erro}");
                 }
             }
             catch (Exception)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro de conexão",
-                    Detail = "Erro de conexão com o servidor.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
             }
         }
     }
@@ -585,13 +618,7 @@
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar informações da banca.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar informações da banca.");
         }
         finally
         {
@@ -599,15 +626,23 @@
         }
     }
 
-    private bool FoiReprovadoNaBanca(Tcc tcc)
+    private bool FoiReprovadoNaBanca(TccDetalheDto tcc)
     {
         return tcc.Entregas != null && tcc.Entregas.Any(e => e.Tipo == TipoEntrega.Final);
     }
 
+    // Issue #81 (D13): mesma paleta de badges usada na tela do Professor (D12) — Pendente
+    // (ainda sem veredito) em cinza claro, Aprovada em verde, Rejeitada em vermelho.
     private class BancaInfoDto
     {
         public DateTime DataHora { get; set; }
         public string Local { get; set; } = "";
         public List<string> Professores { get; set; } = new();
+    }
+
+    private class ProfessorOpcao
+    {
+        public int Id { get; set; }
+        public string Display { get; set; } = string.Empty;
     }
 }

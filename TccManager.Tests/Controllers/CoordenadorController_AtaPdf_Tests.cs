@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using TccManager.Shared.Enums;
 using TccManager.Shared.Models;
 using TccManager.Tests.Fixtures;
@@ -127,6 +128,36 @@ public class CoordenadorController_AtaPdf_Tests
         var response = await client.GetAsync($"/api/coordenador/banca/{bancaId}/ata-pdf");
 
         await AssertPdfValidoAsync(response);
+    }
+
+    [Fact]
+    public async Task BancaComAvaliadorOrfao_Retorna500ComCorrelationIdNoCorpo_SemExporDetalheInterno()
+    {
+        // Issue #72 (achado A10-1 da revisão de segurança): o 500 de DadosInconsistentes
+        // precisa vir no mesmo formato ProblemDetails com correlationId estabelecido em #71 —
+        // "Contate o suporte" sem um id pra localizar o log não ajuda ninguém.
+        var (factory, bancaId) = await SemearBancaAsync(notaFinal: 90.0m, statusTcc: StatusTcc.Finalizado);
+        using var _ = factory;
+        using (var context = factory.CriarContextoDireto())
+        {
+            context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = bancaId, ProfessorId = 999999 });
+            await context.SaveChangesAsync();
+        }
+        var client = factory.CreateClientAutenticado(idCoordenador, "Coordenador");
+
+        var response = await client.GetAsync($"/api/coordenador/banca/{bancaId}/ata-pdf");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+
+        var corpo = await response.Content.ReadAsStringAsync();
+        using var documento = JsonDocument.Parse(corpo);
+        var correlationId = documento.RootElement.GetProperty("correlationId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(correlationId));
+        Assert.Equal(response.Headers.GetValues("X-Correlation-Id").Single(), correlationId);
+
+        Assert.DoesNotContain("999999", corpo, StringComparison.Ordinal);
+        Assert.DoesNotContain("BancaAvaliador", corpo, StringComparison.Ordinal);
     }
 
     [Fact]

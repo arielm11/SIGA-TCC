@@ -10,16 +10,31 @@ public class Entrega
     public int Id { get; set; }
 
     [Required]
+    [MaxLength(200)]
     public string Titulo { get; set; } = string.Empty;
 
     [Required]
     public string ArquivoCaminho { get; set; } = string.Empty;
-    public DateTime DataEnvio { get; set; } = DateTime.Now;
+    public DateTime DataEnvio { get; set; } = DateTime.UtcNow;
     public TipoEntrega Tipo { get; set; } = TipoEntrega.Parcial;
+
+    // Issue #81: veredito do orientador sobre esta entrega. Não-nullable, default Pendente —
+    // ver docs/dados/2026-08-30-reprovacao-durante-orientacao.md, seção 1.2. Participa do
+    // predicado do índice único filtrado UX_Entregas_TccId_Final (AppDbContext).
+    public StatusEntrega Status { get; set; } = StatusEntrega.Pendente;
+
+    [MaxLength(2000)]
     public string? Feedback { get; set; }
     [Column(TypeName = "decimal(5,2)")]
     public decimal? Nota { get; set; }
     public int TccId { get; set; }
     [ForeignKey("TccId")]
     public Tcc? Tcc { get; set; }
+
+    // Issue #145 (achado B2): mesmo mecanismo já usado em Tcc.RowVersion (#113) — sem isso,
+    // RegistrarFeedback e RejeitarEntrega/AprovarEntrega podiam ler-então-escrever a mesma
+    // Entrega concorrentemente (duas abas) e um sobrescrever o outro em silêncio, incluindo
+    // apagar o motivo de uma rejeição recém-registrada.
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 }

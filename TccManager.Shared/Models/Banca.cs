@@ -14,6 +14,7 @@ public class Banca
     public Tcc? Tcc { get; set; }
     public DateTime DataHora { get; set; }
     [Required]
+    [MaxLength(300)]
     public string Local { get; set; } = string.Empty;
     [Column(TypeName = "decimal(5,2)")]
     public decimal? NotaFinal { get; set; }

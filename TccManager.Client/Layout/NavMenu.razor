@@ -1,12 +1,12 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
-@using TccManager.Shared.DTOs
 
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ILocalStorageService LocalStorage
 @inject NavigationManager Navigation
 @inject IHttpClientFactory HttpClientFactory
+@inject NotificationService NotificationService
 
 <RadzenStack Gap="0" class="rz-p-3" style="height: 100%;">
     <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem" class="rz-mb-3">
@@ -83,30 +83,70 @@
         }
     }
 
+    // Achado L2 da revisão de segurança (#171, A07): poucas tentativas com um pequeno backoff
+    // antes de desistir — o cookie HttpOnly siga_refresh só pode ser expirado pelo servidor
+    // (Set-Cookie da resposta de /logout); o JS/Blazor não tem nenhuma forma de limpá-lo no
+    // navegador.
+    private const int MaxTentativasLogout = 3;
+
     private async Task Logout()
     {
-        // RF05/§6.7: notifica o servidor para revogar o refresh token da sessão antes de
-        // limpar o estado local. Best-effort — falha de rede aqui não deve impedir o
-        // logout local, apenas é registrada.
-        try
-        {
-            var refreshToken = await LocalStorage.GetItemAsStringAsync("refreshToken");
-            refreshToken = refreshToken?.Replace("\"", string.Empty);
+        // Issue #171 (D8): sempre chama o servidor — o Client não tem mais como saber se
+        // existe cookie de refresh (HttpOnly, ilegível por JS). O 204 idempotente no servidor
+        // cobre também o caso "sem cookie nenhum".
+        var logoutConfirmadoPeloServidor = await TentarLogoutNoServidorAsync();
 
-            if (!string.IsNullOrWhiteSpace(refreshToken))
-            {
-                var authRawClient = HttpClientFactory.CreateClient("AuthRaw");
-                await authRawClient.PostAsJsonAsync("api/auth/logout", new LogoutRequestDto { RefreshToken = refreshToken });
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Falha ao notificar logout ao servidor (best-effort): {ex.Message}");
-        }
-
+        // Mesmo se o servidor não confirmar, a UI local não pode prender o usuário numa tela
+        // de erro: o estado local já não tem mais sessão ativa daqui para frente.
         await LocalStorage.RemoveItemAsync("authToken");
+        // D9: limpeza da chave legada — não é mais escrita nem lida, só removida.
         await LocalStorage.RemoveItemAsync("refreshToken");
         ((CustomAuthStateProvider)AuthStateProvider).NotifyUserLogout();
+
+        if (!logoutConfirmadoPeloServidor)
+        {
+            NotificationService.NotificarErro(
+                "Logout não confirmado pelo servidor",
+                "Você foi desconectado neste navegador, mas o servidor não confirmou o encerramento da sessão depois de várias tentativas. Se este é um computador compartilhado, feche completamente o navegador agora — caso contrário, sua sessão pode continuar acessível por até 7 dias.",
+                10000);
+        }
+
         Navigation.NavigateTo("/login");
+    }
+
+    /// <summary>
+    /// Best-effort com poucas tentativas e backoff: falha de rede/transporte é tentada de
+    /// novo antes de desistir, mas não impede o logout local em nenhum caso (ver Logout()).
+    /// Retorna <c>true</c> somente se o servidor respondeu com sucesso (2xx) em alguma
+    /// tentativa — é a única forma de o cookie <c>siga_refresh</c> ter sido de fato expirado.
+    /// </summary>
+    private async Task<bool> TentarLogoutNoServidorAsync()
+    {
+        var authRawClient = HttpClientFactory.CreateClient("AuthRaw");
+
+        for (var tentativa = 1; tentativa <= MaxTentativasLogout; tentativa++)
+        {
+            try
+            {
+                var resposta = await authRawClient.PostAsync("api/auth/logout", null);
+                if (resposta.IsSuccessStatusCode)
+                {
+                    return true;
+                }
+
+                Console.WriteLine($"Logout: servidor respondeu {(int)resposta.StatusCode} na tentativa {tentativa}/{MaxTentativasLogout}.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Logout: falha de rede na tentativa {tentativa}/{MaxTentativasLogout}: {ex.Message}");
+            }
+
+            if (tentativa < MaxTentativasLogout)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(300 * tentativa));
+            }
+        }
+
+        return false;
     }
 }

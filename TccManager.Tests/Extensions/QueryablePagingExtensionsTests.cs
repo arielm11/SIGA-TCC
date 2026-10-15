@@ -44,7 +44,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 2, PageSize = 10 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(10, resultado.Items.Count);
         // Página 2 com 10 por página => itens 11..20 (Prof 011..Prof 020).
@@ -59,7 +59,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 3, PageSize = 10 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         // Última página tem apenas 5 itens, mas o total permanece 25.
         Assert.Equal(5, resultado.Items.Count);
@@ -76,7 +76,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 1, PageSize = 10 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(10, resultado.Items.Count);
         Assert.Equal("Prof 001", resultado.Items.First().Nome);
@@ -89,7 +89,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 1, PageSize = PaginacaoQuery.MaxPageSize };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(3, resultado.Items.Count);
         Assert.Equal(3, resultado.TotalCount);
@@ -107,7 +107,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 10, PageSize = 10 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(5, resultado.Items.Count);
         Assert.Equal(5, resultado.TotalCount);
@@ -122,7 +122,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = int.MaxValue, PageSize = 100 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(5, resultado.Items.Count);
         Assert.Equal(1, resultado.CurrentPage);
@@ -135,11 +135,30 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 1, PageSize = 20 };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Empty(resultado.Items);
         Assert.Equal(0, resultado.TotalCount);
         Assert.Equal(0, resultado.TotalPages);
+    }
+
+    [Fact]
+    public async Task CancellationTokenJaCancelado_LancaOperationCanceledException()
+    {
+        // Issue #74: sem propagação do CancellationToken para CountAsync/ToListAsync, uma
+        // requisição cancelada pelo cliente (aba fechada, navegação, timeout) continuava
+        // executando as duas queries no servidor até o fim, sem nenhum benefício — a resposta
+        // nunca seria entregue. Este teste prova que o token chega às queries internas: com
+        // ele já cancelado, a chamada deve lançar antes de completar, não silenciosamente
+        // ignorar o cancelamento.
+        using var context = await ContextoComProfessores(5);
+        var query = context.Usuarios.OrderBy(u => u.Nome);
+        var paginacao = new PaginacaoQuery { Page = 1, PageSize = 10 };
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => query.ToPagedResultAsync(paginacao, cts.Token));
     }
 
     [Theory]
@@ -154,7 +173,7 @@ public class QueryablePagingExtensionsTests
         var query = context.Usuarios.OrderBy(u => u.Nome);
         var paginacao = new PaginacaoQuery { Page = 1, PageSize = pageSize };
 
-        var resultado = await query.ToPagedResultAsync(paginacao);
+        var resultado = await query.ToPagedResultAsync(paginacao, CancellationToken.None);
 
         Assert.Equal(totalPagesEsperado, resultado.TotalPages);
     }

@@ -10,24 +10,33 @@ namespace TccManager.Tests.Client.Pages.Professor;
 /// <summary>
 /// Testes da lógica C# pura de <see cref="DetalhesTcc"/> introduzida/preservada na N3 Etapa 4.
 ///
-/// Contexto: não há infraestrutura bUnit no projeto (gap pré-existente; RNF-04 não exige teste de UI
-/// automatizado). Portanto <c>RadzenTabs</c>, <c>RadzenAccordion</c>, <c>EditForm</c>/
-/// <c>DataAnnotationsValidator</c>, o gating do botão "Dar Aceite Final" (expressão no markup),
-/// <c>DialogService.Confirm</c>, <c>NotificationService</c> e todos os fluxos HTTP NÃO são cobertos
-/// aqui — ver docs/testes/2026-07-14-migracao-radzen-blazor-etapa4.md.
+/// Contexto (à época): não havia infraestrutura bUnit no projeto. Portanto <c>RadzenTabs</c>,
+/// <c>RadzenAccordion</c>, <c>EditForm</c>/<c>DataAnnotationsValidator</c>, o gating do botão
+/// "Dar Aceite Final" (expressão no markup), <c>DialogService.Confirm</c>,
+/// <c>NotificationService</c> e todos os fluxos HTTP NÃO são cobertos aqui — ver
+/// docs/testes/2026-07-14-migracao-radzen-blazor-etapa4.md.
+///
+/// Atualização (issue #75/#81): a infraestrutura bUnit passou a existir. Os controles de veredito
+/// por entrega (badges de <c>Entrega.Status</c>, botões Aprovar/Rejeitar, gating do "Dar Aceite
+/// Final" por Final aprovada e o reuso do <c>RejeitarPropostaDialog</c>) são cobertos por
+/// renderização real em <see cref="DetalhesTccVeredictoTests"/>. Este arquivo permanece válido:
+/// os membros testados aqui não mudaram na issue #81.
 ///
 /// O que É coberto: os membros de <c>@code</c> que são transição de estado pura / mapeamento e não
 /// dependem de <c>HttpClient</c>, <c>DialogService</c> ou <c>NotificationService</c>:
-/// <c>AbrirFormFeedback</c>/<c>FecharFormFeedback</c> (form inline de feedback por entrega),
+/// <c>AbrirFormFeedback</c>/<c>FecharFormFeedback</c> (form inline de feedback por entrega) e
 /// <c>PrepararEdicaoAcompanhamento</c>/<c>CancelarEdicaoAcompanhamento</c> (alternância criar vs.
-/// editar ata) e o helper <c>UrlArquivo</c> (extraído do markup nesta etapa). São membros privados do
-/// componente, acessados via reflection sobre <c>new DetalhesTcc()</c>, que não aciona renderer nem
-/// injeção de dependência.
+/// editar ata). São membros privados do componente, acessados via reflection sobre
+/// <c>new DetalhesTcc()</c>, que não aciona renderer nem injeção de dependência.
 ///
 /// Onde há dependência injetada mas SEM I/O real, ela é preenchida por reflection com objetos
 /// concretos já usados no projeto: <see cref="FakeJsRuntime"/> (apenas registra a interop cosmética
-/// <c>window.scrollTo</c>) e um <see cref="HttpClient"/> com <c>BaseAddress</c> definido, do qual
-/// <c>UrlArquivo</c> só lê a propriedade — nenhuma requisição HTTP é feita em nenhum teste deste arquivo.
+/// <c>window.scrollTo</c>) — nenhuma requisição HTTP é feita em nenhum teste deste arquivo.
+///
+/// <c>BaixarArquivoEntrega</c> (issue #69 — download autenticado do arquivo da entrega, substituindo
+/// o antigo link estático/<c>UrlArquivo</c>) faz <c>HttpClient.GetAsync</c> + <c>IJSRuntime</c> +
+/// <c>NotificationService</c> reais — é um fluxo HTTP completo, portanto fora do escopo deste arquivo
+/// pelos mesmos critérios já documentados acima (gap pré-existente de infraestrutura bUnit).
 /// </summary>
 public class DetalhesTccTests
 {
@@ -77,7 +86,7 @@ public class DetalhesTccTests
         // Entrega sem parecer: Feedback null vira string vazia (o DTO exige string não-nula) e
         // Nota permanece nula (campo opcional).
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 10, Titulo = "Capítulo 1", Feedback = null, Nota = null };
+        var entrega = new EntregaDto { Id = 10, Titulo = "Capítulo 1", Feedback = null, Nota = null };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
 
@@ -92,7 +101,7 @@ public class DetalhesTccTests
     {
         // "Editar Avaliação": o form inline abre preenchido com a avaliação existente.
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 3, Feedback = "Revisar a metodologia.", Nota = 8.5m };
+        var entrega = new EntregaDto { Id = 3, Feedback = "Revisar a metodologia.", Nota = 8.5m };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
 
@@ -107,9 +116,9 @@ public class DetalhesTccTests
         // Abrir o form de outra entrega troca o alvo e substitui o modelo (não mistura os dados
         // digitados na entrega anterior).
         var componente = new DetalhesTcc();
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 1, Feedback = "Parecer da 1", Nota = 5m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 1, Feedback = "Parecer da 1", Nota = 5m });
 
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 2, Feedback = "Parecer da 2", Nota = 9m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 2, Feedback = "Parecer da 2", Nota = 9m });
 
         Assert.Equal(2, LerCampo<int?>(componente, "entregaEmAvaliacao"));
         var feedback = LerCampo<FeedbackDto>(componente, "feedbackAtual")!;
@@ -123,7 +132,7 @@ public class DetalhesTccTests
         // O form edita um DTO próprio: alterar o rascunho não altera a entrega carregada do backend
         // enquanto o POST não é feito.
         var componente = new DetalhesTcc();
-        var entrega = new Entrega { Id = 4, Feedback = "Original", Nota = 7m };
+        var entrega = new EntregaDto { Id = 4, Feedback = "Original", Nota = 7m };
 
         Invocar(componente, "AbrirFormFeedback", entrega);
         var feedback = LerCampo<FeedbackDto>(componente, "feedbackAtual")!;
@@ -139,7 +148,7 @@ public class DetalhesTccTests
     {
         // "Cancelar" no form inline: some o form (entregaEmAvaliacao null) e o rascunho é descartado.
         var componente = new DetalhesTcc();
-        Invocar(componente, "AbrirFormFeedback", new Entrega { Id = 9, Feedback = "Texto", Nota = 6m });
+        Invocar(componente, "AbrirFormFeedback", new EntregaDto { Id = 9, Feedback = "Texto", Nota = 6m });
 
         Invocar(componente, "FecharFormFeedback");
 
@@ -156,7 +165,7 @@ public class DetalhesTccTests
     {
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
-        var ata = new Acompanhamento
+        var ata = new AcompanhamentoResumoDto
         {
             Id = 15,
             DataReuniao = new DateTime(2026, 3, 10, 14, 30, 0, DateTimeKind.Utc),
@@ -178,7 +187,7 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
         var original = new DateTime(2026, 7, 14, 9, 0, 0, DateTimeKind.Utc);
-        var ata = new Acompanhamento { Id = 1, DataReuniao = original, Ata = "Ata" };
+        var ata = new AcompanhamentoResumoDto { Id = 1, DataReuniao = original, Ata = "Ata" };
 
         Invocar(componente, "PrepararEdicaoAcompanhamento", ata);
 
@@ -196,7 +205,7 @@ public class DetalhesTccTests
         var js = new FakeJsRuntime();
         DefinirInjetado(componente, "JSRuntime", js);
 
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 2, Ata = "Ata" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 2, Ata = "Ata" });
 
         var invocacao = Assert.Single(js.Invocacoes);
         Assert.Equal("window.scrollTo", invocacao.Identifier);
@@ -209,7 +218,7 @@ public class DetalhesTccTests
         // Edita um DTO próprio; a ata do histórico só muda depois do PUT + recarga.
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
-        var ata = new Acompanhamento { Id = 3, DataReuniao = new DateTime(2026, 1, 5), Ata = "Texto original" };
+        var ata = new AcompanhamentoResumoDto { Id = 3, DataReuniao = new DateTime(2026, 1, 5), Ata = "Texto original" };
 
         Invocar(componente, "PrepararEdicaoAcompanhamento", ata);
         LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata = "Texto editado";
@@ -223,8 +232,8 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
 
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 1, Ata = "Primeira" });
-        Invocar(componente, "PrepararEdicaoAcompanhamento", new Acompanhamento { Id = 2, Ata = "Segunda" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 1, Ata = "Primeira" });
+        Invocar(componente, "PrepararEdicaoAcompanhamento", new AcompanhamentoResumoDto { Id = 2, Ata = "Segunda" });
 
         Assert.Equal(2, LerCampo<int?>(componente, "acompanhamentoEmEdicaoId"));
         Assert.Equal("Segunda", LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata);
@@ -238,7 +247,7 @@ public class DetalhesTccTests
         var componente = new DetalhesTcc();
         DefinirInjetado(componente, "JSRuntime", new FakeJsRuntime());
         Invocar(componente, "PrepararEdicaoAcompanhamento",
-            new Acompanhamento { Id = 8, DataReuniao = new DateTime(2026, 2, 2), Ata = "Conteúdo" });
+            new AcompanhamentoResumoDto { Id = 8, DataReuniao = new DateTime(2026, 2, 2), Ata = "Conteúdo" });
 
         Invocar(componente, "CancelarEdicaoAcompanhamento");
 
@@ -255,49 +264,5 @@ public class DetalhesTccTests
 
         Assert.Null(LerCampo<int?>(componente, "acompanhamentoEmEdicaoId"));
         Assert.Equal(string.Empty, LerCampo<AcompanhamentoDto>(componente, "novoAcompanhamento")!.Ata);
-    }
-
-    // ── UrlArquivo: link direto de download da entrega do aluno ────────────────────
-
-    private static string InvocarUrlArquivo(string? baseAddress, string caminho)
-    {
-        var componente = new DetalhesTcc();
-        var http = new HttpClient();
-        if (baseAddress != null)
-        {
-            http.BaseAddress = new Uri(baseAddress);
-        }
-        DefinirInjetado(componente, "Http", http);
-
-        var metodo = typeof(DetalhesTcc).GetMethod("UrlArquivo", Privados)
-            ?? throw new MissingMethodException(nameof(DetalhesTcc), "UrlArquivo");
-        return (string)metodo.Invoke(componente, [caminho])!;
-    }
-
-    [Fact]
-    public void UrlArquivo_BaseComBarraFinal_NaoDuplicaABarra()
-    {
-        // ArquivoCaminho vem do backend sempre iniciado por "/" (LocalStorageService retorna
-        // "/uploads/{categoria}/{arquivo}"); a base do HttpClient termina em "/".
-        var url = InvocarUrlArquivo("https://localhost:7145/", "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("https://localhost:7145/uploads/entregas/abc_tcc.pdf", url);
-    }
-
-    [Fact]
-    public void UrlArquivo_BaseSemBarraFinal_ConcatenaDireto()
-    {
-        var url = InvocarUrlArquivo("https://api.exemplo.br/tcc", "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("https://api.exemplo.br/tcc/uploads/entregas/abc_tcc.pdf", url);
-    }
-
-    [Fact]
-    public void UrlArquivo_SemBaseAddress_RetornaApenasOCaminho()
-    {
-        // Guarda de null do operador ?. — não gera "https://null...".
-        var url = InvocarUrlArquivo(null, "/uploads/entregas/abc_tcc.pdf");
-
-        Assert.Equal("/uploads/entregas/abc_tcc.pdf", url);
     }
 }

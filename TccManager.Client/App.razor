@@ -1,5 +1,6 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
 @using TccManager.Client.Layout
+@inject NavigationManager Navigation
 
 <CascadingAuthenticationState>
     @* Host único de diálogos/notificações/tooltips/context menu (DialogService, NotificationService,
@@ -18,7 +19,12 @@
         <NotFound>
             <PageTitle>Não encontrado</PageTitle>
             <LayoutView Layout="@typeof(MainLayout)">
-                <p role="alert">Desculpe, não há nada neste endereço.</p>
+                <RadzenStack AlignItems="AlignItems.Center" Gap="1rem" class="rz-p-6">
+                    <RadzenIcon Icon="search_off" Style="font-size: 2.5rem;" />
+                    <p role="alert">Desculpe, não há nada neste endereço.</p>
+                    <RadzenButton Text="Voltar para o início" Icon="home" ButtonStyle="ButtonStyle.Primary"
+                                  Click='@(() => Navigation.NavigateTo("/"))' />
+                </RadzenStack>
             </LayoutView>
         </NotFound>
     </Router>

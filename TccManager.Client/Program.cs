@@ -26,28 +26,54 @@ builder.Services.AddScoped<AuthenticationStateProvider>(provider =>
 
 builder.Services.AddScoped<ISessionEndedHandler, SessionEndedHandler>();
 builder.Services.AddScoped<ITokenRefreshCoordinator, TokenRefreshCoordinator>();
+builder.Services.AddScoped<IArquivoDownloadService, ArquivoDownloadService>();
+
+// Issue #88 (D10) — carrega só o e-mail entre Login.razor e TrocarSenha.razor no fluxo de
+// troca de senha obrigatória.
+builder.Services.AddScoped<EstadoTrocaSenha>();
 
 // Registra DialogService, NotificationService, TooltipService e ContextMenuService de uma vez
 // (helper disponível no pacote Radzen.Blazor referenciado).
 builder.Services.AddRadzenComponents();
 builder.Services.AddScoped<TemaService>();
 
-builder.Services.AddTransient<AuthTokenHandler>();
+builder.Services.AddTransient(sp => new AuthTokenHandler(
+    sp.GetRequiredService<ILocalStorageService>(),
+    sp.GetRequiredService<ITokenRefreshCoordinator>(),
+    new Uri(apiBaseUrl)));
+
+// Issue #107 (achado F-10): trata 429 centralmente para os endpoints de listagem, com a
+// mensagem amigável usando o Retry-After que a API já emite — em vez de cada tela repetir
+// essa lógica.
+builder.Services.AddTransient(sp => new RateLimitHandler(sp.GetRequiredService<NotificationService>()));
+
+// Issue #171 (D4): marca "credentials: include" só em api/auth/login|refresh|logout — as
+// três rotas que leem/gravam o cookie HttpOnly siga_refresh. Registrado nos dois clientes.
+builder.Services.AddTransient<BrowserCredentialsHandler>();
 
 // Cliente "cru", sem o AuthTokenHandler — usado exclusivamente pelo handler/coordenador
 // para chamar /api/auth/refresh e /api/auth/logout, evitando recursão (§6.1 da
 // arquitetura: um 401 vindo do próprio /refresh nunca reentra no interceptor).
-builder.Services.AddHttpClient("AuthRaw", c => c.BaseAddress = new Uri(apiBaseUrl));
+builder.Services.AddHttpClient("AuthRaw", c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<BrowserCredentialsHandler>();
 
-// Cliente "Api", com o AuthTokenHandler no pipeline.
+// Cliente "Api", com o AuthTokenHandler e o RateLimitHandler no pipeline.
 builder.Services.AddHttpClient("Api", c => c.BaseAddress = new Uri(apiBaseUrl))
-    .AddHttpMessageHandler<AuthTokenHandler>();
+    .AddHttpMessageHandler<AuthTokenHandler>()
+    .AddHttpMessageHandler<RateLimitHandler>()
+    .AddHttpMessageHandler<BrowserCredentialsHandler>();
 
 // Mantém "@inject HttpClient" funcionando em todas as páginas, agora já com o handler
 // no pipeline por trás (nenhuma página precisa ser alterada).
 builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("Api"));
 
 var host = builder.Build();
+
+// Issue #171 (D9): limpeza única da chave legada "refreshToken" do localStorage. O valor
+// gravado ali antes da migração para o cookie HttpOnly continuaria válido no banco por até
+// Jwt:RefreshTokenDays e legível por JS — exatamente o que a migração elimina. Removível em
+// issue futura, depois de passado esse prazo do deploy (P5 da arquitetura).
+await host.Services.GetRequiredService<ILocalStorageService>().RemoveItemAsync("refreshToken");
 
 // Sincroniza o estado em memória do TemaService com a preferência já aplicada visualmente pelo
 // script inline de wwwroot/index.html (anti-flash), antes de qualquer componente renderizar.

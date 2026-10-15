@@ -4,6 +4,38 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+        Issue #148 (achado B9): defesa em profundidade contra injeção de script/estilo/objeto
+        de terceiros. object-src/base-uri restritos sem efeito colateral conhecido.
+        Achado SonarCloud (Web:S7039, 2026-10-11): script-src não precisa mais de
+        'unsafe-inline' — o único <script> inline que existia (bootstrap do tema, anti-flash)
+        foi extraído para wwwroot/js/temaAntiFlash.js; carregado via <script src>, continua
+        bloqueante e na mesma posição no <head>, então o timing (antes do WASM iniciar, antes
+        do primeiro paint) não muda. script-src ainda precisa de 'wasm-unsafe-eval'
+        (exigência própria do runtime do Blazor WebAssembly para compilar o módulo .wasm — não
+        é a mesma coisa que 'unsafe-inline', esse token permanece).
+        style-src continua com 'unsafe-inline' deliberadamente (achado Web:S7039 residual,
+        aceito pelo usuário em 2026-10-12 — suprimido via sonar.issue.ignore.multicriteria em
+        .github/workflows/sonarcloud.yml; NOSONAR não tem efeito aqui, o analisador de
+        HTML/Web do SonarCloud não suporta esse marcador): nonce só cobre elementos <style>,
+        nunca o atributo style="..." (confirmado via documentação do CSP); a alternativa
+        'unsafe-hashes' exige valor estático, incompatível com estilo computado por render do
+        Blazor. O Client usa style="..." inline extensivamente nos componentes Razor próprios
+        (116 ocorrências) e o próprio Radzen.Blazor.js manipula .style diretamente em JS (167
+        ocorrências) — eliminar isso exigiria reescrever todo estilo inline do app E não
+        remover a dependência de Radzen, que sozinho já exige 'unsafe-inline'. Refactor
+        desproporcional ao risco residual (estilo injetado não lê localStorage/cookies, o
+        impacto prático de um estilo malicioso é vandalismo visual, não exfiltração).
+        connect-src permite qualquer origem https:/wss: (não restrito a 'self'): a URL base da
+        API é configurada em runtime (appsettings*.json do Client) e pode estar em outra porta/
+        subdomínio — não é conhecida em build-time deste arquivo estático. Ainda bloqueia
+        downgrade para http:// não criptografado.
+        frame-ancestors é ignorado por especificação quando entregue via <meta> (só tem efeito
+        via header HTTP) — precisa ser configurado na camada de hospedagem estática do Client
+        (nginx/IIS/etc.), fora do código deste repositório.
+    -->
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self';" />
     <title>TccManager.Client</title>
     <base href="/" />
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
@@ -15,31 +47,27 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 
     <!--
-        Aplica o tema Radzen (Standard / Standard Dark) ANTES do WASM iniciar, para não haver
-        flash do tema errado no primeiro paint. Lê a mesma chave de localStorage
-        ("preferenciaTema") usada pelo TccManager.Client/Services/TemaService.cs. Usamos a
-        variante "-base" dos temas porque o app convive com Bootstrap nas páginas ainda não
-        migradas para Radzen (a variante "-base" não reseta elementos HTML globais).
+        Pré-carrega a fonte de ícones (issue #79): standard-base.css e standard-dark-base.css
+        declaram o MESMO @font-face "Material Symbols" (mesmo arquivo .woff2), mas como são
+        <link> de stylesheet diferentes, trocar o href em setRadzenTheme (js/theme.js) força o
+        navegador a registrar uma @font-face "nova" a cada troca de tema — sem o arquivo já em
+        cache, isso causa ~2-3s de flash mostrando o nome cru do ícone ("dashboard", "group")
+        até resolver para o glifo. Pré-carregado aqui, o navegador já tem os bytes prontos
+        quando a segunda @font-face é registrada, então a resolução fica praticamente instantânea.
+        crossorigin é necessário mesmo sendo mesma origem: fontes sempre são buscadas em modo
+        CORS anônimo pelo navegador: sem o atributo aqui, o preload não bate com esse modo e o
+        arquivo acaba sendo baixado duas vezes.
     -->
-    <script>
-        (function () {
-            var tema = 'standard-base';
-            try {
-                var valorSalvo = window.localStorage.getItem('preferenciaTema');
-                if (valorSalvo && valorSalvo.replace(/"/g, '') === 'standard-dark') {
-                    tema = 'standard-dark-base';
-                }
-            } catch (e) {
-                // localStorage indisponível (ex.: navegação privada) — mantém o tema claro padrão.
-            }
+    <link rel="preload" as="font" type="font/woff2" href="_content/Radzen.Blazor/fonts/MaterialSymbolsOutlined.woff2" crossorigin>
 
-            var link = document.createElement('link');
-            link.id = 'radzen-theme';
-            link.rel = 'stylesheet';
-            link.href = '_content/Radzen.Blazor/css/' + tema + '.css';
-            document.head.appendChild(link);
-        })();
-    </script>
+    <!--
+        Aplica o tema Radzen (Standard / Standard Dark) ANTES do WASM iniciar, para não haver
+        flash do tema errado no primeiro paint. Extraído para js/temaAntiFlash.js (2026-10-11,
+        achado SonarCloud Web:S7039) para eliminar 'unsafe-inline' de script-src — <script src>
+        sem defer/async carrega e executa de forma síncrona e bloqueante, na mesma posição no
+        <head>, então o timing não muda.
+    -->
+    <script src="js/temaAntiFlash.js"></script>
 </head>
 
 <body>

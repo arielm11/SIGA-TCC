@@ -32,7 +32,8 @@ namespace TccManager.Api.Migrations
 
                     b.Property<string>("Ata")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
 
                     b.Property<DateTime>("DataReuniao")
                         .HasColumnType("datetime2");
@@ -64,7 +65,8 @@ namespace TccManager.Api.Migrations
 
                     b.Property<string>("Local")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<decimal?>("NotaFinal")
                         .HasColumnType("decimal(5,2)");
@@ -74,7 +76,8 @@ namespace TccManager.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TccId");
+                    b.HasIndex("TccId")
+                        .IsUnique();
 
                     b.ToTable("Banca");
                 });
@@ -123,10 +126,20 @@ namespace TccManager.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Feedback")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<decimal?>("Nota")
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
 
                     b.Property<int>("TccId")
                         .HasColumnType("int");
@@ -136,11 +149,15 @@ namespace TccManager.Api.Migrations
 
                     b.Property<string>("Titulo")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TccId");
+                    b.HasIndex("TccId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Entregas_TccId_Final")
+                        .HasFilter("[Tipo] = 1 AND [Status] <> 2");
 
                     b.ToTable("Entregas");
                 });
@@ -155,15 +172,18 @@ namespace TccManager.Api.Migrations
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("Instituicao")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
 
                     b.Property<string>("Nome")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
@@ -270,27 +290,44 @@ namespace TccManager.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("MotivoRejeicao")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
 
                     b.Property<int?>("OrientadorId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("OrientadorSolicitadoId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Resumo")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
                     b.Property<string>("Titulo")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AlunoId");
+                    b.HasIndex("AlunoId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Tccs_AlunoId_Ativo")
+                        .HasFilter("[Status] <> 2");
 
                     b.HasIndex("OrientadorId");
+
+                    b.HasIndex("OrientadorSolicitadoId");
 
                     b.ToTable("Tccs");
                 });
@@ -311,14 +348,19 @@ namespace TccManager.Api.Migrations
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<int>("LimiteOrientandos")
                         .HasColumnType("int");
 
                     b.Property<string>("Nome")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool>("PrecisaTrocarSenha")
+                        .HasColumnType("bit");
 
                     b.Property<string>("SenhaHash")
                         .IsRequired()
@@ -328,6 +370,9 @@ namespace TccManager.Api.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
 
                     b.ToTable("usuarios", (string)null);
                 });
@@ -431,9 +476,15 @@ namespace TccManager.Api.Migrations
                         .WithMany()
                         .HasForeignKey("OrientadorId");
 
+                    b.HasOne("TccManager.Shared.Models.Usuario", "OrientadorSolicitado")
+                        .WithMany()
+                        .HasForeignKey("OrientadorSolicitadoId");
+
                     b.Navigation("Aluno");
 
                     b.Navigation("Orientador");
+
+                    b.Navigation("OrientadorSolicitado");
                 });
 
             modelBuilder.Entity("TccManager.Shared.Models.Banca", b =>

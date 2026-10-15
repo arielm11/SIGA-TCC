@@ -75,6 +75,27 @@ public class SensitiveDataMaskingPolicyTests
         public string SENHA { get; set; } = string.Empty;
     }
 
+    // Issue #144 (achado A2): nomes compostos que já existem hoje no código e não batiam
+    // com a lista por igualdade exata.
+    private sealed class ObjetoComRefreshToken
+    {
+        public string UsuarioId { get; set; } = string.Empty;
+        public string RefreshToken { get; set; } = string.Empty;
+    }
+
+    private sealed class ObjetoComSenhaAtualENovaSenha
+    {
+        public string SenhaAtual { get; set; } = string.Empty;
+        public string NovaSenha { get; set; } = string.Empty;
+    }
+
+    private sealed class ObjetoComTokenHash
+    {
+        public string Email { get; set; } = string.Empty;
+        public string TokenHash { get; set; } = string.Empty;
+        public string? ReplacedByTokenHash { get; set; }
+    }
+
     [Fact]
     public void TryDestructure_ObjetoComSenha_MascaraApenasOValorSensivel()
     {
@@ -153,6 +174,49 @@ public class SensitiveDataMaskingPolicyTests
         Assert.True(sucesso);
         var props = ComoDicionario(Assert.IsType<StructureValue>(result));
         Assert.Equal(MaskedValue, ValorEscalar(props["SENHA"]));
+    }
+
+    [Fact]
+    public void TryDestructure_ObjetoComRefreshToken_MascaraOValor()
+    {
+        var policy = new SensitiveDataMaskingPolicy();
+        var objeto = new ObjetoComRefreshToken { UsuarioId = "10", RefreshToken = "abc123" };
+
+        var sucesso = policy.TryDestructure(objeto, Factory, out var result);
+
+        Assert.True(sucesso);
+        var props = ComoDicionario(Assert.IsType<StructureValue>(result));
+        Assert.Equal(MaskedValue, ValorEscalar(props["RefreshToken"]));
+        Assert.Equal("10", ValorEscalar(props["UsuarioId"]));
+    }
+
+    [Fact]
+    public void TryDestructure_ObjetoComSenhaAtualENovaSenha_MascaraOsDoisValores()
+    {
+        var policy = new SensitiveDataMaskingPolicy();
+        var objeto = new ObjetoComSenhaAtualENovaSenha { SenhaAtual = "velha", NovaSenha = "nova" };
+
+        var sucesso = policy.TryDestructure(objeto, Factory, out var result);
+
+        Assert.True(sucesso);
+        var props = ComoDicionario(Assert.IsType<StructureValue>(result));
+        Assert.Equal(MaskedValue, ValorEscalar(props["SenhaAtual"]));
+        Assert.Equal(MaskedValue, ValorEscalar(props["NovaSenha"]));
+    }
+
+    [Fact]
+    public void TryDestructure_ObjetoComTokenHashEReplacedByTokenHash_MascaraOsDoisValores()
+    {
+        var policy = new SensitiveDataMaskingPolicy();
+        var objeto = new ObjetoComTokenHash { Email = "a@b.com", TokenHash = "hash1", ReplacedByTokenHash = "hash2" };
+
+        var sucesso = policy.TryDestructure(objeto, Factory, out var result);
+
+        Assert.True(sucesso);
+        var props = ComoDicionario(Assert.IsType<StructureValue>(result));
+        Assert.Equal(MaskedValue, ValorEscalar(props["TokenHash"]));
+        Assert.Equal(MaskedValue, ValorEscalar(props["ReplacedByTokenHash"]));
+        Assert.Equal("a@b.com", ValorEscalar(props["Email"]));
     }
 
     [Fact]

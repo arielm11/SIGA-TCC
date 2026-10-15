@@ -9,11 +9,25 @@ namespace TccManager.Api.Services.Notifications;
 /// </summary>
 public interface ITccNotificationService
 {
-    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado tanto por AprovarProposta quanto por DesignarOrientador.</summary>
+    /// <summary>Proposta aprovada (RF7) — Aluno. Disparado por
+    /// CoordenadorController.DesignarOrientador e, desde a issue #112, também por
+    /// OrientadorController.AprovarPropostaSolicitada (o professor solicitado voltou a ter
+    /// autonomia real, corretamente escopada ao próprio vínculo — issue #76 tinha centralizado
+    /// essa decisão exclusivamente no Coordenador).</summary>
     Task NotificarPropostaAprovadaAsync(int tccId);
 
-    /// <summary>Proposta rejeitada (RF8) — Aluno, com motivo.</summary>
+    /// <summary>Proposta rejeitada (RF8) — Aluno, com motivo. Disparado por
+    /// CoordenadorController.RejeitarProposta e, desde a issue #112, também por
+    /// OrientadorController.RejeitarPropostaSolicitada (mesmo racional de
+    /// NotificarPropostaAprovadaAsync).</summary>
     Task NotificarPropostaRejeitadaAsync(int tccId);
+
+    /// <summary>
+    /// Proposta solicitada (issue #112, RF-novo/D8) — Professor solicitado pelo Aluno na
+    /// submissão. Disparado por TccController.SubmeterProposta, depois do SaveChangesAsync,
+    /// só quando <c>OrientadorSolicitadoId</c> foi informado.
+    /// </summary>
+    Task NotificarPropostaSolicitadaAsync(int tccId);
 
     /// <summary>Banca agendada (RF9) — Aluno, Orientador e avaliadores (internos e externos).</summary>
     Task NotificarBancaAgendadaAsync(int bancaId);
@@ -38,4 +52,13 @@ public interface ITccNotificationService
     /// já revogou o token anterior do par).
     /// </summary>
     Task NotificarReenvioRascunhoAsync(int bancaId, int membroExternoId, string tokenBruto);
+
+    /// <summary>
+    /// Veredito do orientador sobre uma entrega (issue #81, D11) — Aluno. Disparado por
+    /// OrientadorController.AprovarEntrega/RejeitarEntrega. <paramref name="aprovada"/>
+    /// escolhe o template (entrega-aprovada vs. entrega-rejeitada); quando a entrega
+    /// rejeitada é do tipo Final, o template de rejeição inclui um bloco extra avisando o
+    /// aluno de que o ciclo de entregas reabriu e ele já pode reenviar.
+    /// </summary>
+    Task NotificarVeredictoEntregaAsync(int entregaId, bool aprovada);
 }

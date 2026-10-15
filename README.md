@@ -50,9 +50,17 @@ O sistema orquestra nativamente a interação entre 4 papéis essenciais protegi
 
 Caso queira subir o projeto imediatamente em seu ambiente de desenvolvimento, siga o fluxo básico:
 
-1. Certifique-se de ter instalado o **.NET 9 SDK** e o **SQL Server**.
-2. Configure a `ConnectionString` dentro do arquivo `TccManager.Api/appsettings.json`.
-3. Execute o comando `Update-Database -Project TccManager.Api` via Console do Gerenciador de Pacotes para criar a estrutura de tabelas.
+1. Certifique-se de ter instalado o **.NET 9 SDK** e um **SQL Server 2022**, de uma destas formas:
+   * **Instalado localmente** (ex.: Windows): nenhum passo extra.
+   * **Via Docker** (ex.: Linux): copie `.env.example` para `.env`, defina `MSSQL_SA_PASSWORD` e rode `docker compose up -d` na raiz do repositório.
+2. Configure a connection string e a chave JWT via *User Secrets* (ficam fora do repositório, por máquina):
+   ```bash
+   cd TccManager.Api
+   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost,1433;Database=TccManager;User Id=sa;Password=<senha>;TrustServerCertificate=True"
+   dotnet user-secrets set "Jwt:Key" "<chave aleatória com pelo menos 32 caracteres>"
+   ```
+   Com SQL Server local no Windows usando autenticação do Windows, use `Server=localhost;Database=TccManager;Trusted_Connection=True;TrustServerCertificate=True`.
+3. Crie a estrutura de tabelas com `dotnet ef database update --project TccManager.Api` (ou `Update-Database -Project TccManager.Api` no Console do Gerenciador de Pacotes do Visual Studio).
 4. Rode o script contido no **[Guia de Configuração da Wiki](../../wiki/Guia-de-Instalação-e-Configuração)** no seu banco SQL para injetar as contas iniciais de Coordenador e Professor.
 5. Configure a solução para iniciar múltiplos projetos simultaneamente (`Api` + `Client`) e pressione `F5`.
 

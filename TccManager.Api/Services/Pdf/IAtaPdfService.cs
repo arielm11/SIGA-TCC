@@ -10,7 +10,16 @@ public enum AtaPdfResultadoStatus
     /// Usado apenas pelo fluxo de rascunho (Etapa 2): <c>Banca.NotaFinal</c> já foi
     /// preenchido, então o rascunho não é mais servido (RNF-03) — mapeado para 410 Gone.
     /// </summary>
-    ResultadoJaRegistrado
+    ResultadoJaRegistrado,
+
+    /// <summary>
+    /// Issue #72: a banca foi encontrada, mas algum dado relacionado obrigatório (Tcc, Aluno,
+    /// ou o Professor/MembroExterno de um avaliador) não carregou apesar do FK indicar que
+    /// deveria existir — sinal de inconsistência no banco, não um estado de negócio esperado.
+    /// Mapeado para 500 pelos controllers, sem detalhe da inconsistência no corpo da resposta
+    /// (o motivo específico fica só no log do servidor).
+    /// </summary>
+    DadosInconsistentes
 }
 
 /// <summary>
@@ -32,7 +41,7 @@ public interface IAtaPdfService
     /// ou o resultado ainda não tiver sido registrado (<c>NotaFinal == null</c>), o
     /// <see cref="AtaPdfResultado.Status"/> indica o motivo e <c>PdfBytes</c> vem nulo.
     /// </summary>
-    Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca);
+    Task<AtaPdfResultado> GerarAtaFinalAsync(int idBanca, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gera o PDF rascunho pré-defesa (RF-01/Etapa 2): mesma composição, sem nota final,
@@ -41,5 +50,5 @@ public interface IAtaPdfService
     /// <see cref="AtaPdfResultadoStatus.ResultadoJaRegistrado"/> (410 Gone) mesmo que o
     /// chamador ainda tenha um token/sessão tecnicamente válido (RNF-03).
     /// </summary>
-    Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca);
+    Task<AtaPdfResultado> GerarAtaRascunhoAsync(int idBanca, CancellationToken cancellationToken = default);
 }

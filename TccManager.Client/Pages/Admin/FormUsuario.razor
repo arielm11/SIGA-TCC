@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
 @using TccManager.Shared.Enums
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Admin")]
 @inject HttpClient Http
 @inject NavigationManager Navigation
@@ -62,10 +63,13 @@
                     </RadzenColumn>
                 </RadzenRow>
 
-                <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
-                    <RadzenCheckBox Name="Ativo" @bind-Value="usuario.Ativo" />
-                    <RadzenLabel Component="Ativo" Text="Usuário Ativo" />
-                </RadzenStack>
+                @if (Id.HasValue)
+                {
+                    <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0.5rem">
+                        <RadzenCheckBox Name="Ativo" @bind-Value="usuario.Ativo" />
+                        <RadzenLabel Component="Ativo" Text="Usuário Ativo" />
+                    </RadzenStack>
+                }
 
                 <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End">
                     <RadzenButton ButtonType="ButtonType.Submit"
@@ -96,18 +100,24 @@
         {
             try
             {
-                usuario = await Http.GetFromJsonAsync<UsuarioDto>($"api/usuario/{Id}");
-                usuario!.Senha = string.Empty;
+                // Issue #165 (achado A1/B3): GET devolve UsuarioResponseDto (sem Senha) —
+                // "usuario" aqui é o modelo de escrita (UsuarioDto), populado a partir da
+                // leitura; Senha fica vazia ("manter a atual", comportamento já existente).
+                var lido = await Http.GetFromJsonAsync<UsuarioResponseDto>($"api/usuario/{Id}");
+                if (lido != null)
+                {
+                    usuario = new UsuarioDto
+                    {
+                        Nome = lido.Nome,
+                        Email = lido.Email,
+                        Tipo = lido.Tipo,
+                        Ativo = lido.Ativo
+                    };
+                }
             }
             catch (Exception)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao carregar",
-                    Detail = "Erro ao carregar usuário. Talvez ele não exista.",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao carregar", "Erro ao carregar usuário. Talvez ele não exista.");
             }
         }
     }
@@ -118,13 +128,7 @@
 
         if (!Id.HasValue && string.IsNullOrWhiteSpace(usuario.Senha))
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Senha obrigatória",
-                Detail = "A senha é obrigatória para novos usuários.",
-                Duration = 5000
-            });
+            NotificationService.NotificarAviso("Senha obrigatória", "A senha é obrigatória para novos usuários.");
             carregando = false;
             return;
         }
@@ -149,24 +153,12 @@
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro ao salvar",
-                    Detail = $"Erro ao salvar: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro ao salvar", $"Erro ao salvar: {erro}");
             }
         }
         catch (Exception ex)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro de conexão",
-                Detail = "Erro de conexão com o servidor.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão com o servidor.");
             Console.WriteLine(ex.Message);
         }
         finally

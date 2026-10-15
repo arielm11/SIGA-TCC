@@ -33,7 +33,7 @@ public class TccNotificationServiceTests
     private static TccNotificationService CriarServico(AppDbContext context, FakeEmailQueue queue)
         => new(
             context,
-            new FileEmailTemplateRenderer(),
+            new FileEmailTemplateRenderer(NullLogger<FileEmailTemplateRenderer>.Instance),
             queue,
             NullLogger<TccNotificationService>.Instance,
             new RascunhoAtaTokenService(context),
@@ -337,6 +337,59 @@ public class TccNotificationServiceTests
         Assert.DoesNotContain("rascunho-ata", msgAluno.CorpoHtml);
     }
 
+    /// <summary>
+    /// Issue #150 (achado C2): fake mínimo que sempre lança — simula a falha de
+    /// GerarTokensEmLoteAsync para travar o novo contrato de resiliência "em lote": uma
+    /// falha na geração afeta TODOS os membros externos da banca (trade-off aceito da
+    /// mudança para lote, antes a falha de um membro não afetava os demais).
+    /// </summary>
+    private sealed class RascunhoTokenServiceQueSempreFalha : IRascunhoAtaTokenService
+    {
+        public Task<string> GerarTokenAsync(int bancaId, int membroExternoId) => throw new InvalidOperationException("Falha simulada.");
+        public Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds) => throw new InvalidOperationException("Falha simulada.");
+        public Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto) => throw new NotImplementedException();
+        public Task RevogarTokenAtualAsync(int bancaId, int membroExternoId) => throw new NotImplementedException();
+        public Task RevogarTodosTokensDoMembroAsync(int membroExternoId) => throw new NotImplementedException();
+    }
+
+    [Fact]
+    public async Task NotificarBancaAgendadaAsync_FalhaAoGerarTokensEmLote_EnviaSemLinkParaTodosSemLancar()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno", "aluno@teste.com", TipoUsuario.Aluno));
+        context.Usuarios.Add(NovoUsuario(20, "Orientador", "orient@teste.com", TipoUsuario.Professor));
+        context.MembrosExternos.Add(new MembroExterno { Id = 5, Nome = "Externo A", Email = "extA@empresa.com", Instituicao = "Empresa" });
+        context.MembrosExternos.Add(new MembroExterno { Id = 6, Nome = "Externo B", Email = "extB@empresa.com", Instituicao = "Empresa" });
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC A", Resumo = "r", AlunoId = 10, OrientadorId = 20, Status = StatusTcc.AguardandoDefesa });
+
+        var banca = new Banca { Id = 1, TccId = 1, DataHora = DateTime.UtcNow.AddDays(3), Local = "Sala 1" };
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 1, BancaId = 1, MembroExternoId = 5 });
+        banca.Avaliadores.Add(new BancaAvaliador { Id = 2, BancaId = 1, MembroExternoId = 6 });
+        context.Banca.Add(banca);
+        await context.SaveChangesAsync();
+
+        var servico = new TccNotificationService(
+            context,
+            new FileEmailTemplateRenderer(NullLogger<FileEmailTemplateRenderer>.Instance),
+            queue,
+            NullLogger<TccNotificationService>.Instance,
+            new RascunhoTokenServiceQueSempreFalha(),
+            Options.Create(new AppUrlsOptions()));
+
+        // Não deve lançar — contrato de "nunca lança para o chamador" preservado mesmo com a
+        // falha em lote.
+        await servico.NotificarBancaAgendadaAsync(1);
+
+        var msgA = queue.Mensagens.Single(m => m.Destinatarios.Contains("extA@empresa.com"));
+        var msgB = queue.Mensagens.Single(m => m.Destinatarios.Contains("extB@empresa.com"));
+        Assert.DoesNotContain("rascunho-ata", msgA.CorpoHtml);
+        Assert.DoesNotContain("rascunho-ata", msgB.CorpoHtml);
+        Assert.Contains("apenas informativa", msgA.CorpoHtml);
+        Assert.Contains("apenas informativa", msgB.CorpoHtml);
+    }
+
     [Fact]
     public async Task NotificarBancaAgendadaAsync_NaoVazaTokenDeUmMembroNoEmailDeOutro()
     {
@@ -425,5 +478,120 @@ public class TccNotificationServiceTests
         var destinatarios = DestinatariosDaFila(queue);
         Assert.Equal(2, destinatarios.Count);
         Assert.Single(destinatarios, d => d == "mesmo@teste.com");
+    }
+
+    // ── VeredictoEntrega (issue #81, D11) ─────────────────────────────
+    // Os textos usados nas asserções de corpo são ASCII de propósito: Codificar() aplica
+    // WebUtility.HtmlEncode, que converte acentuados em entidades numéricas ("ã" -> "&#227;").
+
+    private static async Task<AppDbContext> ContextoComEntregaAsync(
+        TipoEntrega tipo,
+        string? feedback,
+        string? emailDoAluno = "aluno@teste.com")
+    {
+        var context = CriarContexto();
+
+        context.Usuarios.Add(NovoUsuario(10, "Aluno Teste", emailDoAluno!, TipoUsuario.Aluno));
+        context.Tccs.Add(new Tcc { Id = 1, Titulo = "TCC de Teste", Resumo = "r", AlunoId = 10, Status = StatusTcc.EmAndamento });
+        context.Entregas.Add(new Entrega
+        {
+            Id = 7,
+            TccId = 1,
+            Titulo = "Entrega de Teste",
+            ArquivoCaminho = "/x.pdf",
+            Tipo = tipo,
+            Feedback = feedback,
+            DataEnvio = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
+
+        return context;
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_Aprovada_EnfileiraParaOAlunoComOTemplateDeAprovacao()
+    {
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: null);
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: true);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Equal("Entrega aprovada pelo orientador", msg.Assunto);
+        Assert.Equal(new[] { "aluno@teste.com" }, msg.Destinatarios);
+        Assert.Contains("Entrega aprovada", msg.CorpoHtml);
+        Assert.Contains("Entrega de Teste", msg.CorpoHtml);
+        Assert.Contains("TCC de Teste", msg.CorpoHtml);
+        // O template de aprovação não tem (nem deve ganhar) o aviso de reenvio.
+        Assert.DoesNotContain("ciclo de entregas foi reaberto", msg.CorpoHtml, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_FinalRejeitada_IncluiMotivoEBlocoDeReenvio()
+    {
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: "Refazer a analise dos resultados.");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Equal("Entrega rejeitada pelo orientador", msg.Assunto);
+        Assert.Contains("Refazer a analise dos resultados.", msg.CorpoHtml);
+        Assert.Contains("O ciclo de entregas foi reaberto.", msg.CorpoHtml);
+        Assert.DoesNotContain("{{BlocoReenvio}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_ParcialRejeitada_NaoIncluiBlocoDeReenvio()
+    {
+        // Rejeitar uma Parcial não tem efeito de sistema: o e-mail não pode sugerir que o ciclo
+        // de entregas reabriu (ele nunca fechou).
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Parcial, feedback: "Rever a fundamentacao.");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Contains("Rever a fundamentacao.", msg.CorpoHtml);
+        Assert.DoesNotContain("ciclo de entregas foi reaberto", msg.CorpoHtml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("{{BlocoReenvio}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_RejeitadaSemFeedback_UsaNaoInformado()
+    {
+        // Não deveria acontecer pelo controller (o motivo é obrigatório), mas a fachada é
+        // chamada por id e precisa degradar sem deixar o placeholder cru no e-mail.
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Parcial, feedback: null);
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        var msg = Assert.Single(queue.Mensagens);
+        Assert.Contains("Não informado", msg.CorpoHtml);
+        Assert.DoesNotContain("{{Feedback}}", msg.CorpoHtml);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_EntregaInexistente_NaoEnfileiraNemLanca()
+    {
+        using var context = CriarContexto();
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(999, aprovada: true);
+
+        Assert.Empty(queue.Mensagens);
+    }
+
+    [Fact]
+    public async Task NotificarVeredictoEntregaAsync_AlunoSemEmail_NaoEnfileiraNemLanca()
+    {
+        // Mesma disciplina defensiva dos demais eventos: sem destinatário válido, não enfileira.
+        using var context = await ContextoComEntregaAsync(TipoEntrega.Final, feedback: "m", emailDoAluno: "");
+        var queue = new FakeEmailQueue();
+
+        await CriarServico(context, queue).NotificarVeredictoEntregaAsync(7, aprovada: false);
+
+        Assert.Empty(queue.Mensagens);
     }
 }

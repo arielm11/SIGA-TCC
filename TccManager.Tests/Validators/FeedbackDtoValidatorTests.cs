@@ -1,3 +1,4 @@
+using TccManager.Api.Services;
 using TccManager.Api.Validators;
 using TccManager.Shared.DTOs;
 using Xunit;
@@ -8,7 +9,7 @@ public class FeedbackDtoValidatorTests
 {
     private const string MensagemEsperada = "A nota deve estar entre 0 e 10.";
 
-    private readonly FeedbackDtoValidator _validator = new();
+    private readonly FeedbackDtoValidator _validator = new(new HtmlSanitizerService());
 
     private static FeedbackDto DtoComNota(decimal? nota) => new()
     {
@@ -25,6 +26,13 @@ public class FeedbackDtoValidatorTests
         Assert.True(result.IsValid);
     }
 
+    // Os dois Theory abaixo usam "decimal nota" (não "decimal? nota") de propósito: confirmado
+    // que [InlineData] não converte literais int/double para decimal? (só o "null" literal
+    // funciona) — o xUnit lança ArgumentException na invocação ("Object of type 'System.Int32'
+    // cannot be converted to type 'System.Nullable`1[System.Decimal]'"), não falha o teste com
+    // uma mensagem clara. Se algum caso de Nota == null precisar entrar nesses Theory no
+    // futuro, adicione um [Fact] separado (como NotaAusente_DevePassar acima) em vez de mudar a
+    // assinatura para decimal? — issue #80.
     [Theory]
     [InlineData(0)]   // limite inferior inclusivo
     [InlineData(5)]
@@ -48,5 +56,61 @@ public class FeedbackDtoValidatorTests
         var erro = Assert.Single(result.Errors);
         Assert.Equal(nameof(FeedbackDto.Nota), erro.PropertyName);
         Assert.Equal(MensagemEsperada, erro.ErrorMessage);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void FeedbackVazio_DeveFalhar(string? feedback)
+    {
+        var dto = DtoComNota(8);
+        dto.Feedback = feedback!;
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(FeedbackDto.Feedback)
+                                         && e.ErrorMessage == "O feedback é obrigatório.");
+    }
+
+    [Fact]
+    public void FeedbackComExatamente2000Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de Entrega.Feedback ([MaxLength(2000)]).
+        var dto = DtoComNota(8);
+        dto.Feedback = new string('a', 2000);
+
+        var result = _validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void FeedbackComMaisDe2000Caracteres_DeveFalhar()
+    {
+        var dto = DtoComNota(8);
+        dto.Feedback = new string('a', 2001);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(FeedbackDto.Feedback)
+                                         && e.ErrorMessage == "O feedback deve ter no máximo 2000 caracteres.");
+    }
+
+    [Fact]
+    public void FeedbackDentroDoLimiteCru_MasQueExpandeAoSanitizar_DeveFalhar()
+    {
+        // Achado A10-1 da revisão de segurança — ver PropostaTccDtoValidatorTests para o
+        // raciocínio completo (HtmlSanitizer codifica "&" em "&amp;", 5x maior).
+        var dto = DtoComNota(8);
+        dto.Feedback = new string('&', 2000);
+
+        var result = _validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(FeedbackDto.Feedback)
+                                         && e.ErrorMessage == "O feedback deve ter no máximo 2000 caracteres.");
     }
 }

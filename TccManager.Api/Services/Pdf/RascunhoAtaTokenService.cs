@@ -1,7 +1,6 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TccManager.Api.Data;
+using TccManager.Api.Services.Auth;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Services.Pdf;
@@ -29,17 +28,14 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         // a invariante "no máximo 1 token ativo por par" (ver docs/dados, seção 3.1).
         await RevogarAtivosSemSalvarAsync(bancaId, membroExternoId);
 
-        // CSPRNG (não Guid.NewGuid): o token é uma credencial de portador, precisa de
-        // garantia de imprevisibilidade criptográfica, não apenas unicidade — mesmo
-        // raciocínio já usado em AuthTokenService para o refresh token.
-        var tokenBruto = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var tokenBruto = OpaqueTokenHelper.GerarTokenBruto();
         var agora = DateTime.UtcNow;
 
         var novoToken = new RascunhoAtaToken
         {
             BancaId = bancaId,
             MembroExternoId = membroExternoId,
-            TokenHash = CalcularHash(tokenBruto),
+            TokenHash = OpaqueTokenHelper.CalcularHash(tokenBruto),
             CreatedAtUtc = agora,
             ExpiresAtUtc = banca.DataHora
         };
@@ -50,9 +46,51 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         return tokenBruto;
     }
 
+    public async Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds)
+    {
+        var ids = membroExternoIds.ToList();
+        if (ids.Count == 0)
+            return new Dictionary<int, string>();
+
+        // 1 SELECT cobrindo a revogação de TODOS os pares de uma vez, em vez de 1 por membro.
+        var tokensAtivos = await _context.RascunhoAtaTokens
+            .Where(t => t.BancaId == banca.Id && ids.Contains(t.MembroExternoId) && t.RevokedAtUtc == null)
+            .ToListAsync();
+
+        var agora = DateTime.UtcNow;
+        foreach (var token in tokensAtivos)
+        {
+            token.RevokedAtUtc = agora;
+        }
+
+        var tokensBrutos = new Dictionary<int, string>();
+
+        foreach (var membroExternoId in ids)
+        {
+            var tokenBruto = OpaqueTokenHelper.GerarTokenBruto();
+
+            _context.RascunhoAtaTokens.Add(new RascunhoAtaToken
+            {
+                BancaId = banca.Id,
+                MembroExternoId = membroExternoId,
+                TokenHash = OpaqueTokenHelper.CalcularHash(tokenBruto),
+                CreatedAtUtc = agora,
+                ExpiresAtUtc = banca.DataHora
+            });
+
+            tokensBrutos[membroExternoId] = tokenBruto;
+        }
+
+        // 1 SaveChangesAsync para as revogações e todos os tokens novos, em vez de 1 por
+        // membro.
+        await _context.SaveChangesAsync();
+
+        return tokensBrutos;
+    }
+
     public async Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto)
     {
-        var hash = CalcularHash(tokenBruto);
+        var hash = OpaqueTokenHelper.CalcularHash(tokenBruto);
 
         var token = await _context.RascunhoAtaTokens
             .Include(t => t.Banca)
@@ -60,20 +98,45 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
             .FirstOrDefaultAsync(t => t.TokenHash == hash);
 
         // Token inexistente ou revogado: resposta genérica (Invalido) para não vazar
-        // existência/estado de token a um chamador anônimo.
-        if (token?.Banca == null || token.RevokedAtUtc != null)
+        // existência/estado de token a um chamador anônimo. Quando o token foi encontrado
+        // (apenas revogado), BancaId/MembroExternoId ainda são preenchidos para permitir
+        // auditoria interna — nunca são expostos na resposta HTTP.
+        if (token?.Banca == null)
             return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Invalido };
+
+        if (token.RevokedAtUtc != null)
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.Invalido,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
         // Bloqueio definitivo (RNF-03): checado antes da expiração por data, para que o
         // resultado já registrado sempre prevaleça (410) mesmo quando a data da banca já
         // passou — os 3 pontos de acesso devem convergir no mesmo status nesse cenário.
         if (token.Banca.NotaFinal != null)
-            return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.ResultadoRegistrado, BancaId = token.BancaId };
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.ResultadoRegistrado,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
         if (DateTime.UtcNow >= token.Banca.DataHora)
-            return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Invalido };
+            return new RascunhoTokenValidacao
+            {
+                Status = RascunhoTokenValidacaoStatus.Invalido,
+                BancaId = token.BancaId,
+                MembroExternoId = token.MembroExternoId
+            };
 
-        return new RascunhoTokenValidacao { Status = RascunhoTokenValidacaoStatus.Valido, BancaId = token.BancaId };
+        return new RascunhoTokenValidacao
+        {
+            Status = RascunhoTokenValidacaoStatus.Valido,
+            BancaId = token.BancaId,
+            MembroExternoId = token.MembroExternoId
+        };
     }
 
     public async Task RevogarTokenAtualAsync(int bancaId, int membroExternoId)
@@ -82,6 +145,27 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
 
         if (alterouAlgum)
             await _context.SaveChangesAsync();
+    }
+
+    public async Task RevogarTodosTokensDoMembroAsync(int membroExternoId)
+    {
+        // Sem filtro de BancaId (diferente de RevogarAtivosSemSalvarAsync): um MembroExterno
+        // pode compor mais de uma banca ao mesmo tempo, e todos os tokens ativos dele
+        // precisam cair quando o e-mail é corrigido — não só o de uma banca específica.
+        var tokensAtivos = await _context.RascunhoAtaTokens
+            .Where(t => t.MembroExternoId == membroExternoId && t.RevokedAtUtc == null)
+            .ToListAsync();
+
+        if (tokensAtivos.Count == 0)
+            return;
+
+        var agora = DateTime.UtcNow;
+        foreach (var token in tokensAtivos)
+        {
+            token.RevokedAtUtc = agora;
+        }
+
+        await _context.SaveChangesAsync();
     }
 
     /// <summary>
@@ -106,11 +190,5 @@ public class RascunhoAtaTokenService : IRascunhoAtaTokenService
         }
 
         return true;
-    }
-
-    private static string CalcularHash(string valor)
-    {
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(valor));
-        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }

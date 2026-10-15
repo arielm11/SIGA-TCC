@@ -3,10 +3,12 @@ namespace TccManager.Api.Services.Storage;
 public class LocalStorageService : IStorageService
 {
     private readonly IWebHostEnvironment _env;
+    private readonly ILogger<LocalStorageService> _logger;
 
-    public LocalStorageService(IWebHostEnvironment env)
+    public LocalStorageService(IWebHostEnvironment env, ILogger<LocalStorageService> logger)
     {
         _env = env;
+        _logger = logger;
     }
 
     public async Task<string> UploadAsync(
@@ -25,9 +27,35 @@ public class LocalStorageService : IStorageService
         var fileName = $"{Guid.NewGuid()}_{nomeSaneado}";
         var filePath = Path.Combine(uploadsFolder, fileName);
 
-        await using (var stream = new FileStream(filePath, FileMode.Create))
+        try
         {
-            await conteudo.CopyToAsync(stream, cancellationToken);
+            await using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await conteudo.CopyToAsync(stream, cancellationToken);
+            }
+        }
+        catch (Exception)
+        {
+            // Issue #97 (achado A06-2): a compensação de upload órfão dos controllers
+            // (CompensacaoUploadOrfao) só cobre falha DEPOIS que UploadAsync retorna — se a
+            // própria escrita falhar no meio (cliente desconecta, disco cheio, IOException),
+            // o controller nunca chega a ter um "caminho" para compensar, e o arquivo parcial
+            // ficaria órfão aqui dentro. Best-effort, nunca mascara a exceção original: só
+            // tenta apagar o que foi escrito até agora e relança.
+            try
+            {
+                if (File.Exists(filePath))
+                    File.Delete(filePath);
+            }
+            catch (Exception exLimpeza)
+            {
+                _logger.LogWarning(
+                    exLimpeza,
+                    "Falha ao remover arquivo parcial após erro de escrita em UploadAsync. Categoria: {Categoria}",
+                    pastaCategoria);
+            }
+
+            throw;
         }
 
         return $"/uploads/{pastaCategoria}/{fileName}";
@@ -40,15 +68,7 @@ public class LocalStorageService : IStorageService
 
     public Task DeleteAsync(string caminhoRelativo, CancellationToken cancellationToken = default)
     {
-        var webRootBase = Path.GetFullPath(ObterWebRootBase());
-        var uploadsDir = Path.Combine(webRootBase, "uploads");
-        var caminhoRelativoNormalizado = caminhoRelativo.TrimStart('/', '\\');
-        var caminhoCompleto = Path.GetFullPath(Path.Combine(webRootBase, caminhoRelativoNormalizado));
-
-        // Confina a exclusão à pasta de uploads: rejeita qualquer ".." que escape
-        // dela, mesmo que caminhoRelativo venha de uma fonte não confiável no futuro.
-        if (!caminhoCompleto.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-            throw new InvalidOperationException("Caminho fora do diretório de uploads.");
+        var caminhoCompleto = ResolverCaminhoConfinado(caminhoRelativo);
 
         if (File.Exists(caminhoCompleto))
             File.Delete(caminhoCompleto);
@@ -56,9 +76,44 @@ public class LocalStorageService : IStorageService
         return Task.CompletedTask;
     }
 
+    public Task<Stream?> AbrirLeituraAsync(string caminhoRelativo, CancellationToken cancellationToken = default)
+    {
+        var caminhoCompleto = ResolverCaminhoConfinado(caminhoRelativo);
+
+        if (!File.Exists(caminhoCompleto))
+            return Task.FromResult<Stream?>(null);
+
+        Stream stream = new FileStream(
+            caminhoCompleto,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 4096,
+            useAsync: true);
+
+        return Task.FromResult<Stream?>(stream);
+    }
+
     private string ObterWebRootBase()
     {
         return _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+    }
+
+    // Resolve o caminho relativo persistido em um caminho físico absoluto, confinado à
+    // pasta de uploads: rejeita qualquer ".." que escape dela, mesmo que caminhoRelativo
+    // venha de uma fonte não confiável no futuro (compartilhado por DeleteAsync e
+    // AbrirLeituraAsync — mesma checagem, um único ponto de verdade).
+    private string ResolverCaminhoConfinado(string caminhoRelativo)
+    {
+        var webRootBase = Path.GetFullPath(ObterWebRootBase());
+        var uploadsDir = Path.Combine(webRootBase, "uploads");
+        var caminhoRelativoNormalizado = caminhoRelativo.TrimStart('/', '\\');
+        var caminhoCompleto = Path.GetFullPath(Path.Combine(webRootBase, caminhoRelativoNormalizado));
+
+        if (!caminhoCompleto.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidOperationException("Caminho fora do diretório de uploads.");
+
+        return caminhoCompleto;
     }
 
     private static string ObterNomePasta(CategoriaArquivo categoria) => categoria switch

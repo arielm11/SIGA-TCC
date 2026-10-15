@@ -4,9 +4,27 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Issue #94 (achado A03-4): reativado agora que o repositório fixa a versão do SDK via
+         global.json (rollForward: latestFeature a partir de 9.0.100) — a causa raiz do
+         problema original (o SDK do Blazor WebAssembly injeta Microsoft.NET.ILLink.Tasks e
+         Microsoft.NET.Sdk.WebAssembly.Pack com a versão vindo do SDK instalado, então o lock
+         quebrava sempre que a versão do SDK da máquina/runner mudasse) deixa de se aplicar
+         dentro da mesma feature band. Antes, este projeto dependia implicitamente do
+         ProjectReference de TccManager.Tests para ter cobertura de hash das dependências —
+         sem sinal nenhum no CI se essa referência algum dia fosse removida. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Achado CI 2026-10-14: mesmo dentro da mesma feature band (global.json, issue #94/A03-4),
+         um patch do SDK no runner trocou a versão de Microsoft.NET.ILLink.Tasks e
+         Microsoft.NET.Sdk.WebAssembly.Pack injetadas implicitamente pelo SDK do Blazor
+         WebAssembly (9.0.20 -> 9.0.21), quebrando o restore em modo locked (NU1004) — a
+         suposição de que a feature band sozinha bastava para estabilidade do lock estava
+         incompleta. Fixa as duas versões explicitamente para não depender de qual patch exato
+         do SDK o ambiente tem instalado. -->
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="9.0.21" />
+    <PackageReference Include="Microsoft.NET.Sdk.WebAssembly.Pack" Version="9.0.21" />
     <PackageReference Include="Blazored.LocalStorage" Version="4.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.4" />

@@ -23,7 +23,66 @@ public class AppDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Usuario>().ToTable("usuarios");
+        modelBuilder.Entity<Usuario>(entity =>
+        {
+            entity.ToTable("usuarios");
+
+            // Reforça no banco a invariante de e-mail único por usuário — ver
+            // UsuarioController.CreateUsuario/UpdateUsuario, que já validam isso na aplicação.
+            entity.HasIndex(u => u.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<Entrega>(entity =>
+        {
+            // Reforça no banco a invariante "no máximo 1 entrega FINAL NÃO REJEITADA por
+            // TCC" (RN03 + issue #81), como backstop atômico ao pre-check de aplicação em
+            // TccController.EnviarEntrega — que sozinho não impede duas requisições
+            // concorrentes de passarem no pre-check e gerarem duas entregas FINAL "ativas".
+            // TipoEntrega.Final == 1, StatusEntrega.Rejeitada == 2 (sem HasConversion, enums
+            // persistidos como int).
+            //
+            // Issue #81 (D2): o filtro passou de "[Tipo] = 1" para "[Tipo] = 1 AND [Status] <> 2"
+            // — o mecanismo de veredito por entrega permite que uma entrega Final rejeitada
+            // saia do índice para o aluno poder enviar uma nova Final no lugar (ver
+            // docs/dados/2026-08-30-reprovacao-durante-orientacao.md, seção 3). `<>` (e não
+            // `IN (0, 1)`) foi validado empiricamente contra SQL Server real e é mais robusto
+            // a um futuro valor de enum "ativo" adicional. O predicado precisa ser mantido em
+            // paridade com o pre-check de TccController.EnviarEntrega (D6) — essa igualdade é
+            // a invariante central da issue.
+            //
+            // Substitui o índice não-único de convenção (FK em TccId): o EF Core não
+            // suporta dois índices distintos sobre o mesmo conjunto de propriedades no
+            // Fluent API (a segunda definição sempre sobrescreve a primeira no modelo,
+            // mesmo com HasDatabaseName diferente) — trade-off aceito, não bloqueante,
+            // registrado em docs/implementacao.
+            entity.HasIndex(e => e.TccId)
+                .IsUnique()
+                .HasFilter("[Tipo] = 1 AND [Status] <> 2")
+                .HasDatabaseName("UX_Entregas_TccId_Final");
+        });
+
+        modelBuilder.Entity<Tcc>(entity =>
+        {
+            // Issue #145 (achado B11): reforça no banco a invariante "no máximo 1 TCC ativo
+            // por Aluno" (TccController.SubmeterProposta já checa isso em AnyAsync, mas
+            // sozinho não impede duas requisições concorrentes de passarem no pre-check e
+            // criarem 2 TCCs ativos para o mesmo Aluno). StatusTcc.Reprovado == 2 (sem
+            // HasConversion, enum persistido como int) — único status que permite nova
+            // submissão.
+            entity.HasIndex(t => t.AlunoId)
+                .IsUnique()
+                .HasFilter("[Status] <> 2")
+                .HasDatabaseName("UX_Tccs_AlunoId_Ativo");
+        });
+
+        modelBuilder.Entity<Banca>(entity =>
+        {
+            // Issue #139 (achado M3): backstop atômico contra 2 bancas agendadas para o mesmo
+            // TCC — não há fluxo de reagendar/excluir Banca no sistema, então é 1:0..1 com
+            // Tcc, sem filtro. CoordenadorController.AgendarBanca trata a violação (2601/2627)
+            // devolvendo 409.
+            entity.HasIndex(b => b.TccId).IsUnique();
+        });
 
         modelBuilder.Entity<BancaAvaliador>()
             .HasOne(ba => ba.Professor)

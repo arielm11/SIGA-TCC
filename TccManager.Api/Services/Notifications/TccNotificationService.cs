@@ -7,6 +7,7 @@ using TccManager.Api.Services;
 using TccManager.Api.Services.Email;
 using TccManager.Api.Services.Pdf;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Formatting;
 
 namespace TccManager.Api.Services.Notifications;
 
@@ -33,6 +34,16 @@ public class TccNotificationService : ITccNotificationService
     private const string BlocoAcessoIndisponivel =
         "<p style=\"color:#666; font-size: 13px;\">Esta mensagem é apenas informativa; o rascunho da ata fica disponível somente para o Coordenador e os avaliadores da banca.</p>";
 
+    /// <summary>
+    /// Issue #81 (D11): preenchido em {{BlocoReenvio}} de entrega-rejeitada.html apenas
+    /// quando a entrega rejeitada é do tipo Final — é o aviso de que o ciclo de entregas
+    /// reabriu e o aluno já pode enviar uma nova versão final. Vazio para entregas Parciais
+    /// rejeitadas, que não têm efeito de sistema (mesmo precedente de BlocoAcessoRascunho em
+    /// banca-agendada.html).
+    /// </summary>
+    private const string BlocoReenvioFinal =
+        "<p style=\"background-color:#fff8e1; border-left:3px solid #f9a825; padding:8px 12px;\"><strong>O ciclo de entregas foi reaberto.</strong> Acesse o SIGA-TCC para enviar uma nova versão final com as correções solicitadas.</p>";
+
     public TccNotificationService(
         AppDbContext context,
         IEmailTemplateRenderer renderer,
@@ -54,6 +65,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .Include(t => t.Orientador)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
@@ -87,6 +99,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
 
@@ -114,11 +127,47 @@ public class TccNotificationService : ITccNotificationService
         }
     }
 
+    public async Task NotificarPropostaSolicitadaAsync(int tccId)
+    {
+        try
+        {
+            var tcc = await _context.Tccs
+                .AsNoTracking()
+                .Include(t => t.Aluno)
+                .Include(t => t.OrientadorSolicitado)
+                .FirstOrDefaultAsync(t => t.Id == tccId);
+
+            if (tcc?.OrientadorSolicitado == null)
+            {
+                _logger.LogWarning("NotificarPropostaSolicitadaAsync: Tcc {TccId} ou professor solicitado não encontrado.", tccId);
+                return;
+            }
+
+            var destinatarios = ColetarEmails(("Professor solicitado", tcc.OrientadorSolicitado.Email));
+            if (destinatarios.Count == 0) return;
+
+            var corpo = _renderer.Render("proposta-solicitada", new Dictionary<string, string>
+            {
+                ["NomeProfessor"] = Codificar(tcc.OrientadorSolicitado.Nome),
+                ["NomeAluno"] = Codificar(tcc.Aluno?.Nome),
+                ["TituloTcc"] = Codificar(tcc.Titulo),
+                ["LinkDashboard"] = WebUtility.HtmlEncode(MontarLinkDashboardProfessor())
+            });
+
+            Enfileirar(destinatarios, "Nova proposta de TCC aguardando sua decisão", corpo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao preparar notificação de proposta solicitada para o Tcc {TccId}.", tccId);
+        }
+    }
+
     public async Task NotificarBancaAgendadaAsync(int bancaId)
     {
         try
         {
             var banca = await _context.Banca
+                .AsNoTracking()
                 .Include(b => b.Tcc!).ThenInclude(t => t.Aluno)
                 .Include(b => b.Tcc!).ThenInclude(t => t.Orientador)
                 .Include(b => b.Avaliadores).ThenInclude(a => a.Professor)
@@ -148,6 +197,36 @@ public class TccNotificationService : ITccNotificationService
 
             var linkAtalhoInterno = MontarLinkAtalhoInterno();
 
+            // Issue #150 (achado C2): membros externos com e-mail válido são coletados aqui
+            // e os tokens são gerados para todos de uma vez (GerarTokensEmLoteAsync), em vez
+            // de 1 chamada a GerarTokenAsync por membro dentro do loop abaixo — cada chamada
+            // individual custava 3 round-trips (SELECT Banca redundante + SELECT de
+            // revogação + SaveChanges próprio); uma banca com 3 avaliadores externos chegava
+            // a 9 round-trips sequenciais.
+            var membrosExternosComEmail = banca.Avaliadores
+                .Where(a => a.MembroExternoId.HasValue && a.MembroExterno != null && !string.IsNullOrWhiteSpace(a.MembroExterno.Email))
+                .Select(a => (Id: a.MembroExternoId!.Value, Email: a.MembroExterno!.Email))
+                .ToList();
+
+            IReadOnlyDictionary<int, string> tokensPorMembro;
+            try
+            {
+                tokensPorMembro = await _rascunhoTokenService.GerarTokensEmLoteAsync(
+                    banca, membrosExternosComEmail.Select(m => m.Id));
+            }
+            catch (Exception exToken)
+            {
+                // Defesa em profundidade: falha ao gerar os tokens não deve impedir o e-mail
+                // informativo de banca agendada para nenhum destinatário — todos os membros
+                // externos recebem o bloco "sem acesso" neste cenário (trade-off aceito da
+                // mudança para lote: antes, a falha de UM membro não afetava os demais).
+                _logger.LogWarning(
+                    exToken,
+                    "Falha ao gerar tokens de rascunho em lote para a Banca {BancaId}; e-mails serão enviados sem link de acesso.",
+                    bancaId);
+                tokensPorMembro = new Dictionary<int, string>();
+            }
+
             foreach (var avaliador in banca.Avaliadores)
             {
                 if (avaliador.ProfessorId.HasValue && avaliador.Professor != null)
@@ -164,26 +243,11 @@ public class TccNotificationService : ITccNotificationService
                     if (string.IsNullOrWhiteSpace(avaliador.MembroExterno.Email))
                         continue;
 
-                    // Token gerado aqui dentro: o valor bruto nunca precisa cruzar
-                    // fronteiras de camada, vive só neste escopo até compor o link do
-                    // e-mail (ver docs/arquitetura/2026-07-13-pdf-ata-rascunho-etapa2.md, seção 7.1).
-                    try
-                    {
-                        var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(bancaId, avaliador.MembroExternoId.Value);
-                        var link = MontarLinkRascunhoExterno(tokenBruto);
-                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoExterno(link)));
-                    }
-                    catch (Exception exToken)
-                    {
-                        // Defesa em profundidade: falha ao gerar o token de um membro não
-                        // deve impedir o e-mail informativo de banca agendada para ele nem
-                        // para os demais destinatários.
-                        _logger.LogWarning(
-                            exToken,
-                            "Falha ao gerar token de rascunho para MembroExterno {MembroExternoId} na Banca {BancaId}; e-mail será enviado sem link de acesso.",
-                            avaliador.MembroExternoId, bancaId);
-                        envios.Add((avaliador.MembroExterno.Email, BlocoAcessoIndisponivel));
-                    }
+                    var blocoAcesso = tokensPorMembro.TryGetValue(avaliador.MembroExternoId.Value, out var tokenBruto)
+                        ? BlocoAcessoExterno(MontarLinkRascunhoExterno(tokenBruto))
+                        : BlocoAcessoIndisponivel;
+
+                    envios.Add((avaliador.MembroExterno.Email, blocoAcesso));
                 }
                 else
                 {
@@ -242,6 +306,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var entrega = await _context.Entregas
+                .AsNoTracking()
                 .Include(e => e.Tcc!).ThenInclude(t => t.Aluno)
                 .FirstOrDefaultAsync(e => e.Id == entregaId);
 
@@ -260,7 +325,10 @@ public class TccNotificationService : ITccNotificationService
                 ["TituloTcc"] = Codificar(entrega.Tcc.Titulo),
                 ["TituloEntrega"] = Codificar(entrega.Titulo),
                 ["Feedback"] = Codificar(entrega.Feedback) is { Length: > 0 } feedback ? feedback : "Sem comentários adicionais.",
-                ["Nota"] = entrega.Nota.HasValue ? entrega.Nota.Value.ToString("0.0") : "Não informada"
+                // NotaFormatter (não CurrentCulture): e-mail institucional em português,
+                // "87,5" é o formato correto independente da cultura do SO onde a API roda —
+                // ver comentário completo em AtaPdfDocument.cs (achado do CI da issue #75).
+                ["Nota"] = entrega.Nota.HasValue ? NotaFormatter.Formatar(entrega.Nota.Value) : "Não informada"
             });
 
             Enfileirar(destinatarios, "Feedback registrado na sua entrega", corpo);
@@ -276,6 +344,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var tcc = await _context.Tccs
+                .AsNoTracking()
                 .Include(t => t.Aluno)
                 .FirstOrDefaultAsync(t => t.Id == tccId);
 
@@ -310,6 +379,7 @@ public class TccNotificationService : ITccNotificationService
         try
         {
             var banca = await _context.Banca
+                .AsNoTracking()
                 .Include(b => b.Tcc!).ThenInclude(t => t.Aluno)
                 .Include(b => b.Tcc!).ThenInclude(t => t.Orientador)
                 .FirstOrDefaultAsync(b => b.Id == bancaId);
@@ -333,7 +403,8 @@ public class TccNotificationService : ITccNotificationService
             {
                 ["NomeAluno"] = Codificar(banca.Tcc.Aluno?.Nome),
                 ["TituloTcc"] = Codificar(banca.Tcc.Titulo),
-                ["NotaFinal"] = banca.NotaFinal.HasValue ? banca.NotaFinal.Value.ToString("0.0") : "Não informada"
+                // NotaFormatter — ver comentário em NotificarFeedbackRegistradoAsync.
+                ["NotaFinal"] = banca.NotaFinal.HasValue ? NotaFormatter.Formatar(banca.NotaFinal.Value) : "Não informada"
             };
 
             if (!aprovado)
@@ -361,7 +432,7 @@ public class TccNotificationService : ITccNotificationService
     {
         try
         {
-            var membro = await _context.MembrosExternos.FirstOrDefaultAsync(m => m.Id == membroExternoId);
+            var membro = await _context.MembrosExternos.AsNoTracking().FirstOrDefaultAsync(m => m.Id == membroExternoId);
 
             if (membro == null || string.IsNullOrWhiteSpace(membro.Email))
             {
@@ -387,14 +458,64 @@ public class TccNotificationService : ITccNotificationService
         }
     }
 
+    public async Task NotificarVeredictoEntregaAsync(int entregaId, bool aprovada)
+    {
+        try
+        {
+            var entrega = await _context.Entregas
+                .AsNoTracking()
+                .Include(e => e.Tcc!).ThenInclude(t => t.Aluno)
+                .FirstOrDefaultAsync(e => e.Id == entregaId);
+
+            if (entrega?.Tcc == null)
+            {
+                _logger.LogWarning("NotificarVeredictoEntregaAsync: Entrega {EntregaId} ou Tcc associado não encontrado.", entregaId);
+                return;
+            }
+
+            var destinatarios = ColetarEmails(("Aluno", entrega.Tcc.Aluno?.Email));
+            if (destinatarios.Count == 0) return;
+
+            var chaveTemplate = aprovada ? "entrega-aprovada" : "entrega-rejeitada";
+            var assunto = aprovada ? "Entrega aprovada pelo orientador" : "Entrega rejeitada pelo orientador";
+
+            var valores = new Dictionary<string, string>
+            {
+                ["NomeAluno"] = Codificar(entrega.Tcc.Aluno?.Nome),
+                ["TituloTcc"] = Codificar(entrega.Tcc.Titulo),
+                ["TituloEntrega"] = Codificar(entrega.Titulo)
+            };
+
+            if (!aprovada)
+            {
+                valores["Feedback"] = Codificar(entrega.Feedback) is { Length: > 0 } feedback ? feedback : "Não informado";
+                // D11: placeholder {{BlocoReenvio}} dentro de entrega-rejeitada.html — só
+                // preenchido quando a entrega rejeitada é a Final (é ela que reabre o ciclo
+                // de entregas, ver TccController.EnviarEntrega/D6); vazio para Parcial, que
+                // não tem nenhum efeito de sistema.
+                valores["BlocoReenvio"] = entrega.Tipo == TipoEntrega.Final ? BlocoReenvioFinal : string.Empty;
+            }
+
+            var corpo = _renderer.Render(chaveTemplate, valores);
+
+            Enfileirar(destinatarios, assunto, corpo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Falha ao preparar notificação de veredito de entrega para a Entrega {EntregaId}.", entregaId);
+        }
+    }
+
     private async Task<IEnumerable<(string Papel, string? Email)>> ObterCandidatosCoordenadoresAsync()
     {
         var coordenadores = await _context.Usuarios
             .Where(u => u.Tipo == TipoUsuario.Coordenador && u.Ativo)
-            .Select(u => new { u.Nome, u.Email })
+            .Select(u => new { u.Id, u.Email })
             .ToListAsync();
 
-        return coordenadores.Select(c => ($"Coordenador {c.Nome}", (string?)c.Email));
+        // "Papel" só serve para o log de auditoria de ColetarEmails quando o e-mail está
+        // vazio/inválido — usa o Id, nunca o nome (PII), mesma disciplina do resto do projeto.
+        return coordenadores.Select(c => ($"Coordenador {c.Id}", (string?)c.Email));
     }
 
     private string MontarLinkRascunhoExterno(string tokenBruto) =>
@@ -402,6 +523,11 @@ public class TccNotificationService : ITccNotificationService
 
     private string MontarLinkAtalhoInterno() =>
         $"{_appUrls.ClientBaseUrl?.TrimEnd('/')}/avaliador/convites";
+
+    // Issue #112 (D8/P8 da arquitetura): rota do Client onde a lista de "propostas aguardando
+    // sua decisão" vai morar (Professor/Dashboard.razor) — mesmo padrão de MontarLinkAtalhoInterno.
+    private string MontarLinkDashboardProfessor() =>
+        $"{_appUrls.ClientBaseUrl?.TrimEnd('/')}/professor/dashboard";
 
     private static string BlocoAcessoExterno(string link) =>
         $"<p><a href=\"{WebUtility.HtmlEncode(link)}\">Acessar rascunho da ata</a></p>";

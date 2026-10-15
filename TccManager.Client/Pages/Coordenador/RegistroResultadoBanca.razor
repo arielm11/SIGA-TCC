@@ -3,9 +3,10 @@
 @using TccManager.Shared.DTOs
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
-@inject IJSRuntime JSRuntime
+@inject IArquivoDownloadService ArquivoDownloadService
 @inject DialogService DialogService
 @inject NotificationService NotificationService
+@using TccManager.Client.Services
 
 <PageTitle>Lançamento de Nota Final e Ata</PageTitle>
 
@@ -39,19 +40,20 @@
                         @banca.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="BancaPendenteDto" Title="Ação" Sortable="false" Filterable="false" Width="420px" TextAlign="TextAlign.End">
+                <RadzenDataGridColumn TItem="BancaPendenteDto" Title="Ação" Sortable="false" Filterable="false" Width="440px" TextAlign="TextAlign.End">
                     <Template Context="banca">
-                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center">
+                        <RadzenStack Orientation="Orientation.Horizontal" JustifyContent="JustifyContent.End" Gap="0.5rem" AlignItems="AlignItems.Center"
+                                     Wrap="FlexWrap.Wrap" style="width: 100%;">
                             <RadzenButton Text="Rascunho" Icon="description" ButtonStyle="ButtonStyle.Secondary" Variant="Variant.Outlined" Size="ButtonSize.Small"
-                                          IsBusy="@(bancaIdBaixandoRascunho == banca.TccId)" BusyText="Baixando..."
-                                          Disabled="@(bancaIdBaixandoRascunho == banca.TccId)"
-                                          Click="@(() => BaixarAtaRascunho(banca.TccId))" />
+                                          IsBusy="@(bancaIdBaixandoRascunho == banca.BancaId)" BusyText="Baixando..."
+                                          Disabled="@(bancaIdBaixandoRascunho == banca.BancaId)"
+                                          Click="@(() => BaixarAtaRascunho(banca.BancaId))" />
 
                             @if (banca.MembrosExternos.Any())
                             {
                                 <RadzenSplitButton Text="Reenviar Rascunho" Icon="forward_to_inbox" ButtonStyle="ButtonStyle.Warning"
                                                     Variant="Variant.Outlined" Size="ButtonSize.Small" AlwaysOpenPopup="true"
-                                                    Click="@(args => ReenviarRascunho(banca.TccId, args))">
+                                                    Click="@(args => ReenviarRascunho(banca.BancaId, args))">
                                     @foreach (var membro in banca.MembrosExternos)
                                     {
                                         <RadzenSplitButtonItem Text="@membro.Nome" Value="@membro.MembroExternoId.ToString()"
@@ -61,7 +63,7 @@
                             }
 
                             <RadzenButton Text="Registrar Resultado" Icon="upload_file" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
-                                          Click="@(() => AbrirModal(banca.TccId, banca.NomeAluno))" />
+                                          Click="@(() => AbrirModal(banca.BancaId, banca.NomeAluno))" />
                         </RadzenStack>
                     </Template>
                 </RadzenDataGridColumn>
@@ -89,6 +91,14 @@
         {
             bancasPendentes = await Http.GetFromJsonAsync<List<BancaPendenteDto>>("api/coordenador/bancas-pendentes-resultado") ?? new();
         }
+        catch
+        {
+            // Issue #75: sem este catch, uma falha de HTTP (rede, 401, 500) propagava como
+            // exceção não tratada a partir de OnInitializedAsync, derrubando a renderização
+            // inteira da página em vez de mostrar um erro — mesmo padrão usado em
+            // Dashboard.CarregarDados e ConvitesBanca.CarregarConvites, que já tratavam isso.
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao buscar as bancas pendentes de resultado.");
+        }
         finally { carregando = false; }
     }
 
@@ -110,25 +120,18 @@
         bancaIdBaixandoRascunho = bancaId;
         try
         {
-            var response = await Http.GetAsync($"api/coordenador/banca/{bancaId}/ata-rascunho-pdf");
+            var response = await ArquivoDownloadService.BaixarAsync(
+                Http, $"api/coordenador/banca/{bancaId}/ata-rascunho-pdf", $"ata-rascunho-{bancaId}.pdf", "application/pdf");
 
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                var base64 = Convert.ToBase64String(bytes);
-                await JSRuntime.InvokeVoidAsync("downloadFileFromBytes", $"ata-rascunho-{bancaId}.pdf", "application/pdf", base64);
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao baixar o rascunho da ata: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao baixar o rascunho da ata: {erro}");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao baixar o rascunho da ata.");
         }
         finally { bancaIdBaixandoRascunho = null; }
     }
@@ -145,25 +148,17 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Rascunho reenviado",
-                    Detail = $"Novo link de acesso ao rascunho enviado para {nomeMembro}.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Rascunho reenviado", $"Novo link de acesso ao rascunho enviado para {nomeMembro}.");
             }
             else
             {
                 var erro = await response.Content.ReadAsStringAsync();
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = $"Erro ao reenviar o rascunho: {erro}",
-                    Duration = 6000
-                });
+                NotificationService.NotificarErro("Erro", $"Erro ao reenviar o rascunho: {erro}");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao reenviar o rascunho.");
         }
         finally { membroExternoIdReenviando = null; }
     }

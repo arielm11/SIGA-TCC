@@ -1,9 +1,11 @@
 @page "/coordenador/dashboard"
 @using Microsoft.AspNetCore.Authorization
 @using TccManager.Shared.DTOs
+@using TccManager.Client.Services
 @attribute [Authorize(Roles = "Coordenador")]
 @inject HttpClient Http
 @inject NotificationService NotificationService
+@inject DialogService DialogService
 
 <PageTitle>Painel da Coordenação</PageTitle>
 
@@ -74,10 +76,23 @@
                         @tcc.DataCriacao.ToLocalTime().ToString("dd/MM/yyyy")
                     </Template>
                 </RadzenDataGridColumn>
-                <RadzenDataGridColumn TItem="TccResumoDto" Title="Ação" Sortable="false" Filterable="false" Width="160px">
+                <RadzenDataGridColumn TItem="TccResumoDto" Title="Resumo" Sortable="false" Filterable="false" Width="170px">
+                    <Template Context="tcc">
+                        <RadzenButton Text="@(propostaResumoExpandidoId == tcc.Id ? "Ocultar" : "Ver Resumo")" Icon="visibility"
+                                      ButtonStyle="ButtonStyle.Info" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => AlternarResumo(tcc.Id))" />
+                        @if (propostaResumoExpandidoId == tcc.Id)
+                        {
+                            <RadzenText TextStyle="TextStyle.Body2" style="white-space: pre-line;" class="rz-mt-2 rz-mb-0">@tcc.Resumo</RadzenText>
+                        }
+                    </Template>
+                </RadzenDataGridColumn>
+                <RadzenDataGridColumn TItem="TccResumoDto" Title="Ação" Sortable="false" Filterable="false" Width="220px">
                     <Template Context="tcc">
                         <RadzenButton Text="Designar" Icon="person_add" ButtonStyle="ButtonStyle.Primary" Size="ButtonSize.Small"
-                                      Click="@(() => AbrirDesignacao(tcc))" />
+                                      class="rz-me-1" Click="@(() => AbrirDesignacao(tcc))" />
+                        <RadzenButton Text="Rejeitar" Icon="cancel" ButtonStyle="ButtonStyle.Danger" Variant="Variant.Outlined" Size="ButtonSize.Small"
+                                      Click="@(() => AbrirRejeicao(tcc))" />
                     </Template>
                 </RadzenDataGridColumn>
             </Columns>
@@ -123,6 +138,7 @@
 
     private TccResumoDto? tccSelecionado;
     private int professorSelecionadoId = 0;
+    private int? propostaResumoExpandidoId;
 
     protected override async Task OnInitializedAsync()
     {
@@ -135,7 +151,8 @@
         try
         {
             stats = await Http.GetFromJsonAsync<DashboardCoordenadorDto>("api/coordenador/dashboard-stats");
-            pendentes = await Http.GetFromJsonAsync<List<TccResumoDto>>("api/coordenador/propostas-pendentes");
+            var pendentesPaginado = await Http.GetFromJsonAsync<PagedResult<TccResumoDto>>($"api/coordenador/propostas-pendentes?pageSize={PaginacaoQuery.MaxPageSize}");
+            pendentes = pendentesPaginado?.Items;
             var professoresPaginado = await Http.GetFromJsonAsync<PagedResult<ProfessorResumoDto>>($"api/coordenador/professores?pageSize={PaginacaoQuery.MaxPageSize}");
             professores = professoresPaginado?.Items;
             professoresOptions = (professores ?? new()).Select(p => new ProfessorOpcao
@@ -146,15 +163,48 @@
         }
         catch
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Erro",
-                Detail = "Erro ao carregar dados do painel.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Erro", "Erro ao carregar dados do painel.");
         }
         finally { carregando = false; }
+    }
+
+    private void AlternarResumo(int tccId)
+    {
+        propostaResumoExpandidoId = propostaResumoExpandidoId == tccId ? null : tccId;
+    }
+
+    // Issue #76 (D9): rejeição de proposta passa a ser exclusiva do Coordenador. Reutiliza o
+    // mesmo RejeitarPropostaDialog "burro" que existia em Pages/Professor/Dashboard.razor —
+    // devolve o motivo via DialogService.Close, e esta página faz o PUT.
+    private async Task AbrirRejeicao(TccResumoDto tcc)
+    {
+        var resultado = await DialogService.OpenAsync<RejeitarPropostaDialog>(
+            "Rejeitar Proposta",
+            new Dictionary<string, object?>(),
+            new DialogOptions { Width = "500px" });
+
+        if (resultado is string motivo && !string.IsNullOrWhiteSpace(motivo))
+        {
+            try
+            {
+                var payload = new RejeicaoDto { Motivo = motivo };
+                var response = await Http.PutAsJsonAsync($"api/coordenador/propostas/{tcc.Id}/rejeitar", payload);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    NotificationService.NotificarSucesso("Proposta rejeitada", "Proposta rejeitada com sucesso.");
+                    await CarregarDados(); // Recarrega KPIs e a lista
+                }
+                else
+                {
+                    NotificationService.NotificarErro("Erro", "Erro ao rejeitar a proposta.");
+                }
+            }
+            catch
+            {
+                NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao rejeitar a proposta.");
+            }
+        }
     }
 
     private void AbrirDesignacao(TccResumoDto tcc)
@@ -181,26 +231,18 @@
 
             if (response.IsSuccessStatusCode)
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Success,
-                    Summary = "Orientador designado",
-                    Detail = "Orientador designado! A proposta foi aprovada e o aluno será notificado.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarSucesso("Orientador designado", "Orientador designado! A proposta foi aprovada e o aluno será notificado.");
                 FecharDesignacao();
                 await CarregarDados(); // Recarrega KPIs e a lista
             }
             else
             {
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Erro",
-                    Detail = "Erro ao designar orientador.",
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Erro", "Erro ao designar orientador.");
             }
+        }
+        catch
+        {
+            NotificationService.NotificarErro("Erro de conexão", "Erro de conexão ao designar o orientador.");
         }
         finally { enviando = false; }
     }

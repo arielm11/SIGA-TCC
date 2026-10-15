@@ -15,4 +15,9 @@ public interface IStorageService
 
     // Remove o arquivo físico correspondente ao caminho relativo persistido.
     Task DeleteAsync(string caminhoRelativo, CancellationToken cancellationToken = default);
+
+    // Abre um stream de leitura para o arquivo físico correspondente ao caminho relativo
+    // persistido, para download autenticado via endpoint de API (nunca via UseStaticFiles).
+    // Devolve null quando o caminho é válido mas o arquivo físico não existe mais em disco.
+    Task<Stream?> AbrirLeituraAsync(string caminhoRelativo, CancellationToken cancellationToken = default);
 }

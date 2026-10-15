@@ -19,7 +19,7 @@ public class TokenService : ITokenService
 
     public (string Token, DateTime ExpiresAtUtc) GerarAccessToken(Usuario usuario)
     {
-        var key = Encoding.ASCII.GetBytes(_configuration["Jwt:Key"]!);
+        var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!);
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, usuario.Id.ToString()),

@@ -130,7 +130,9 @@ public class NotificacaoIntegracao_Tests
             { new StringContent((40.0m).ToString(CultureInfo.InvariantCulture)), "notaFinal" },
             { new StringContent("Não atingiu a nota mínima."), "motivoReprovacao" }
         };
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+        // Issue #83: "%PDF-" completo — a validação de magic bytes de RegistrarResultadoBanca
+        // rejeita o literal antigo de 4 bytes com 400, antes de qualquer e-mail ser enfileirado.
+        var pdfFake = new ByteArrayContent(ConteudoArquivoTeste.AssinaturaPdf);
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata.pdf");
 
@@ -177,7 +179,8 @@ public class NotificacaoIntegracao_Tests
         {
             { new StringContent((85.0m).ToString(CultureInfo.InvariantCulture)), "notaFinal" }
         };
-        var pdfFake = new ByteArrayContent(new byte[] { 0x25, 0x50, 0x44, 0x46 });
+        // Issue #83: ver comentário do teste de reprovação acima — assinatura "%PDF-" completa.
+        var pdfFake = new ByteArrayContent(ConteudoArquivoTeste.AssinaturaPdf);
         pdfFake.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         form.Add(pdfFake, "arquivoAta", "ata.pdf");
 

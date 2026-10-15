@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using TccManager.Api.Configuration;
+using TccManager.Api.Extensions;
 using TccManager.Api.Services.Pdf;
 
 namespace TccManager.Api.Controllers;
@@ -19,17 +20,43 @@ public class RascunhoAtaController : ControllerBase
     private readonly IRascunhoAtaTokenService _tokenService;
     private readonly IAtaPdfService _ataPdfService;
 
-    public RascunhoAtaController(IRascunhoAtaTokenService tokenService, IAtaPdfService ataPdfService)
+    // Categoria dedicada de auditoria — ver TccController para o motivo (MinimumLevel padrão
+    // do Serilog é Warning; "TccManager.Api.Auditoria" tem Override para Information).
+    private readonly ILogger _auditLogger;
+
+    public RascunhoAtaController(
+        IRascunhoAtaTokenService tokenService,
+        IAtaPdfService ataPdfService,
+        ILoggerFactory loggerFactory)
     {
         _tokenService = tokenService;
         _ataPdfService = ataPdfService;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("{token}")]
     [EnableRateLimiting(RateLimitingSetup.RascunhoPublicoPolicyName)]
-    public async Task<IActionResult> GetRascunhoPorToken(string token)
+    public async Task<IActionResult> GetRascunhoPorToken(string token, CancellationToken cancellationToken)
     {
         var validacao = await _tokenService.ValidarAsync(token);
+
+        // Auditoria de acesso: nunca o token em si (credencial de portador) nem o e-mail
+        // do membro externo — apenas os ids envolvidos e o desfecho da validação.
+        if (validacao.Status == RascunhoTokenValidacaoStatus.Invalido)
+        {
+            _auditLogger.LogWarning(
+                "Acesso ao rascunho da ata via token inválido/expirado. BancaId: {BancaId}, MembroExternoId: {MembroExternoId}",
+                validacao.BancaId,
+                validacao.MembroExternoId);
+        }
+        else
+        {
+            _auditLogger.LogInformation(
+                "Acesso ao rascunho da ata via token válido. BancaId: {BancaId}, MembroExternoId: {MembroExternoId}, Status: {Status}",
+                validacao.BancaId,
+                validacao.MembroExternoId,
+                validacao.Status);
+        }
 
         if (validacao.Status == RascunhoTokenValidacaoStatus.Invalido)
             return NotFound("Link inválido ou expirado.");
@@ -37,7 +64,7 @@ public class RascunhoAtaController : ControllerBase
         if (validacao.Status == RascunhoTokenValidacaoStatus.ResultadoRegistrado)
             return StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado; o rascunho não está mais disponível.");
 
-        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(validacao.BancaId);
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(validacao.BancaId, cancellationToken);
 
         // Servido inline (sem Content-Disposition: attachment) — o membro externo abre
         // o PDF direto no navegador a partir do link recebido por e-mail (RF-07).
@@ -45,7 +72,9 @@ public class RascunhoAtaController : ControllerBase
         {
             AtaPdfResultadoStatus.Sucesso => File(resultado.PdfBytes!, "application/pdf"),
             AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado; o rascunho não está mais disponível."),
+            AtaPdfResultadoStatus.DadosInconsistentes => this.ErroDadosInconsistentesAtaPdf(),
             _ => NotFound("Link inválido ou expirado.")
         };
     }
+
 }

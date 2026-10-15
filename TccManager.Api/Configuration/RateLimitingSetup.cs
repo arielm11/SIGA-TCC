@@ -1,19 +1,34 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using TccManager.Api.Logging;
 
 namespace TccManager.Api.Configuration;
 
 /// <summary>
-/// Políticas de rate limiting nomeadas "login" e "rascunho-publico": ambas usam
+/// Políticas de rate limiting nomeadas "login", "refresh" e "rascunho-publico": todas usam
 /// FixedWindowLimiter, particionado por IP do cliente (Connection.RemoteIpAddress —
 /// ambiente é localhost-only, sem proxy reverso, portanto não há tratamento de
-/// ForwardedHeaders/X-Forwarded-For) e o mesmo OnRejected (429 + Retry-After + log).
+/// ForwardedHeaders/X-Forwarded-For) e o mesmo OnRejected (429 + Retry-After + log). Essas
+/// três são pré-autenticação por natureza (login ainda não tem usuário; refresh e o
+/// rascunho público não exigem token de sessão), então IP é a partição correta para elas.
+///
+/// "geracao-pdf" e "listagem-paginada" são diferentes: os endpoints que as usam exigem
+/// autenticação, então são particionadas por usuário (Claim NameIdentifier), não por IP —
+/// ver o comentário na definição de cada uma.
 /// </summary>
 public static class RateLimitingSetup
 {
     public const string LoginPolicyName = "login";
+    public const string LogoutPolicyName = "logout";
+    public const string RefreshPolicyName = "refresh";
     public const string RascunhoPublicoPolicyName = "rascunho-publico";
+    public const string GeracaoPdfPolicyName = "geracao-pdf";
+    public const string ListagemPaginadaPolicyName = "listagem-paginada";
+    public const string TrocaSenhaPolicyName = "troca-senha";
+    public const string UploadPolicyName = "upload";
+    public const string PropostaPolicyName = "proposta";
 
     public static IServiceCollection ConfigureRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {
@@ -21,11 +36,99 @@ public static class RateLimitingSetup
         var loginWindowSeconds = configuration.GetValue<int?>("RateLimiting:Login:WindowSeconds") ?? 60;
         var loginQueueLimit = configuration.GetValue<int?>("RateLimiting:Login:QueueLimit") ?? 0;
 
+        // Issue #142 (achado M2): Logout usava a mesma política "login", compartilhando a
+        // cota — um atacante martelando /login podia bloquear o logout de usuários legítimos,
+        // e vice-versa. Logout não é superfície de força bruta (não aceita senha), então tem
+        // limite mais generoso, mesmo raciocínio de "refresh".
+        var logoutPermitLimit = configuration.GetValue<int?>("RateLimiting:Logout:PermitLimit") ?? 15;
+        var logoutWindowSeconds = configuration.GetValue<int?>("RateLimiting:Logout:WindowSeconds") ?? 60;
+        var logoutQueueLimit = configuration.GetValue<int?>("RateLimiting:Logout:QueueLimit") ?? 0;
+
+        // /refresh acontece em segundo plano com frequência maior que login manual
+        // (renovação silenciosa do cliente) — limite mais generoso que "login", mas
+        // ainda finito, para preservar o sinal de reuse-detection contra automação.
+        var refreshPermitLimit = configuration.GetValue<int?>("RateLimiting:Refresh:PermitLimit") ?? 15;
+        var refreshWindowSeconds = configuration.GetValue<int?>("RateLimiting:Refresh:WindowSeconds") ?? 60;
+        var refreshQueueLimit = configuration.GetValue<int?>("RateLimiting:Refresh:QueueLimit") ?? 0;
+
+        // Issue #88 (D9/RNF-02): endpoint anônimo que aceita senha (SenhaAtual/NovaSenha) por
+        // requisição — mesma classe de superfície de força bruta que "login", mesmo limite
+        // conservador, particionado por IP (pré-autenticação, sem usuário resolvido ainda).
+        var trocaSenhaPermitLimit = configuration.GetValue<int?>("RateLimiting:TrocaSenha:PermitLimit") ?? 5;
+        var trocaSenhaWindowSeconds = configuration.GetValue<int?>("RateLimiting:TrocaSenha:WindowSeconds") ?? 60;
+        var trocaSenhaQueueLimit = configuration.GetValue<int?>("RateLimiting:TrocaSenha:QueueLimit") ?? 0;
+
         // O membro externo pode legitimamente recarregar/reabrir o link do rascunho
         // (RF-04/RF-05) — janela um pouco mais folgada que a de "login".
         var rascunhoPermitLimit = configuration.GetValue<int?>("RateLimiting:RascunhoPublico:PermitLimit") ?? 20;
         var rascunhoWindowSeconds = configuration.GetValue<int?>("RateLimiting:RascunhoPublico:WindowSeconds") ?? 60;
         var rascunhoQueueLimit = configuration.GetValue<int?>("RateLimiting:RascunhoPublico:QueueLimit") ?? 0;
+
+        // Geração de PDF de ata (rascunho/final) sob demanda tem custo de CPU/memória não
+        // trivial (QuestPDF) — sem limite, um usuário autenticado poderia gerar o mesmo PDF
+        // repetidamente e degradar o servidor. Limite mais generoso que os anteriores por
+        // ser um endpoint autenticado (não anônimo), não uma superfície de força bruta.
+        var geracaoPdfPermitLimit = configuration.GetValue<int?>("RateLimiting:GeracaoPdf:PermitLimit") ?? 20;
+        var geracaoPdfWindowSeconds = configuration.GetValue<int?>("RateLimiting:GeracaoPdf:WindowSeconds") ?? 60;
+        var geracaoPdfQueueLimit = configuration.GetValue<int?>("RateLimiting:GeracaoPdf:QueueLimit") ?? 0;
+
+        // Fallback para requisição sem usuário autenticado (todos os endpoints desta
+        // política são [Authorize], então isso não deveria ser alcançável na prática — mas,
+        // se for, fica bem mais restritivo que o limite por usuário, e nunca compartilha a
+        // partição de um usuário legítimo).
+        var geracaoPdfPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:GeracaoPdf:PermitLimitAnonimo") ?? 5;
+
+        // Issue #74: endpoints de listagem paginada (professores, membros externos, bancas
+        // concluídas, dashboard do orientador, minhas entregas) não tinham rate limiting nem
+        // log de rejeição. O valor real desta política é limitar custo de CPU/banco por
+        // usuário e gerar sinal de log para investigação — não impedir enumeração completa
+        // do catálogo por si só (com MaxPageSize=100, 60 req/min ainda permite ler bases de
+        // porte pequeno/médio dentro de uma janela; ver achado da revisão de segurança,
+        // docs/seguranca/2026-08-27-paginacao-cancellation-rate-limiting.md). Limite bem mais
+        // generoso que "geracao-pdf" (listar é leve; paginação/navegação legítima pode
+        // disparar várias chamadas em sequência rápida), mas ainda finito.
+        var listagemPaginadaPermitLimit = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:PermitLimit") ?? 60;
+        var listagemPaginadaWindowSeconds = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:WindowSeconds") ?? 60;
+        var listagemPaginadaQueueLimit = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:QueueLimit") ?? 0;
+
+        // Mesmo raciocínio do fallback de "geracao-pdf": todos os endpoints desta política
+        // são [Authorize], então este ramo não deveria ser alcançável por uma requisição que
+        // chegue à ação — mas UseRateLimiter() roda antes de UseAuthorization() em
+        // Program.cs, então uma requisição SEM token válido ainda é avaliada pelo limitador
+        // antes de ser rejeitada com 401. Fica mais restritivo que o limite por usuário, e
+        // nunca compartilha a partição de um usuário legítimo.
+        var listagemPaginadaPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:ListagemPaginada:PermitLimitAnonimo") ?? 10;
+
+        // Issue #97 (achado A06-1): POST /api/tcc/entregas e POST
+        // /coordenador/banca/{id}/registrar-resultado não tinham nenhum rate limiting —
+        // combinado com o teto de tamanho já existente (UploadLimits, 50 MB), um usuário
+        // autenticado sem limite de requisições podia gravar dezenas de MB por chamada,
+        // indefinidamente, até esgotar o disco do servidor (que também hospeda a API).
+        // Mais restritivo que "geracao-pdf" (I/O de disco é mais caro que renderizar um PDF
+        // e o dano de exaustão de disco é mais sério que CPU) e particionado por usuário,
+        // não por IP — mesmo raciocínio de "geracao-pdf"/"listagem-paginada" (achado A02-2):
+        // ambos os endpoints exigem autenticação, e a rede de origem típica é um campus
+        // universitário atrás de NAT/proxy compartilhado.
+        var uploadPermitLimit = configuration.GetValue<int?>("RateLimiting:Upload:PermitLimit") ?? 10;
+        var uploadWindowSeconds = configuration.GetValue<int?>("RateLimiting:Upload:WindowSeconds") ?? 3600;
+        var uploadQueueLimit = configuration.GetValue<int?>("RateLimiting:Upload:QueueLimit") ?? 0;
+        var uploadPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:Upload:PermitLimitAnonimo") ?? 5;
+
+        // Issue #141 (achado M4): POST api/tcc/proposta e DELETE api/tcc/proposta/{id} não
+        // tinham rate limiting — um Aluno em loop "submeter com OrientadorSolicitadoId →
+        // excluir" conseguia disparar um e-mail de notificação por iteração (NomeProfessor,
+        // Titulo controlados pelo atacante), o suficiente para floodar a fila (capacidade
+        // 1000, ChannelEmailQueue) e fazer notificações legítimas de outros usuários serem
+        // descartadas em silêncio. Particionado por usuário (mesmo raciocínio de
+        // "upload"/"geracao-pdf": ambos endpoints exigem Authorize(Roles = "Aluno"), rede de
+        // origem típica é um campus universitário atrás de NAT/proxy compartilhado). Janela
+        // de 1h (não 1min): o cenário de abuso é repetição ao longo do tempo, não uma rajada
+        // isolada — um Aluno legítimo que submete/exclui a proposta algumas vezes seguidas
+        // ao decidir o professor não deveria ser limitado.
+        var propostaPermitLimit = configuration.GetValue<int?>("RateLimiting:Proposta:PermitLimit") ?? 10;
+        var propostaWindowSeconds = configuration.GetValue<int?>("RateLimiting:Proposta:WindowSeconds") ?? 3600;
+        var propostaQueueLimit = configuration.GetValue<int?>("RateLimiting:Proposta:QueueLimit") ?? 0;
+        var propostaPermitLimitAnonimo = configuration.GetValue<int?>("RateLimiting:Proposta:PermitLimitAnonimo") ?? 5;
 
         services.AddRateLimiter(options =>
         {
@@ -41,6 +144,36 @@ public static class RateLimitingSetup
                         QueueLimit = loginQueueLimit
                     }));
 
+            options.AddPolicy(LogoutPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = logoutPermitLimit,
+                        Window = TimeSpan.FromSeconds(logoutWindowSeconds),
+                        QueueLimit = logoutQueueLimit
+                    }));
+
+            options.AddPolicy(RefreshPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = refreshPermitLimit,
+                        Window = TimeSpan.FromSeconds(refreshWindowSeconds),
+                        QueueLimit = refreshQueueLimit
+                    }));
+
+            options.AddPolicy(TrocaSenhaPolicyName, context =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = trocaSenhaPermitLimit,
+                        Window = TimeSpan.FromSeconds(trocaSenhaWindowSeconds),
+                        QueueLimit = trocaSenhaQueueLimit
+                    }));
+
             options.AddPolicy(RascunhoPublicoPolicyName, context =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -50,6 +183,112 @@ public static class RateLimitingSetup
                         Window = TimeSpan.FromSeconds(rascunhoWindowSeconds),
                         QueueLimit = rascunhoQueueLimit
                     }));
+
+            // Particionado por usuário autenticado (Claim NameIdentifier), não por IP: os 3
+            // endpoints desta política exigem autenticação, e a rede de origem típica deste
+            // sistema é um campus universitário — particionar por IP faria usuários
+            // diferentes atrás do mesmo NAT/proxy compartilharem uma única cota (achado
+            // A02-2). Requer UseAuthentication() antes de UseRateLimiter() em Program.cs
+            // para que HttpContext.User já esteja populado aqui.
+            options.AddPolicy(GeracaoPdfPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = geracaoPdfPermitLimit,
+                            Window = TimeSpan.FromSeconds(geracaoPdfWindowSeconds),
+                            QueueLimit = geracaoPdfQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = geracaoPdfPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(geracaoPdfWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
+            // Mesmo raciocínio de particionamento de "geracao-pdf" (achado A02-2): os 9
+            // endpoints desta política (issue #112 acrescentou GET api/tcc/professores e
+            // GET api/orientador/propostas-solicitadas) exigem autenticação, então particiona por usuário
+            // (Claim NameIdentifier), não por IP — a rede de origem típica é um campus
+            // universitário, e particionar por IP faria usuários diferentes atrás do mesmo
+            // NAT/proxy compartilharem uma única cota.
+            options.AddPolicy(ListagemPaginadaPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = listagemPaginadaPermitLimit,
+                            Window = TimeSpan.FromSeconds(listagemPaginadaWindowSeconds),
+                            QueueLimit = listagemPaginadaQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = listagemPaginadaPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(listagemPaginadaWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
+            // Mesmo particionamento por usuário de "geracao-pdf"/"listagem-paginada".
+            options.AddPolicy(UploadPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = uploadPermitLimit,
+                            Window = TimeSpan.FromSeconds(uploadWindowSeconds),
+                            QueueLimit = uploadQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = uploadPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(uploadWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
+
+            // Mesmo particionamento por usuário de "geracao-pdf"/"listagem-paginada"/"upload".
+            options.AddPolicy(PropostaPolicyName, context =>
+            {
+                var usuarioId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+                return usuarioId is not null
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"user:{usuarioId}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = propostaPermitLimit,
+                            Window = TimeSpan.FromSeconds(propostaWindowSeconds),
+                            QueueLimit = propostaQueueLimit
+                        })
+                    : RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"anon:{context.Connection.RemoteIpAddress}",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = propostaPermitLimitAnonimo,
+                            Window = TimeSpan.FromSeconds(propostaWindowSeconds),
+                            QueueLimit = 0
+                        });
+            });
 
             options.OnRejected = (context, cancellationToken) =>
             {
@@ -63,6 +302,13 @@ public static class RateLimitingSetup
 
                 var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
+                // Issue #74 (achado F-07 da revisão de segurança): políticas particionadas
+                // por usuário autenticado (geracao-pdf, listagem-paginada) tornam o IP sozinho
+                // pouco acionável — a rede de origem típica é um campus universitário atrás de
+                // NAT/proxy, então o IP não identifica quem excedeu a cota. Inclui o
+                // UsuarioId quando disponível (requisição autenticada); "anon" caso contrário.
+                var usuarioId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anon";
+
                 // Logger obtido via DI (não Serilog.Log estático) para respeitar o logger
                 // configurado por host (ver LoggingSetup, preserveStaticLogger: true).
                 var logger = httpContext.RequestServices
@@ -70,29 +316,15 @@ public static class RateLimitingSetup
                     .CreateLogger("TccManager.Api.RateLimiting");
 
                 logger.LogWarning(
-                    "Requisição bloqueada por rate limiting. IP de origem: {RemoteIp}, Rota: {RequestPath}",
+                    "Requisição bloqueada por rate limiting. IP de origem: {RemoteIp}, UsuarioId: {UsuarioId}, Rota: {RequestPath}",
                     remoteIp,
-                    RedigirPath(httpContext.Request.Path.Value));
+                    usuarioId,
+                    RequestPathRedactor.Redigir(httpContext.Request.Path.Value));
 
                 return ValueTask.CompletedTask;
             };
         });
 
         return services;
-    }
-
-    // O path de /api/rascunho-ata/{token} carrega a credencial de portador no próprio
-    // path — nunca deve chegar ao log em claro (rota pública, sem outra forma de logar
-    // apenas o template da rota a partir do rate limiter).
-    private const string RascunhoAtaPathPrefix = "/api/rascunho-ata/";
-
-    private static string RedigirPath(string? path)
-    {
-        if (string.IsNullOrEmpty(path))
-            return "unknown";
-
-        return path.StartsWith(RascunhoAtaPathPrefix, StringComparison.OrdinalIgnoreCase)
-            ? $"{RascunhoAtaPathPrefix}[REDACTED]"
-            : path;
     }
 }

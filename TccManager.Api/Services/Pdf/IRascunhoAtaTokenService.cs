@@ -1,3 +1,5 @@
+using TccManager.Shared.Models;
+
 namespace TccManager.Api.Services.Pdf;
 
 public enum RascunhoTokenValidacaoStatus
@@ -21,6 +23,11 @@ public class RascunhoTokenValidacao
 {
     public required RascunhoTokenValidacaoStatus Status { get; init; }
     public int BancaId { get; init; }
+
+    // Preenchido sempre que o token é encontrado por hash (mesmo quando Status é
+    // Invalido por estar revogado) — usado apenas para auditoria interna (log), nunca
+    // exposto na resposta HTTP ao chamador anônimo.
+    public int? MembroExternoId { get; init; }
 }
 
 /// <summary>
@@ -40,10 +47,29 @@ public interface IRascunhoAtaTokenService
     Task<string> GerarTokenAsync(int bancaId, int membroExternoId);
 
     /// <summary>
+    /// Issue #150 (achado C2): variante em lote de <see cref="GerarTokenAsync"/> para quando
+    /// vários membros externos da MESMA banca precisam de token de uma vez (ex.: ao agendar
+    /// a banca) — sem isso, N membros custavam 3 round-trips cada (SELECT Banca redundante +
+    /// SELECT de revogação + SaveChanges próprio). Aqui: 1 SELECT de revogação cobrindo todos
+    /// os pares, nenhum SELECT de Banca (recebida já carregada pelo chamador) e 1
+    /// SaveChangesAsync para todos os tokens novos. Retorna o token bruto de cada membro, na
+    /// mesma ordem de <paramref name="membroExternoIds"/>.
+    /// </summary>
+    Task<IReadOnlyDictionary<int, string>> GerarTokensEmLoteAsync(Banca banca, IEnumerable<int> membroExternoIds);
+
+    /// <summary>
     /// Calcula o hash do token recebido e busca por hash (nunca compara pelo valor bruto).
     /// </summary>
     Task<RascunhoTokenValidacao> ValidarAsync(string tokenBruto);
 
     /// <summary>Revoga o token vigente do par, se houver. Usado isoladamente pelo reenvio (RF-06).</summary>
     Task RevogarTokenAtualAsync(int bancaId, int membroExternoId);
+
+    /// <summary>
+    /// Revoga TODOS os tokens ativos do membro externo, em qualquer banca — não só um par
+    /// específico. Issue #99 (achado A01-1): ao corrigir/trocar o e-mail de um MembroExterno,
+    /// quem controla o endereço ANTIGO não pode continuar com acesso ao(s) rascunho(s) já
+    /// enviado(s), independente de quantas bancas esse membro compõe.
+    /// </summary>
+    Task RevogarTodosTokensDoMembroAsync(int membroExternoId);
 }

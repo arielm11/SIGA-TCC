@@ -1,13 +1,16 @@
 @page "/login"
 @layout LoginLayout
+@using System.Net
 @using TccManager.Shared.DTOs
 @using TccManager.Client.Providers
 @using Blazored.LocalStorage
+@using TccManager.Client.Services
 @inject HttpClient Http
 @inject NavigationManager Navigation
 @inject ILocalStorageService LocalStorage
 @inject CustomAuthStateProvider AuthStateProvider
 @inject NotificationService NotificationService
+@inject EstadoTrocaSenha EstadoTrocaSenha
 
 <PageTitle>Login</PageTitle>
 
@@ -44,6 +47,13 @@
     [Parameter]
     public string? Expirado { get; set; }
 
+    // Issue #88 — fallback de TrocarSenha.razor quando o login automático pós-troca falha por
+    // qualquer motivo (a troca em si já foi efetivada no servidor nesse caso; só o login
+    // automático não completou).
+    [SupplyParameterFromQuery(Name = "senhaAlterada")]
+    [Parameter]
+    public string? SenhaAlterada { get; set; }
+
     private LoginDto loginModel = new();
     private bool carregando = false;
 
@@ -51,13 +61,12 @@
     {
         if (Expirado == "1")
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Warning,
-                Summary = "Sessão expirada",
-                Detail = "Sua sessão expirou. Faça login novamente.",
-                Duration = 6000
-            });
+            NotificationService.NotificarAviso("Sessão expirada", "Sua sessão expirou. Faça login novamente.");
+        }
+
+        if (SenhaAlterada == "1")
+        {
+            NotificationService.NotificarSucesso("Senha alterada", "Sua senha foi alterada com sucesso. Faça login com a nova senha.");
         }
     }
 
@@ -70,11 +79,22 @@
             if (response.IsSuccessStatusCode)
             {
                 var resultado = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+                // Issue #171: o refresh token não vem mais no corpo — o servidor já o gravou
+                // via Set-Cookie HttpOnly (siga_refresh). O Client guarda só o authToken.
                 await LocalStorage.SetItemAsync("authToken", resultado!.Token);
-                await LocalStorage.SetItemAsync("refreshToken", resultado.RefreshToken);
                 AuthStateProvider.NotifyUserAuthentication(resultado.Token);
 
                 Navigation.NavigateTo("/");
+            }
+            else if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                // Issue #88 (D8): credenciais válidas, mas o Admin foi criado por bootstrap e
+                // precisa trocar a senha temporária antes de continuar. Nenhum token veio no
+                // corpo (a barreira é estrutural) — nada é gravado em localStorage aqui. Só o
+                // e-mail já digitado segue para a página de troca, para não pedir de novo; a
+                // senha atual é redigitada lá.
+                EstadoTrocaSenha.Email = loginModel.Email;
+                Navigation.NavigateTo("/trocar-senha");
             }
             else
             {
@@ -93,24 +113,12 @@
                     // Corpo em formato inesperado — mantém a mensagem genérica de fallback.
                 }
 
-                NotificationService.Notify(new NotificationMessage
-                {
-                    Severity = NotificationSeverity.Error,
-                    Summary = "Falha no login",
-                    Detail = mensagem,
-                    Duration = 5000
-                });
+                NotificationService.NotificarErro("Falha no login", mensagem);
             }
         }
         catch (Exception)
         {
-            NotificationService.Notify(new NotificationMessage
-            {
-                Severity = NotificationSeverity.Error,
-                Summary = "Falha ao entrar",
-                Detail = "Não foi possível entrar. Tente novamente em instantes.",
-                Duration = 5000
-            });
+            NotificationService.NotificarErro("Falha ao entrar", "Não foi possível entrar. Tente novamente em instantes.");
         }
         finally
         {

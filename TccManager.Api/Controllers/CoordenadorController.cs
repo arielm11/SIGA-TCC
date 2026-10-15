@@ -1,6 +1,10 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using TccManager.Api.Configuration;
 using TccManager.Api.Data;
 using TccManager.Api.Extensions;
 using TccManager.Api.Services;
@@ -9,13 +13,14 @@ using TccManager.Api.Services.Pdf;
 using TccManager.Api.Services.Storage;
 using TccManager.Shared.DTOs;
 using TccManager.Shared.Enums;
+using TccManager.Shared.Formatting;
 using TccManager.Shared.Models;
 
 namespace TccManager.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Coordenador")]
+[Authorize(Roles = nameof(TipoUsuario.Coordenador))]
 public class CoordenadorController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -26,13 +31,20 @@ public class CoordenadorController : ControllerBase
     private readonly IRascunhoAtaTokenService _rascunhoTokenService;
     private const decimal notaMinimaAprovacao = 60.0m;
 
+    // Categoria dedicada de auditoria, mesmo padrão de TccController — issue #76 (D7):
+    // a rejeição de proposta decide o encerramento negativo do TCC de um aluno e precisa
+    // de trilha estruturada (RNF-01). "TccManager.Api.Auditoria" já tem Override explícito
+    // em appsettings.json para não ser descartada pelo MinimumLevel Warning do Serilog.
+    private readonly ILogger _auditLogger;
+
     public CoordenadorController(
         AppDbContext context,
         ISanitizerService sanitizerService,
         ITccNotificationService notificationService,
         IStorageService storageService,
         IAtaPdfService ataPdfService,
-        IRascunhoAtaTokenService rascunhoTokenService)
+        IRascunhoAtaTokenService rascunhoTokenService,
+        ILoggerFactory loggerFactory)
     {
         _context = context;
         _sanitizerService = sanitizerService;
@@ -40,6 +52,7 @@ public class CoordenadorController : ControllerBase
         _storageService = storageService;
         _ataPdfService = ataPdfService;
         _rascunhoTokenService = rascunhoTokenService;
+        _auditLogger = loggerFactory.CreateLogger("TccManager.Api.Auditoria");
     }
 
     [HttpGet("dashboard-stats")]
@@ -56,39 +69,44 @@ public class CoordenadorController : ControllerBase
         return Ok(stats);
     }
 
+    // Issue #112 (P4 da arquitetura / seção 6 da modelagem): projeção extraída para
+    // UsuarioQueries.ProfessoresAtivosComCarga, reaproveitada também por
+    // TccController.GetProfessores (Aluno) — refactor puro, mesma saída/rota/autorização.
     [HttpGet("professores")]
-    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetProfessores([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
-        var professores = await _context.Usuarios
-            .Where(u => u.Tipo == TipoUsuario.Professor && u.Ativo)
-            .Select(u => new ProfessorResumoDto
-            {
-                Id = u.Id,
-                Nome = u.Nome,
-                LimiteOrientandos = u.LimiteOrientandos,
-                AceitandoOrientandos = u.AceitandoOrientandos,
-                CargaAtual = _context.Tccs.Count(t => t.OrientadorId == u.Id && (t.Status == StatusTcc.Aprovado || t.Status == StatusTcc.EmAndamento))
-            })
+        var professores = await _context.ProfessoresAtivosComCarga()
             .OrderBy(p => p.Nome)
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(professores);
     }
 
+    // Issue #113 (achado A06-2): antes, este endpoint materializava todas as propostas
+    // pendentes de uma vez, sem paginação nem rate limiting — diferente de GetProfessores no
+    // mesmo controller (issue #74), que já usa os dois. #76 aumentou o tamanho da resposta ao
+    // acrescentar Resumo à projeção (necessário para o Coordenador decidir). Alinhado ao
+    // mesmo padrão.
     [HttpGet("propostas-pendentes")]
-    public async Task<IActionResult> GetPropostasPendentes()
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetPropostasPendentes([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
+        // Issue #151 (achado C4): Include() ignorado em silêncio pelo EF Core — o Select
+        // abaixo já traduz t.Aluno!.Nome para SQL sem precisar dele.
         var pendentes = await _context.Tccs
-            .Include(t => t.Aluno)
             .Where(t => t.Status == StatusTcc.Pendente)
+            .OrderBy(t => t.DataCriacao)
             .Select(t => new TccResumoDto
             {
                 Id = t.Id,
                 Titulo = t.Titulo,
+                Resumo = t.Resumo,
                 NomeAluno = t.Aluno!.Nome,
                 DataCriacao = t.DataCriacao,
                 Status = t.Status
-            }).ToListAsync();
+            })
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(pendentes);
     }
@@ -105,12 +123,87 @@ public class CoordenadorController : ControllerBase
         tcc.OrientadorId = dto.OrientadorId;
         tcc.Status = StatusTcc.Aprovado;
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #113 (achado A06-1): outro Coordenador já decidiu sobre esta mesma
+            // proposta (RowVersion mudou entre o read e este write) — TOCTOU sem bypass de
+            // autorização, os dois atores são legítimos. 409, não 500: é um conflito de
+            // concorrência esperado, não um erro do servidor.
+            _auditLogger.LogWarning(
+                "Designação de orientador recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
 
-        // Mesmo evento/template de OrientadorController.AprovarProposta (RF7).
+        // Auditoria (RNF-01, achado A09-1 da revisão de segurança da issue #76): mesma
+        // disciplina de RejeitarProposta — designar orientador é igualmente uma decisão
+        // terminal sobre a proposta (aloca carga de um professor, aprova o TCC), então precisa
+        // da mesma trilha. Logo após o SaveChanges (achado A09-3): a auditoria não pode
+        // depender do envio de notificação (que já é best-effort/try-catch) para existir.
+        var coordenadorIdClaimDesignacao = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Orientador designado pelo Coordenador. TccId: {TccId}, AlunoId: {AlunoId}, OrientadorId: {OrientadorId}, CoordenadorId: {CoordenadorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            tcc.OrientadorId,
+            coordenadorIdClaimDesignacao);
+
+        // Aprovação (RF7) — única via desde a issue #76 (rota do Professor removida).
         await _notificationService.NotificarPropostaAprovadaAsync(tcc.Id);
 
         return Ok("Orientador designado com sucesso.");
+    }
+
+    // Issue #76 (D7): rejeição de proposta passa a ser exclusiva do Coordenador — antes era
+    // POST api/orientador/propostas/{id}/rejeitar, sem nenhuma verificação de vínculo entre o
+    // Professor autenticado e a proposta (achado de RBAC). Espelha DesignarOrientador (mesma
+    // guarda de status, mesmo estilo de resposta 200/404).
+    [HttpPut("propostas/{id}/rejeitar")]
+    public async Task<IActionResult> RejeitarProposta(int id, [FromBody] RejeicaoDto dto)
+    {
+        var tcc = await _context.Tccs.FirstOrDefaultAsync(t => t.Id == id && t.Status == StatusTcc.Pendente);
+        if (tcc == null) return NotFound("Proposta não encontrada ou já processada.");
+
+        tcc.Status = StatusTcc.Reprovado;
+        // Issue #73 (achado A10-1): sanitizar antes de persistir e antes de medir o limite de
+        // 2000 caracteres da coluna (RejeicaoDtoValidator já valida isso sobre o valor
+        // sanitizado, mas o sanitizador é reaplicado aqui, não reaproveitado do validador).
+        tcc.MotivoRejeicao = _sanitizerService.Sanitizar(dto.Motivo);
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #113 (achado A06-1): mesma proteção de DesignarOrientador.
+            _auditLogger.LogWarning(
+                "Rejeição de proposta recusada por conflito de concorrência: a proposta já foi decidida por outra requisição. TccId: {TccId}",
+                id);
+            return Conflict("Esta proposta já foi decidida por outra ação simultânea. Atualize a lista e tente novamente.");
+        }
+
+        // Auditoria (RNF-01): só ids, nunca o texto do motivo (campo livre preenchido por
+        // humano — duplicá-lo no log espalharia conteúdo potencialmente sensível para fora do
+        // banco, mesma disciplina de PII do projeto). Logo após o SaveChanges, não depois da
+        // notificação (achado A09-3 da revisão de segurança): a trilha de auditoria de uma
+        // decisão terminal não pode depender do envio de e-mail ter sido tentado.
+        var coordenadorIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Proposta rejeitada pelo Coordenador. TccId: {TccId}, AlunoId: {AlunoId}, CoordenadorId: {CoordenadorId}",
+            tcc.Id,
+            tcc.AlunoId,
+            coordenadorIdClaim);
+
+        // Depois do SaveChanges, como em todos os outros pontos do projeto: o serviço lê o
+        // estado já persistido (o template do RF8 usa o motivo).
+        await _notificationService.NotificarPropostaRejeitadaAsync(tcc.Id);
+
+        return Ok("Proposta rejeitada com sucesso.");
     }
 
     [HttpPut("professores/{id}/capacidade")]
@@ -123,12 +216,21 @@ public class CoordenadorController : ControllerBase
         professor.AceitandoOrientandos = dto.AceitandoOrientandos;
 
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6/D4): única escrita deste controller sem trilha de
+        // auditoria — afeta diretamente quais professores aparecem como opção de
+        // orientador para o Aluno (GetProfessores/ProfessoresAtivosComCarga).
+        _auditLogger.LogInformation(
+            "Capacidade de orientação atualizada. ProfessorId: {ProfessorId}, LimiteOrientandos: {LimiteOrientandos}, AceitandoOrientandos: {AceitandoOrientandos}",
+            id, dto.LimiteOrientandos, dto.AceitandoOrientandos);
+
         return Ok("Capacidade do professor atualizada com sucesso.");
     }
 
     // --- CRUD MEMBROS EXTERNOS ---
     [HttpGet("membros-externos")]
-    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetMembrosExternos([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var membros = await _context.MembrosExternos
             .OrderBy(m => m.Nome)
@@ -139,19 +241,32 @@ public class CoordenadorController : ControllerBase
                 Email = m.Email,
                 Instituicao = m.Instituicao
             })
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(membros);
     }
 
     [HttpPost("membros-externos")]
-    public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExterno membro)
+    public async Task<IActionResult> AdicionarMembroExterno([FromBody] MembroExternoDto dto)
     {
-        membro.Nome = _sanitizerService.Sanitizar(membro.Nome)!;
-        membro.Instituicao = _sanitizerService.Sanitizar(membro.Instituicao)!;
+        // Recebe o DTO (sem Id) em vez da entidade inteira: MembroExterno.Id é
+        // Identity/auto-gerado, e aceitar um Id não-default vindo do corpo da requisição
+        // (mass assignment) arrisca SqlException ao tentar inserir valor explícito numa
+        // coluna Identity — mesmo padrão de UsuarioController.CreateUsuario.
+        var membro = new MembroExterno
+        {
+            Nome = _sanitizerService.Sanitizar(dto.Nome)!,
+            Email = dto.Email,
+            Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!
+        };
 
         _context.MembrosExternos.Add(membro);
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6): criação de membro externo não tinha nenhum registro de
+        // auditoria. Nunca loga e-mail (LGPD), só o id gerado.
+        _auditLogger.LogInformation("Membro externo criado. MembroExternoId: {MembroExternoId}", membro.Id);
+
         return Ok(membro);
     }
 
@@ -163,11 +278,25 @@ public class CoordenadorController : ControllerBase
         if (membro == null)
             return NotFound("Membro externo não encontrado");
 
+        // Issue #99 (achado A01-1): o token de rascunho é uma credencial de portador válida
+        // até a data da banca — se o e-mail do membro é corrigido, quem controla o endereço
+        // ANTIGO não pode continuar com acesso ao rascunho já enviado para lá. Compara ANTES
+        // de sobrescrever membro.Email.
+        var trocouEmail = dto.Email != membro.Email;
+
         membro.Nome = _sanitizerService.Sanitizar(dto.Nome)!;
         membro.Email = dto.Email;
         membro.Instituicao = _sanitizerService.Sanitizar(dto.Instituicao)!;
 
         await _context.SaveChangesAsync();
+
+        if (trocouEmail)
+        {
+            await _rascunhoTokenService.RevogarTodosTokensDoMembroAsync(id);
+            _auditLogger.LogWarning(
+                "Tokens de rascunho revogados após troca de e-mail de MembroExterno. MembroExternoId: {MembroExternoId}",
+                id);
+        }
 
         return Ok(membro);
     }
@@ -178,8 +307,28 @@ public class CoordenadorController : ControllerBase
         var membro = await _context.MembrosExternos.FindAsync(id);
         if (membro == null) return NotFound("Membro externo não encontrado.");
 
+        // Issue #145 (achado B12): as FKs BancaAvaliador.MembroExterno (NO ACTION) e
+        // RascunhoAtaToken.MembroExterno (Restrict) bloqueiam a exclusão quando há vínculo —
+        // sem checar antes, a DbUpdateException resultante virava 500 em vez de um 409 claro
+        // (mesmo padrão já usado em UsuarioController.DeleteUsuario).
+        var possuiVinculos = await _context.BancaAvaliadores.AnyAsync(b => b.MembroExternoId == id)
+            || await _context.RascunhoAtaTokens.AnyAsync(t => t.MembroExternoId == id);
+
+        if (possuiVinculos)
+        {
+            _auditLogger.LogWarning(
+                "Exclusão de membro externo recusada: possui vínculo com banca ou token de rascunho. MembroExternoId: {MembroExternoId}",
+                id);
+            return Conflict("Não é possível excluir este membro externo: ele está vinculado a uma banca ou possui um token de rascunho de ata. Considere removê-lo apenas das bancas futuras.");
+        }
+
         _context.MembrosExternos.Remove(membro);
         await _context.SaveChangesAsync();
+
+        // Issue #143 (achado M6/D4): exclusão bem-sucedida não tinha nenhum registro de
+        // auditoria.
+        _auditLogger.LogInformation("Membro externo removido com sucesso. MembroExternoId: {MembroExternoId}", id);
+
         return Ok("Membro externo removido com sucesso.");
     }
 
@@ -190,8 +339,33 @@ public class CoordenadorController : ControllerBase
         if (tcc == null || tcc.Status != StatusTcc.AguardandoDefesa)
             return BadRequest("O TCC deve estar com status 'Aguardando Defesa' para agendar a banca.");
 
-        int totalMembros = dto.ProfessoresIds.Count + dto.MembrosExternosIds.Count;
-        if (totalMembros < 2)
+        // Issue #139 (achado M1): deduplicar e excluir o próprio Aluno/Orientador do TCC —
+        // antes disso era possível montar uma "banca" com um único avaliador real (lista com
+        // ids repetidos) ou dar a um Aluno qualquer, ou ao próprio orientador, acesso de
+        // avaliador (BancaAvaliador.ProfessorId sem checagem de papel/vínculo).
+        var professoresIds = dto.ProfessoresIds
+            .Distinct()
+            .Where(id => id != tcc.AlunoId && id != tcc.OrientadorId)
+            .ToList();
+        var membrosExternosIds = dto.MembrosExternosIds.Distinct().ToList();
+
+        if (professoresIds.Count > 0)
+        {
+            var professoresValidos = await _context.Usuarios.CountAsync(u =>
+                professoresIds.Contains(u.Id) && u.Tipo == TipoUsuario.Professor && u.Ativo);
+            if (professoresValidos != professoresIds.Count)
+                return BadRequest("Um ou mais professores avaliadores são inválidos, estão inativos ou não existem.");
+        }
+
+        if (membrosExternosIds.Count > 0)
+        {
+            var membrosValidos = await _context.MembrosExternos.CountAsync(m => membrosExternosIds.Contains(m.Id));
+            if (membrosValidos != membrosExternosIds.Count)
+                return BadRequest("Um ou mais membros externos avaliadores são inválidos ou não existem.");
+        }
+
+        // RN05 sobre os ids distintos e válidos, não o tamanho bruto das listas recebidas.
+        if (professoresIds.Count + membrosExternosIds.Count < 2)
             return BadRequest("A banca deve ter no mínimo 2 membros avaliadores além do orientador (RN05).");
 
         var banca = new Banca
@@ -201,20 +375,36 @@ public class CoordenadorController : ControllerBase
             Local = dto.Local
         };
 
+        // Issue #139 (achado B3): um único SaveChanges para Banca + BancaAvaliadores (via
+        // navegação, não BancaId direto — o Id da Banca só existe depois do SaveChanges, e o
+        // EF Core resolve a FK automaticamente dentro da mesma transação). Antes, um id de FK
+        // inválido no segundo SaveChanges deixava a Banca gravada sem avaliadores.
+        banca.Avaliadores = professoresIds.Select(id => new BancaAvaliador { Banca = banca, ProfessorId = id })
+            .Concat(membrosExternosIds.Select(id => new BancaAvaliador { Banca = banca, MembroExternoId = id }))
+            .ToList();
+
         _context.Banca.Add(banca);
-        await _context.SaveChangesAsync(); // Salva para gerar o Id da Banca
 
-        foreach (var profId in dto.ProfessoresIds)
+        try
         {
-            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, ProfessorId = profId });
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Issue #139 (achado M3): backstop atômico do índice único em Banca.TccId contra
+            // o pre-check de Status acima, que sozinho não impede duas requisições
+            // concorrentes de agendarem 2 bancas para o mesmo TCC.
+            _auditLogger.LogWarning(
+                "Falha ao agendar banca: possível violação da restrição de unicidade de Banca.TccId. TccId: {TccId}",
+                idTcc);
+            return Conflict("Já existe uma banca agendada para este TCC.");
         }
 
-        foreach (var extId in dto.MembrosExternosIds)
-        {
-            _context.BancaAvaliadores.Add(new BancaAvaliador { BancaId = banca.Id, MembroExternoId = extId });
-        }
-
-        await _context.SaveChangesAsync();
+        // Issue #143 (achado M6): agendamento de banca (data/avaliadores) não tinha nenhum
+        // registro de auditoria.
+        _auditLogger.LogInformation(
+            "Banca agendada. TccId: {TccId}, BancaId: {BancaId}, QtdProfessores: {QtdProfessores}, QtdMembrosExternos: {QtdMembrosExternos}",
+            idTcc, banca.Id, professoresIds.Count, membrosExternosIds.Count);
 
         // Disparo após o SaveChanges que persiste os BancaAvaliador, para que a lista
         // de avaliadores já esteja completa na resolução de destinatários (RF9).
@@ -226,10 +416,10 @@ public class CoordenadorController : ControllerBase
     [HttpGet("aguardando-banca")]
     public async Task<IActionResult> GetTccsAguardandoBanca()
     {
+        // Issue #151 (achado C4): os 2 Include() abaixo eram ignorados em silêncio pelo EF
+        // Core — o Select já traduz t.Aluno!.Nome/t.Orientador!.Nome para SQL sem eles.
         var lista = await _context.Tccs
-            .Include(t => t.Aluno)
-            .Include(t => t.Orientador)
-            .Where(t => t.Status == StatusTcc.AguardandoDefesa)
+            .Where(t => t.Status == StatusTcc.AguardandoDefesa && !_context.Banca.Any(b => b.TccId == t.Id))
             .Select(t => new TccAguardandoBancaDto
             {
                 Id = t.Id,
@@ -244,15 +434,13 @@ public class CoordenadorController : ControllerBase
     [HttpGet("bancas-pendentes-resultado")]
     public async Task<IActionResult> GetBancasPendentesResultado()
     {
+        // Issue #151 (achado C4): os 2 Include()/ThenInclude() abaixo eram ignorados em
+        // silêncio pelo EF Core — o Select já traduz os mesmos caminhos para SQL sem eles.
         var bancas = await _context.Banca
-            .Include(b => b.Tcc)
-                .ThenInclude(t => t.Aluno)
-            .Include(b => b.Avaliadores)
-                .ThenInclude(a => a.MembroExterno)
             .Where(b => b.Tcc!.Status == StatusTcc.AguardandoDefesa && b.NotaFinal == null)
             .Select(b => new BancaPendenteDto
             {
-                TccId = b.Id,
+                BancaId = b.Id,
                 DataHora = b.DataHora,
                 Local = b.Local,
                 TccTitulo = b.Tcc.Titulo,
@@ -273,7 +461,13 @@ public class CoordenadorController : ControllerBase
     }
 
     [HttpPost("banca/{idBanca}/registrar-resultado")]
-    public async Task<IActionResult> RegistrarResultadoBanca(int idBanca, [FromForm] decimal notaFinal, [FromForm] IFormFile arquivoAta, [FromForm] string? motivoReprovacao)
+    [RequestSizeLimit(UploadLimits.MaxArquivoUploadBytes)]
+    [EnableRateLimiting(RateLimitingSetup.UploadPolicyName)]
+    public async Task<IActionResult> RegistrarResultadoBanca(
+        int idBanca,
+        [FromForm] decimal notaFinal,
+        [FromForm] IFormFile arquivoAta,
+        [FromForm] string? motivoReprovacao)
     {
         var banca = await _context.Banca
             .Include(b => b.Tcc)
@@ -288,15 +482,80 @@ public class CoordenadorController : ControllerBase
         if (arquivoAta == null || arquivoAta.Length == 0)
             return BadRequest("O arquivo da ata é obrigatório para registrar o resultado.");
 
+        // Issue #75: [RequestSizeLimit] (no atributo do método) protege a conexão Kestrel
+        // real, mas esse corte não é reproduzido pelo TestServer em memória usado pelos
+        // testes de integração — ver o mesmo comentário em TccController.EnviarEntrega para
+        // o raciocínio completo. Esta é a camada testável.
+        if (arquivoAta.Length > UploadLimits.MaxArquivoUploadBytes)
+            return BadRequest($"O arquivo excede o tamanho máximo permitido ({UploadLimits.MaxArquivoUploadBytes / (1024 * 1024)} MB).");
+
+        // Issue #83 (D6): whitelist de extensão — antes desta issue não havia nenhuma aqui
+        // (diferente de EnviarEntrega, que já tinha quatro). O campo é, por definição de
+        // produto, um PDF assinado; uma lista de um item só é suficiente, e é o que torna a
+        // checagem de magic bytes abaixo possível (a extensão declarada seleciona a
+        // assinatura esperada). Antes do UploadAsync, na mesma disciplina já comentada
+        // acima ("tudo que pode rejeitar a requisição roda antes do upload").
+        var extensaoAta = Path.GetExtension(arquivoAta.FileName).ToLowerInvariant();
+        if (extensaoAta != ".pdf")
+            return BadRequest("O documento da ata deve ser um arquivo PDF.");
+
+        // Issue #146 (achado B5): notaFinal é [FromForm] decimal, não passa por nenhum
+        // FluentValidationActionFilter — sem este teto, uma nota negativa ou acima de 100 era
+        // aceita e ia direto para a ata oficial. Antes do upload, mesma disciplina já usada
+        // nas demais validações deste método.
+        if (notaFinal < 0 || notaFinal > 100)
+            return BadRequest("A nota final deve estar entre 0 e 100.");
+
         bool aprovado = notaFinal >= notaMinimaAprovacao;
 
-        if (!aprovado && string.IsNullOrWhiteSpace(motivoReprovacao))
-            return BadRequest($"Nota inferior a {notaMinimaAprovacao:0.0}. É obrigatório informar o motivo da reprovação.");
-
-        string caminho;
-        using (var stream = arquivoAta.OpenReadStream())
+        // Issue #73 (achado A10-1 da revisão de segurança,
+        // docs/seguranca/2026-08-27-fix-campos-texto-livre-maxlength.md): motivoReprovacao é
+        // parâmetro de form escalar, não passa pelo FluentValidationActionFilter — e não dá
+        // pra usar [StringLength] no parâmetro porque isso validaria o valor CRU, não o
+        // sanitizado que de fato é persistido (HtmlSanitizer só CODIFICA entidades, nunca
+        // decodifica). Sanitiza primeiro, valida (obrigatoriedade E tamanho) sobre o valor JÁ
+        // sanitizado — não o cru: um motivo só com tags HTML (ex.: "<b></b>") sanitiza para
+        // string vazia, e checar IsNullOrWhiteSpace no valor cru deixaria isso passar como se
+        // fosse um motivo válido. Tudo ANTES do upload do arquivo da ata, para não deixar
+        // arquivo órfão em storage por causa de um motivo inválido.
+        string? motivoSanitizado = null;
+        if (!aprovado)
         {
-            caminho = await _storageService.UploadAsync(stream, arquivoAta.FileName, CategoriaArquivo.Atas);
+            motivoSanitizado = _sanitizerService.Sanitizar(motivoReprovacao);
+            if (string.IsNullOrWhiteSpace(motivoSanitizado))
+                // NotaFormatter (não CurrentCulture) — mesmo achado do CI da issue #75 em
+                // AtaPdfDocument.cs/TccNotificationService.cs: "60,0" é o formato correto
+                // para este público, independente da cultura do SO onde a API roda.
+                return BadRequest($"Nota inferior a {NotaFormatter.Formatar(notaMinimaAprovacao)}. É obrigatório informar o motivo da reprovação.");
+            if (motivoSanitizado.Length > 2000)
+                return BadRequest("O motivo da reprovação deve ter no máximo 2000 caracteres.");
+        }
+
+        // Issue #83 (D5/D6): validação de assinatura binária (magic bytes), extraída de
+        // TccController para AssinaturaArquivoValidator e reusada aqui. Dentro do using,
+        // imediatamente antes do UploadAsync (precisa do stream, e é o último ponto
+        // possível antes de tocar o disco). Contrato replicado literalmente de
+        // TccController.EnviarEntrega: o validador pode devolver um stream diferente do
+        // original quando este não é seekable, e o chamador precisa descartá-lo.
+        string caminho;
+        using (var streamOriginal = arquivoAta.OpenReadStream())
+        {
+            var (assinaturaValida, streamParaUpload) = await AssinaturaArquivoValidator.ValidarAsync(
+                streamOriginal, extensaoAta, HttpContext.RequestAborted);
+
+            try
+            {
+                if (!assinaturaValida)
+                    return BadRequest("O arquivo enviado não é um PDF válido.");
+
+                caminho = await _storageService.UploadAsync(
+                    streamParaUpload, arquivoAta.FileName, CategoriaArquivo.Atas, HttpContext.RequestAborted);
+            }
+            finally
+            {
+                if (!ReferenceEquals(streamParaUpload, streamOriginal))
+                    await streamParaUpload.DisposeAsync();
+            }
         }
 
         banca.NotaFinal = notaFinal;
@@ -310,10 +569,39 @@ public class CoordenadorController : ControllerBase
         else
         {
             banca.Tcc.Status = StatusTcc.Reprovado;
-            banca.Tcc.MotivoRejeicao = _sanitizerService.Sanitizar(motivoReprovacao);
+            banca.Tcc.MotivoRejeicao = motivoSanitizado;
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Issue #145 (achado B1): o RowVersion de Tcc (#113) já protegia esta escrita
+            // (banca.Tcc.Status é alterado no mesmo SaveChanges), mas a exceção caía no catch
+            // genérico abaixo e virava 500 em vez de 409 — mesmo arquivo da ata já gravado em
+            // disco, mesma compensação necessária.
+            await CompensarUploadOrfaoAsync(caminho, idBanca, "conflito de concorrência ao salvar resultado da banca");
+            _auditLogger.LogWarning(
+                "Conflito de concorrência ao registrar resultado de banca. BancaId: {BancaId}", idBanca);
+            return Conflict("O resultado desta banca já foi registrado por outra ação simultânea. Atualize a página e tente novamente.");
+        }
+        catch (Exception)
+        {
+            // Issue #105: mesma disciplina de TccController.EnviarEntrega — o arquivo da ata
+            // já foi gravado em disco antes do SaveChanges (não há transação distribuída
+            // entre disco e banco), então uma falha aqui deixaria o arquivo órfão em
+            // wwwroot/uploads/atas sem esta compensação.
+            await CompensarUploadOrfaoAsync(caminho, idBanca, "falha ao salvar resultado da banca no banco de dados");
+            throw;
+        }
+
+        // Issue #143 (achado M6): nota final e decisão terminal do TCC (Finalizado/Reprovado)
+        // não tinham nenhum registro de auditoria.
+        _auditLogger.LogInformation(
+            "Resultado de banca registrado. BancaId: {BancaId}, TccId: {TccId}, AlunoId: {AlunoId}, Aprovado: {Aprovado}, NotaFinal: {NotaFinal}",
+            banca.Id, banca.Tcc.Id, banca.Tcc.AlunoId, aprovado, notaFinal);
 
         await _notificationService.NotificarResultadoBancaAsync(banca.Id, aprovado);
 
@@ -324,30 +612,90 @@ public class CoordenadorController : ControllerBase
         return Ok(mensagem);
     }
 
-    [HttpGet("banca/{idBanca}/ata-pdf")]
-    public async Task<IActionResult> GetAtaPdf(int idBanca)
-    {
-        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca);
+    // Issue #105: mesmo helper compartilhado usado por TccController.CompensarUploadOrfaoAsync
+    // (CompensacaoUploadOrfao) — só as propriedades estruturadas (BancaId) mudam.
+    private Task CompensarUploadOrfaoAsync(string caminho, int bancaId, string motivo) =>
+        CompensacaoUploadOrfao.ExecutarAsync(
+            _storageService,
+            caminho,
+            logSucesso: () => _auditLogger.LogInformation(
+                "Arquivo de ata removido por compensação após falha ao salvar no banco. BancaId: {BancaId}, Motivo: {Motivo}",
+                bancaId,
+                motivo),
+            logFalha: () => _auditLogger.LogWarning(
+                "Falha ao remover arquivo órfão em compensação de upload de ata. BancaId: {BancaId}, Motivo: {Motivo}",
+                bancaId,
+                motivo));
 
-        return resultado.Status switch
+    [HttpGet("banca/{idBanca}/ata-pdf")]
+    [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
+    public async Task<IActionResult> GetAtaPdf(int idBanca, CancellationToken cancellationToken)
+    {
+        var resultado = await _ataPdfService.GerarAtaFinalAsync(idBanca, cancellationToken);
+
+        return this.ResultadoAtaPdfParaActionResult(resultado, $"ata-defesa-{idBanca}.pdf");
+    }
+
+    /// <summary>
+    /// Issue #83 (D1-D3): download autenticado da cópia assinada anexada pelo Coordenador em
+    /// RegistrarResultadoBanca (Banca.AtaCaminho) — arquivo bruto, distinto do PDF gerado via
+    /// QuestPDF servido por GetAtaPdf. Estrutura copiada de TccController.DownloadEntrega (ler
+    /// caminho persistido → AbrirLeituraAsync → tratar ausência → File → auditar), não de
+    /// GetAtaPdf: aqui não há nada para orquestrar, é só ler uma coluna e abrir um stream.
+    /// Nenhuma verificação de autorização além do [Authorize(Roles = nameof(TipoUsuario.Coordenador))] da classe
+    /// — o único papel autorizado já vê/baixa qualquer banca via GetBancasConcluidas/GetAtaPdf.
+    /// </summary>
+    [HttpGet("banca/{idBanca}/ata-assinada")]
+    public async Task<IActionResult> GetAtaAssinada(int idBanca)
+    {
+        // Issue #151 (achado C3): leitura pura, só para abrir o arquivo via caminho — nunca
+        // salva.
+        var banca = await _context.Banca.AsNoTracking().FirstOrDefaultAsync(b => b.Id == idBanca);
+
+        if (banca == null)
+            return NotFound("Banca não encontrada.");
+
+        if (string.IsNullOrWhiteSpace(banca.AtaCaminho))
+            return NotFound("Nenhuma cópia assinada foi anexada a esta banca.");
+
+        Stream? stream;
+        try
         {
-            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
-            AtaPdfResultadoStatus.ResultadoNaoRegistrado => Conflict("O resultado desta banca ainda não foi registrado. Gere a ata após registrar a nota final."),
-            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-defesa-{idBanca}.pdf")
-        };
+            stream = await _storageService.AbrirLeituraAsync(banca.AtaCaminho, HttpContext.RequestAborted);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            // Caminho persistido inconsistente (fora do diretório de uploads, ex.: legado
+            // malformado) ou arquivo bloqueado/sem permissão de leitura pelo SO — não deve
+            // virar 500. Não logar o caminho do arquivo (ex.Message do .NET costuma incluí-lo),
+            // só ids — mas o tipo da exceção (não o texto) é seguro e diferencia "caminho fora
+            // de uploads" (InvalidOperationException) de erro de I/O do SO, achado A09-1 da
+            // revisão de segurança.
+            _auditLogger.LogWarning(
+                "Falha ao abrir arquivo de ata assinada para download. BancaId: {BancaId}, TipoExcecao: {TipoExcecao}",
+                banca.Id, ex.GetType().Name);
+            return NotFound("Arquivo não encontrado.");
+        }
+
+        if (stream == null)
+            return NotFound("Arquivo não encontrado.");
+
+        var solicitanteId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _auditLogger.LogInformation(
+            "Download de cópia assinada da ata concedido. Solicitante: {SolicitanteId}, BancaId: {BancaId}",
+            solicitanteId,
+            banca.Id);
+
+        return File(stream, "application/octet-stream", $"ata-assinada-{idBanca}.pdf");
     }
 
     [HttpGet("banca/{idBanca}/ata-rascunho-pdf")]
-    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca)
+    [EnableRateLimiting(RateLimitingSetup.GeracaoPdfPolicyName)]
+    public async Task<IActionResult> GetAtaRascunhoPdf(int idBanca, CancellationToken cancellationToken)
     {
-        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca);
+        var resultado = await _ataPdfService.GerarAtaRascunhoAsync(idBanca, cancellationToken);
 
-        return resultado.Status switch
-        {
-            AtaPdfResultadoStatus.BancaNaoEncontrada => NotFound("Banca não encontrada."),
-            AtaPdfResultadoStatus.ResultadoJaRegistrado => StatusCode(StatusCodes.Status410Gone, "O resultado desta banca já foi registrado. Utilize o PDF final."),
-            _ => File(resultado.PdfBytes!, "application/pdf", $"ata-rascunho-{idBanca}.pdf")
-        };
+        return this.ResultadoAtaPdfParaActionResult(resultado, $"ata-rascunho-{idBanca}.pdf");
     }
 
     /// <summary>
@@ -369,13 +717,21 @@ public class CoordenadorController : ControllerBase
 
         var tokenBruto = await _rascunhoTokenService.GerarTokenAsync(idBanca, idMembroExterno);
 
+        // Issue #143 (achado M6): emissão de uma nova credencial de portador (acesso ao
+        // rascunho da ata sem conta) não tinha nenhum registro de auditoria. Nunca o token
+        // bruto, só os ids.
+        _auditLogger.LogInformation(
+            "Novo token de rascunho de ata emitido (reenvio). BancaId: {BancaId}, MembroExternoId: {MembroExternoId}",
+            idBanca, idMembroExterno);
+
         await _notificationService.NotificarReenvioRascunhoAsync(idBanca, idMembroExterno, tokenBruto);
 
         return Ok("Novo link de acesso ao rascunho enviado com sucesso.");
     }
 
     [HttpGet("bancas-concluidas")]
-    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao)
+    [EnableRateLimiting(RateLimitingSetup.ListagemPaginadaPolicyName)]
+    public async Task<IActionResult> GetBancasConcluidas([FromQuery] PaginacaoQuery paginacao, CancellationToken cancellationToken)
     {
         var bancas = await _context.Banca
             .Where(b => b.NotaFinal != null)
@@ -390,9 +746,13 @@ public class CoordenadorController : ControllerBase
                 // Aprovado deriva do Status já persistido (fonte de verdade histórica da
                 // decisão tomada em RegistrarResultadoBanca), não recomputado a partir da
                 // nota — ver docs/dados/2026-07-13-pdf-ata-questpdf.md, seção 5.
-                Aprovado = b.Tcc.Status == StatusTcc.Finalizado
+                Aprovado = b.Tcc.Status == StatusTcc.Finalizado,
+                // Issue #83 (D8): AtaCaminho é NOT NULL/string.Empty por default (nunca null),
+                // então "!= """ basta e traduz para SQL sem surpresa. Permite ao Client não
+                // oferecer um download que resultaria em 404 para bancas sem cópia anexada.
+                PossuiAtaAssinada = b.AtaCaminho != ""
             })
-            .ToPagedResultAsync(paginacao);
+            .ToPagedResultAsync(paginacao, cancellationToken);
 
         return Ok(bancas);
     }

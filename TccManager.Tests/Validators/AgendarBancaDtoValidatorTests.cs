@@ -48,6 +48,26 @@ public class AgendarBancaDtoValidatorTests
     }
 
     [Fact]
+    public void DataHoraAusente_DeveSerInvalida()
+    {
+        // Issue #146 (achado D9): AgendarBancaDto.DataHora tinha um inicializador não-vazio
+        // (= DateTime.Now.AddDays(7), removido nesta mesma correção) — uma requisição sem o
+        // campo no JSON desserializava silenciosamente para "daqui a 7 dias" em vez de falhar
+        // nenhuma validação de presença. Sem o inicializador, o valor é default(DateTime)
+        // (ano 0001), que a regra "deve ser futura" já rejeita corretamente.
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 6, 15, 12, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+
+        var dto = DtoComData(default);
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.DataHora)
+                                         && e.ErrorMessage == MensagemEsperada);
+    }
+
+    [Fact]
     public void DataUmSegundoNoFuturo_DeveSerValida()
     {
         // Fronteira: a data (em Brasília) é convertida para UTC e comparada com o "agora".
@@ -91,5 +111,97 @@ public class AgendarBancaDtoValidatorTests
         var result = validator.Validate(DtoComData(dataHoraBrasilia));
 
         Assert.False(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void LocalVazio_DeveFalhar(string? local)
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = local!;
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.Local)
+                                         && e.ErrorMessage == "O local ou link é obrigatório.");
+    }
+
+    [Fact]
+    public void LocalComExatamente300Caracteres_DevePassar()
+    {
+        // Issue #73 — mesmo teto de Banca.Local ([MaxLength(300)]).
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = new string('a', 300);
+
+        var result = validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void LocalComMaisDe300Caracteres_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.Local = new string('a', 301);
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.Local)
+                                         && e.ErrorMessage == "O local ou link deve ter no máximo 300 caracteres.");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Issue #105 — teto de contagem nas listas de avaliadores
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ProfessoresIdsComExatamente10_DevePassar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.ProfessoresIds = Enumerable.Range(1, 10).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void ProfessoresIdsComMaisDe10_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.ProfessoresIds = Enumerable.Range(1, 11).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.ProfessoresIds));
+    }
+
+    [Fact]
+    public void MembrosExternosIdsComMaisDe10_DeveFalhar()
+    {
+        var timeProvider = new FixedTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var validator = new AgendarBancaDtoValidator(timeProvider);
+        var dto = DtoComData(new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Unspecified));
+        dto.MembrosExternosIds = Enumerable.Range(1, 11).ToList();
+
+        var result = validator.Validate(dto);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == nameof(AgendarBancaDto.MembrosExternosIds));
     }
 }
