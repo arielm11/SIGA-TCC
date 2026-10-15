@@ -43,7 +43,7 @@ jobs:
           java-version: '17'
 
       - name: Cache do SonarQube scanner
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.sonar/scanner
           key: ${{ runner.os }}-sonar-scanner
