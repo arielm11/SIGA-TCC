@@ -3,14 +3,21 @@ updates:
   # Issue #94 (achado A03-7): sem isto, um advisory divulgado depois do último push manual
   # nunca era detectado até alguém rodar o restore de novo — o gate de vulnerabilidade
   # (NuGetAudit, Directory.Build.props) só audita o que já está no lock file.
+  #
+  # Achado 2026-10-15: sem target-branch, o Dependabot abre PR contra a branch default do
+  # repo (main), pulando dev — quebrando o fluxo normal (dev é a branch de integração; main
+  # só recebe merge de dev via PR). target-branch força os PRs a entrarem por dev, como
+  # qualquer outra mudança.
   - package-ecosystem: "nuget"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
