@@ -34,6 +34,8 @@ window.setRadzenTheme = function (nomeTema) {
     if (document.startViewTransition) {
         document.startViewTransition(aplicar);
     } else {
-        aplicar();
+        // Achado SonarCloud (javascript:S9383): a Promise nunca rejeita (o executor acima
+        // nunca chama reject) — fire-and-forget intencional, não falta de tratamento de erro.
+        void aplicar();
     }
 };
