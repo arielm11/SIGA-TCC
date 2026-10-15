@@ -23,7 +23,7 @@
          suposição de que a feature band sozinha bastava para estabilidade do lock estava
          incompleta. Fixa as duas versões explicitamente para não depender de qual patch exato
          do SDK o ambiente tem instalado. -->
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="9.0.21" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="10.0.13" />
     <PackageReference Include="Microsoft.NET.Sdk.WebAssembly.Pack" Version="9.0.21" />
     <PackageReference Include="Blazored.LocalStorage" Version="4.3.0" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="9.0.21" />
