@@ -4,22 +4,22 @@
     "net9.0": {
       "bunit": {
         "type": "Direct",
-        "requested": "[2.11.3, )",
-        "resolved": "2.11.3",
-        "contentHash": "tyHufngemDi1XAfS4kx0hNZBw3HT73M/Qsj+szQTMrDpLJB2BPPBFpWh70j/b1RF289ix1zDqd7vMcgf6rAysw==",
+        "requested": "[2.13.3, )",
+        "resolved": "2.13.3",
+        "contentHash": "CzF30KIYqLTBdKOCydGHBzGEpWuPhVhYcjXOq8MzOLhX21078ZK+beEJ+wWpHBJifxAxJzIQ67PS31IztSnv7w==",
         "dependencies": {
-          "AngleSharp": "1.8.1",
-          "AngleSharp.Css": "1.1.2",
+          "AngleSharp": "1.8.6",
+          "AngleSharp.Css": "1.2.0",
           "AngleSharp.Diffing": "1.1.1",
-          "Microsoft.AspNetCore.Components": "9.0.12",
-          "Microsoft.AspNetCore.Components.Authorization": "9.0.12",
-          "Microsoft.AspNetCore.Components.Web": "9.0.12",
-          "Microsoft.AspNetCore.Components.WebAssembly": "9.0.12",
-          "Microsoft.AspNetCore.Components.WebAssembly.Authentication": "9.0.12",
-          "Microsoft.Extensions.Caching.Memory": "9.0.12",
-          "Microsoft.Extensions.Localization.Abstractions": "9.0.12",
-          "Microsoft.Extensions.Logging": "9.0.12",
-          "Microsoft.Extensions.Logging.Abstractions": "9.0.12"
+          "Microsoft.AspNetCore.Components": "9.0.21",
+          "Microsoft.AspNetCore.Components.Authorization": "9.0.21",
+          "Microsoft.AspNetCore.Components.Web": "9.0.21",
+          "Microsoft.AspNetCore.Components.WebAssembly": "9.0.21",
+          "Microsoft.AspNetCore.Components.WebAssembly.Authentication": "9.0.21",
+          "Microsoft.Extensions.Caching.Memory": "9.0.21",
+          "Microsoft.Extensions.Localization.Abstractions": "9.0.21",
+          "Microsoft.Extensions.Logging": "9.0.21",
+          "Microsoft.Extensions.Logging.Abstractions": "9.0.21"
         }
       },
       "coverlet.collector": {
@@ -85,13 +85,13 @@
       },
       "AngleSharp": {
         "type": "Transitive",
-        "resolved": "1.8.1",
-        "contentHash": "fTLPBxwYK5zmt+ernY3GL1kFBDA/2Cl72hpNnMHeNceZNJ/AT7Km9CXFaMHybuEFhXDy2Dv7Bjkez5G0Z4Io4g=="
+        "resolved": "1.8.6",
+        "contentHash": "tdvrWSsHz8iRcb8U2cbFtYF6/1Mvhbe5ZxN/VdhVeIfp5vOvbwz3Bn7OZknnm2QSyGvM9ZaZLNLvfanPzNa61Q=="
       },
       "AngleSharp.Css": {
         "type": "Transitive",
-        "resolved": "1.1.2",
-        "contentHash": "7o5yCTuURjxmjy+O5/2EDQihTwnVlbeg9cIO+Zq8zDLt/7AZWebOfIxij+cejBGUBMad95wl5VlY3XFo3VQuCg==",
+        "resolved": "1.2.0",
+        "contentHash": "x8/yrKJF0kfVdNW152SYn0KqlTzsI3h67ypMFiYR09iT0BMB/zAi3WvJhsV+GH1tlHFiNoZsGgjalTyWraD0gQ==",
         "dependencies": {
           "AngleSharp": "[1.5.0, 2.0.0)"
         }
@@ -259,11 +259,11 @@
       },
       "Microsoft.AspNetCore.Components.WebAssembly.Authentication": {
         "type": "Transitive",
-        "resolved": "9.0.12",
-        "contentHash": "S147U+CaU5EvZWP0G5yesNV6gRwrAHZCtgXYQo0GIK05bGizevqVlFieSqP7ZMEckEVD5C9BFfwrPXl5R5y7RA==",
+        "resolved": "9.0.21",
+        "contentHash": "CVwGxswNJNHAJ0ncqQPPuMJj1O7iNRKE7HnuhvXOGHBrGWXYB12ba9P1CU3aJ4Cfj982lBaZr5SAWxuOrvU2NA==",
         "dependencies": {
-          "Microsoft.AspNetCore.Components.Authorization": "9.0.12",
-          "Microsoft.AspNetCore.Components.Web": "9.0.12"
+          "Microsoft.AspNetCore.Components.Authorization": "9.0.21",
+          "Microsoft.AspNetCore.Components.Web": "9.0.21"
         }
       },
       "Microsoft.AspNetCore.Metadata": {
@@ -593,8 +593,8 @@
       },
       "Microsoft.Extensions.Localization.Abstractions": {
         "type": "Transitive",
-        "resolved": "9.0.12",
-        "contentHash": "CSOlBof8Jo31QjYu3NqbK9SD1ZF9xFY+uL98ussGuhYvIv/sFG1xa/Fgtv1VD0rHwUr4nIZFcOBFIme2748CTw=="
+        "resolved": "9.0.21",
+        "contentHash": "E0GDZA+fqP2HHnxfdJqzVwGYyVBX143mcaPdV1n++z2e8iKNkY3XFvhHGt4/AW66C6tIvbxQbFgChHtfOljnsQ=="
       },
       "Microsoft.Extensions.Logging": {
         "type": "Transitive",
