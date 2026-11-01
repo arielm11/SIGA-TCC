@@ -18,7 +18,7 @@
          4.18.1 (via MailKit) exige Pkcs >= 10.0.0, e a linha 10.x só corrige essas CVEs a
          partir de 10.0.13 (10.0.0-10.0.12 são vulneráveis) — por isso 10.0.13, não 9.0.21. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.21" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.22" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.21" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.21" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.21">
