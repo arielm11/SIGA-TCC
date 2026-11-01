@@ -111,11 +111,11 @@
       },
       "Microsoft.EntityFrameworkCore.Tools": {
         "type": "Direct",
-        "requested": "[9.0.21, )",
-        "resolved": "9.0.21",
-        "contentHash": "CxubLl2vqlq/wZxDdKMj2Tzy6Pi7JUkGldkQaj0N9occdN9UugbAYxrI02UsRovOogFvv4JsIig3dG/e+tXFPQ==",
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "PyslTG7UWVz/KOwo0nL4dvhfOn7XxBXJs9kG2dJ6yz2CH7xuJVPwcU0qFuvao5wbVDmU8/7q0pm9NXiOFXoWuQ==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Design": "9.0.21"
+          "Microsoft.EntityFrameworkCore.Design": "9.0.15"
         }
       },
       "QuestPDF": {
