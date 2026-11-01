@@ -30,7 +30,7 @@
          toolchain fixado em 9.0.100 (global.json) sem benefício, mesmo raciocínio do PR #207
          (DevServer). Mantido em 9.0.21, igual ao resto da família EFCore. Reavaliar quando o
          projeto migrar pra .NET 10. -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.21">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.14">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
